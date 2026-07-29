@@ -1,9 +1,10 @@
 import { loadConfig } from "./config.js";
 import { Database } from "./db/database.js";
 import { MaintenanceService } from "./services/maintenance.js";
+import { AppSettingsService } from "./settings.js";
 
-const config = loadConfig();
-const database = new Database(config);
+const bootConfig = loadConfig();
+const database = new Database(bootConfig);
 const logger = {
   info: (object: unknown, message?: string) =>
     process.stdout.write(`${message ?? "info"} ${JSON.stringify(object)}\n`),
@@ -12,12 +13,10 @@ const logger = {
 };
 
 try {
-  const service = new MaintenanceService(
-    database,
-    config.historyRetentionDays,
-    logger,
-    config.sessionGapSeconds
-  );
+  const settings = new AppSettingsService(database);
+  await settings.load();
+  const config = settings.runtimeConfig(bootConfig);
+  const service = new MaintenanceService(database, config, logger);
   await service.run();
 } finally {
   await database.close();

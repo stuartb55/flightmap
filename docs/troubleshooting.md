@@ -6,7 +6,7 @@ Start with:
 docker compose ps
 docker compose logs --since=15m app
 docker compose logs --since=15m db
-curl --show-error http://127.0.0.1:8080/api/v1/status
+curl --show-error http://127.0.0.1:8080/health/ready
 ```
 
 If `APP_ACCESS_TOKEN` is configured, sign in for command-line API checks:
@@ -32,8 +32,8 @@ docker compose exec -T db sh -c \
   'pg_isready --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"'
 ```
 
-Common causes are a mismatched password between `POSTGRES_PASSWORD` and
-`DATABASE_URL`, a migration failure, or a full volume. Remember that changing
+Common causes are a database password changed after the volume was initialized,
+a migration failure, or a full volume. Remember that changing
 `POSTGRES_PASSWORD` does not alter the role in an existing volume.
 
 Inspect applied migrations without editing them:
@@ -54,13 +54,14 @@ prove container connectivity:
 
 ```sh
 docker compose exec -T app node -e \
-  "fetch(process.env.RECEIVER_BASE_URL + '/receiver.json').then(async r => { console.log(r.status, await r.text()) }).catch(e => { console.error(e); process.exit(1) })"
+  "fetch('http://RECEIVER_ADDRESS/data/receiver.json').then(async r => { console.log(r.status, await r.text()) }).catch(e => { console.error(e); process.exit(1) })"
 ```
 
-Check that `RECEIVER_BASE_URL` points to the directory, not directly to
-`aircraft.json`. Docker Desktop and Linux bridge networks may have different
-routes to the LAN. Also check receiver firewall rules, HTTP port, and whether
-the receiver advertises HTTPS redirects that the container cannot follow.
+Copy the receiver data URL from Settings and check that it points to the
+directory, not directly to `aircraft.json`. Docker Desktop and Linux bridge
+networks may have different routes to the LAN. Also check receiver firewall
+rules, HTTP port, and whether the receiver advertises HTTPS redirects that the
+container cannot follow.
 
 Timeouts or invalid JSON are counted and retried with backoff; they do not stop
 the app. The receiver becomes offline after 15 seconds and returns to one-second
@@ -72,7 +73,7 @@ polling after the first valid recovery snapshot.
 - Aircraft without a fresh position appear in the table but not on the map.
 - A frozen or lower `now` value is intentionally rejected as duplicate or
   out-of-order.
-- Confirm receiver coordinates, or set both `RECEIVER_LAT` and `RECEIVER_LON`.
+- Confirm receiver coordinates, or set both coordinate overrides in Settings.
 - Check rejected-record counts for malformed ICAO, latitude, or longitude values.
 
 Use the fake receiver to separate receiver problems from app problems; see
@@ -94,8 +95,8 @@ failed batch is not partly committed.
 ## Database volume is nearly full
 
 Follow [disk sizing](disk-sizing.md). Take a backup before changing retention.
-After lowering `HISTORY_RETENTION_DAYS`, recreate the app and run maintenance.
-Do not run `VACUUM FULL` on a nearly full volume; it needs additional space.
+After lowering detailed-history retention in Settings, run maintenance. Do not
+run `VACUUM FULL` on a nearly full volume; it needs additional space.
 
 If PostgreSQL has already stopped because the filesystem is full, free space
 outside the database first (old image layers or safely copied backups), start

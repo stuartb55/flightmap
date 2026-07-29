@@ -25,6 +25,9 @@ const AlertsPage = lazy(() =>
 const SystemPage = lazy(() =>
   import('./pages/SystemPage').then((module) => ({ default: module.SystemPage })),
 )
+const SettingsPage = lazy(() =>
+  import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })),
+)
 
 function PageLoading() {
   return (
@@ -37,7 +40,7 @@ function PageLoading() {
 
 function AppRoutes() {
   const { pathname, navigate } = useLocation()
-  const knownPath = ['/', '/history', '/alerts', '/system'].includes(pathname)
+  const knownPath = ['/', '/history', '/alerts', '/system', '/settings'].includes(pathname)
 
   useEffect(() => {
     if (!knownPath) navigate('/', true)
@@ -50,6 +53,8 @@ function AppRoutes() {
         ? AlertsPage
         : pathname === '/system'
           ? SystemPage
+          : pathname === '/settings'
+            ? SettingsPage
           : LivePage
 
   return (

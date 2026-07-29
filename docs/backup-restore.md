@@ -48,7 +48,6 @@ After a successful restore:
 ```sh
 docker compose ps
 curl --fail http://127.0.0.1:8080/health/ready
-curl --fail http://127.0.0.1:8080/api/v1/status
 ```
 
 Confirm the oldest/newest sample timestamps, summary counts, watchlist, metadata
@@ -58,7 +57,7 @@ from backup time; fresh receiver snapshots replace it after startup.
 ## Disaster recovery on a new host
 
 1. Install Docker and copy the repository at the desired application version.
-2. Restore the saved `.env`, checking that `DATABASE_URL` uses host `db`.
+2. Restore the saved `.env`.
 3. Start only PostgreSQL: `docker compose up -d db`.
 4. Run the restore helper with the archive and `--confirm`.
 5. Verify readiness and retention status.

@@ -239,8 +239,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await registerApiRoutes(app, options.dependencies);
 
   const indexFile = join(options.config.webDistDir, "index.html");
-  const renderedIndex = existsSync(indexFile)
-    ? readFileSync(indexFile, "utf8").replace(
+  const indexTemplate = existsSync(indexFile)
+    ? readFileSync(indexFile, "utf8")
+    : null;
+  const renderedIndex = () =>
+    indexTemplate?.replace(
         "</head>",
         `<meta name="flightmap-config" content="${encodeURIComponent(
           JSON.stringify({
@@ -251,8 +254,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
             authRequired: security.authRequired
           })
         )}"></head>`
-      )
-    : null;
+      ) ?? null;
   if (options.config.serveWeb && existsSync(indexFile)) {
     await app.register(fastifyStatic, {
       root: options.config.webDistDir,
@@ -264,20 +266,20 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     });
     app.get("/", async (_request, reply) => {
       reply.header("cache-control", "no-cache");
-      return reply.type("text/html").send(renderedIndex);
+      return reply.type("text/html").send(renderedIndex());
     });
   }
 
   app.setNotFoundHandler(async (request, reply) => {
     if (
       options.config.serveWeb &&
-      renderedIndex !== null &&
+      indexTemplate !== null &&
       request.method === "GET" &&
       !request.url.startsWith("/api/") &&
       !request.url.startsWith("/health/")
     ) {
       reply.header("cache-control", "no-cache");
-      return reply.type("text/html").send(renderedIndex);
+      return reply.type("text/html").send(renderedIndex());
     }
     return reply.code(404).send({
       error: {

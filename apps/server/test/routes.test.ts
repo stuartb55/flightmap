@@ -22,11 +22,25 @@ function dependencies() {
       liveAircraft: vi.fn().mockResolvedValue([]),
       databaseReady: vi.fn().mockResolvedValue(true)
     },
-    collector: { state: { realtime: () => receiver } },
+    collector: {
+      state: { realtime: () => receiver },
+      applySettings: vi.fn()
+    },
     hub: new LiveHub(),
     status: {
       status: vi.fn().mockResolvedValue({ database: { healthy: true } })
-    }
+    },
+    settings: {
+      get: vi.fn().mockReturnValue({
+        settings: { receiverName: "Home receiver" },
+        updatedAt: null
+      }),
+      update: vi.fn().mockResolvedValue({
+        settings: { receiverName: "Roof receiver" },
+        updatedAt: "2026-07-29T12:00:00.000Z"
+      })
+    },
+    applyRuntimeSettings: vi.fn().mockResolvedValue(undefined)
   };
 }
 
@@ -47,6 +61,32 @@ async function app(): Promise<FastifyInstance> {
 }
 
 describe("structured route errors", () => {
+  it("reads and updates persisted settings", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const read = await server.inject("/api/v1/settings");
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({
+      settings: { receiverName: "Home receiver" }
+    });
+
+    const update = await server.inject({
+      method: "PATCH",
+      url: "/api/v1/settings",
+      payload: { receiverName: "Roof receiver" }
+    });
+    expect(update.statusCode).toBe(200);
+    expect(deps.settings.update).toHaveBeenCalledWith({
+      receiverName: "Roof receiver"
+    });
+    expect(deps.applyRuntimeSettings).toHaveBeenCalled();
+    await server.close();
+  });
+
   it("uses the cheap database probe for readiness", async () => {
     const server = await app();
     const response = await server.inject("/health/ready");

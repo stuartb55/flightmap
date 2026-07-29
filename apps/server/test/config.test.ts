@@ -2,24 +2,15 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 
 describe("environment configuration", () => {
-  it("parses, sorts, and deduplicates range rings", () => {
-    expect(
-      loadConfig({
-        RANGE_RINGS_NM: "50, 5, 25,5",
-        RECEIVER_LAT: "",
-        RECEIVER_LON: ""
-      }).rangeRingsNm
-    ).toEqual([5, 25, 50]);
-  });
-
-  it("requires coordinate overrides as a pair", () => {
-    expect(() =>
-      loadConfig({ RECEIVER_LAT: "53.61", RECEIVER_LON: "" })
-    ).toThrow();
-  });
-
-  it("rejects malformed range-ring values", () => {
-    expect(() => loadConfig({ RANGE_RINGS_NM: "5,far,25" })).toThrow();
+  it("does not take product settings from environment variables", () => {
+    const config = loadConfig({
+      RECEIVER_NAME: "Old environment receiver",
+      RANGE_RINGS_NM: "1,2,3",
+      HISTORY_RETENTION_DAYS: "7"
+    });
+    expect(config.receiverName).toBe("Home receiver");
+    expect(config.rangeRingsNm).toEqual([5, 10, 25, 50, 100]);
+    expect(config.historyRetentionDays).toBe(30);
   });
 
   it("normalises host/origin allowlists and optional access tokens", () => {

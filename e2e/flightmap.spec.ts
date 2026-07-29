@@ -26,6 +26,11 @@ test('loads live data and supports primary navigation', async ({ page }) => {
   await page.getByRole('link', { name: 'System' }).first().click()
   await expect(page).toHaveTitle('System · Flightmap')
   await expect(page.getByRole('heading', { name: 'System' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Settings' }).first().click()
+  await expect(page).toHaveTitle('Settings · Flightmap')
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
 })
 
 test('has no serious automated accessibility violations', async ({ page }) => {

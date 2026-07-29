@@ -34,13 +34,15 @@ export class MaintenanceService {
 
   constructor(
     private readonly database: Database,
-    private readonly retentionDays: number,
+    private readonly config: Pick<
+      Config,
+      "historyRetentionDays" | "sessionGapSeconds"
+    >,
     private readonly logger: Logger,
-    private readonly sessionGapSeconds = 300
   ) {}
 
   async run(now = new Date()): Promise<MaintenanceResult> {
-    const cutoff = retentionCutoff(now, this.retentionDays);
+    const cutoff = retentionCutoff(now, this.config.historyRetentionDays);
     const cutoffDay = cutoff.toISOString().slice(0, 10);
 
     const result = await this.database.transaction(async (client) => {
@@ -50,7 +52,7 @@ export class MaintenanceService {
          SET ended_at = last_position_at, updated_at = now()
          WHERE ended_at IS NULL
            AND last_position_at < $1::timestamptz - make_interval(secs => $2)`,
-        [now, this.sessionGapSeconds]
+        [now, this.config.sessionGapSeconds]
       );
       await client.query(
         `UPDATE current_aircraft c
@@ -100,7 +102,7 @@ export class MaintenanceService {
            deleted_alerts, deleted_receiver_samples
          ) VALUES ($1, $2, $3, $4, $5)`,
         [
-          this.retentionDays,
+          this.config.historyRetentionDays,
           droppedPartitions,
           sessions.rowCount ?? 0,
           alerts.rowCount ?? 0,
@@ -155,10 +157,5 @@ export function createMaintenanceService(
   config: Pick<Config, "historyRetentionDays" | "sessionGapSeconds">,
   logger: Logger
 ): MaintenanceService {
-  return new MaintenanceService(
-    database,
-    config.historyRetentionDays,
-    logger,
-    config.sessionGapSeconds
-  );
+  return new MaintenanceService(database, config, logger);
 }

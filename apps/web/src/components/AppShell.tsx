@@ -1,4 +1,4 @@
-import { Bell, Clock3, LogOut, Map, RadioTower, Settings2 } from 'lucide-react'
+import { Activity, Bell, Clock3, LogOut, Map, RadioTower, Settings2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { AUTH_REQUIRED } from '../config'
 import { api } from '../lib/api'
@@ -9,7 +9,8 @@ const navigation = [
   { to: '/', label: 'Live', icon: Map, end: true },
   { to: '/history', label: 'History', icon: Clock3 },
   { to: '/alerts', label: 'Alerts', icon: Bell },
-  { to: '/system', label: 'System', icon: Settings2 },
+  { to: '/system', label: 'System', icon: Activity },
+  { to: '/settings', label: 'Settings', icon: Settings2 },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {

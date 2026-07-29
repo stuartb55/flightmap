@@ -117,4 +117,42 @@ describe("metadata CSV validation", () => {
       ).toBe(true);
     }
   );
+
+  it("cancels an in-progress metadata stream when automatic updates stop", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                "icao24,registration,icao_type,model,operator,owner,country\n"
+              )
+            );
+          }
+        })
+      )
+    );
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [] })
+    };
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const service = new MetadataService(
+      database as never,
+      {
+        metadataUrl: "https://metadata.example/aircraft.csv",
+        metadataTimeoutMs: 5_000,
+        metadataMinRows: 1,
+        metadataCheckIntervalMs: 60_000,
+        metadataMaxDownloadBytes: 1_000_000,
+        metadataMaxUncompressedBytes: 1_000_000
+      },
+      logger,
+      fetchImplementation
+    );
+
+    service.start();
+    await vi.waitFor(() => expect(fetchImplementation).toHaveBeenCalled());
+    await expect(service.stop()).resolves.toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });

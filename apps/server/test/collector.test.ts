@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { normaliseReceiverStats } from "../src/ingestion/collector.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  ReceiverCollector,
+  normaliseReceiverStats
+} from "../src/ingestion/collector.js";
+import { LiveHub } from "../src/realtime/live-hub.js";
 
 describe("receiver statistics", () => {
   it("normalises minute message rate, RF, and CPU metrics", () => {
@@ -34,5 +38,35 @@ describe("receiver statistics", () => {
       noiseDbfs: -31,
       health: "online"
     });
+  });
+
+  it("can retry startup after repository initialization fails", async () => {
+    const repository = {
+      checkpoint: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      receiverInfo: vi.fn().mockResolvedValue(null)
+    };
+    const collector = new ReceiverCollector(
+      {
+        receiverBaseUrl: "http://receiver.local/data",
+        pollIntervalMs: 1_000,
+        receiverInfoIntervalMs: 300_000,
+        receiverStatsIntervalMs: 60_000,
+        receiverTimeoutMs: 800,
+        receiverLatitude: null,
+        receiverLongitude: null
+      },
+      repository as never,
+      new LiveHub(),
+      {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn()
+      }
+    );
+
+    await expect(collector.start()).rejects.toThrow("database unavailable");
+    await expect(collector.start()).rejects.toThrow("database unavailable");
+    expect(repository.checkpoint).toHaveBeenCalledTimes(2);
   });
 });

@@ -92,7 +92,7 @@ function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
 export class ReceiverCollector {
   readonly state = new CollectorState();
   private cursor = new SnapshotCursor();
-  private readonly abortController = new AbortController();
+  private abortController = new AbortController();
   private loops: Promise<void>[] = [];
   private started = false;
   private lastPublishedHealth = "unknown";
@@ -120,34 +120,51 @@ export class ReceiverCollector {
     );
   }
 
+  applySettings(): void {
+    this.state.setCoordinates(
+      this.config.receiverLatitude,
+      this.config.receiverLongitude
+    );
+  }
+
   async start(): Promise<void> {
     if (this.started) return;
-    this.started = true;
-    const [checkpoint, persistedReceiver] = await Promise.all([
-      this.repository.checkpoint(),
-      this.repository.receiverInfo()
-    ]);
-    this.cursor = new SnapshotCursor(checkpoint ?? undefined);
-    if (persistedReceiver) {
-      this.state.setReceiverInfo({
-        latitude:
-          this.config.receiverLatitude ?? persistedReceiver.latitude,
-        longitude:
-          this.config.receiverLongitude ?? persistedReceiver.longitude,
-        version: persistedReceiver.version,
-        advertisedRefreshMs: persistedReceiver.advertisedRefreshMs
-      });
+    if (this.abortController.signal.aborted) {
+      this.abortController = new AbortController();
     }
+    this.started = true;
+    try {
+      const [checkpoint, persistedReceiver] = await Promise.all([
+        this.repository.checkpoint(),
+        this.repository.receiverInfo()
+      ]);
+      this.cursor = new SnapshotCursor(checkpoint ?? undefined);
+      if (persistedReceiver) {
+        this.state.setReceiverInfo({
+          latitude:
+            this.config.receiverLatitude ?? persistedReceiver.latitude,
+          longitude:
+            this.config.receiverLongitude ?? persistedReceiver.longitude,
+          version: persistedReceiver.version,
+          advertisedRefreshMs: persistedReceiver.advertisedRefreshMs
+        });
+      }
 
-    this.loops = [
-      this.aircraftLoop(),
-      this.receiverInfoLoop(),
-      this.statsLoop(),
-      this.healthLoop()
-    ];
+      this.loops = [
+        this.aircraftLoop(),
+        this.receiverInfoLoop(),
+        this.statsLoop(),
+        this.healthLoop()
+      ];
+    } catch (error) {
+      this.started = false;
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
+    if (!this.started) return;
+    this.started = false;
     this.abortController.abort();
     await Promise.allSettled(this.loops);
     this.loops = [];

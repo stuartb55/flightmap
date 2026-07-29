@@ -18,7 +18,8 @@ history indefinitely.
 - Local registration/type/operator enrichment from the readsb-compatible
   tar1090 aircraft database.
 - Daily PostgreSQL partitions, automated 30-day detail retention, indefinite
-  aircraft/day summaries, and a read-only system health view.
+  aircraft/day summaries, a system health view, and persistent in-app admin
+  settings.
 - One multi-architecture application image serving the UI, REST API, WebSocket,
   collector, and scheduled work; PostgreSQL stays private to Compose.
 
@@ -34,13 +35,10 @@ cp .env.example .env
 
 Edit `.env`:
 
-1. Set `RECEIVER_BASE_URL` to the receiver's `/data` directory.
-2. Replace `POSTGRES_PASSWORD` with a long random value.
-3. Put the same value in `DATABASE_URL`.
-4. For LAN access, bind `APP_BIND_ADDRESS` to the host's trusted LAN IP and
+1. Replace `POSTGRES_PASSWORD` with a long URL-safe random value.
+2. Replace `APP_ACCESS_TOKEN` with a different long random value.
+3. For LAN access, bind `APP_BIND_ADDRESS` to the host's trusted LAN IP and
    add the address/hostname users enter to `APP_ALLOWED_HOSTS`.
-5. Replace `APP_ACCESS_TOKEN` with a long random value (production startup
-   rejects an absent or placeholder token).
 
 Then:
 
@@ -49,19 +47,20 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Open `http://HOST:8080` and enter the access token if configured. PostgreSQL is
-not published on a host port. The app
-applies pending migrations before it becomes ready.
+Open `http://HOST:8080`, enter the access token, then open **Settings** and set
+the receiver data URL. Receiver, display, retention, alerting, and metadata
+options are saved in PostgreSQL and can be changed in the running app.
+PostgreSQL is not published on a host port. The app applies pending migrations
+before it becomes ready.
 
 ```sh
 curl --fail http://127.0.0.1:8080/health/ready
-curl --fail http://127.0.0.1:8080/api/v1/status
 docker compose logs --follow app
 ```
 
-Receiver coordinates are discovered from `receiver.json`; set both
-`RECEIVER_LAT` and `RECEIVER_LON` only as an override. Dates are persisted in UTC
-and displayed in `Europe/London` by default.
+Receiver coordinates are discovered from `receiver.json`; both can be
+overridden together in Settings. Dates are persisted in UTC and displayed in
+`Europe/London` by default.
 
 ## Development
 
@@ -123,7 +122,7 @@ generated aircraft.
 PORT=8081 node infra/fake-receiver/server.mjs
 ```
 
-Point `RECEIVER_BASE_URL` at `http://127.0.0.1:8081/data`. See
+Set the receiver data URL in Settings to `http://127.0.0.1:8081/data`. See
 [the fake receiver guide](infra/fake-receiver/README.md) for its control API and
 Compose testing profile.
 
@@ -142,6 +141,7 @@ The primary routes are:
   `POST /api/v1/alerts/dismiss`
 - `GET /api/v1/watchlist`, `PUT /api/v1/watchlist/:icao`, and
   `DELETE /api/v1/watchlist/:icao`
+- `GET /api/v1/settings` and `PATCH /api/v1/settings`
 - `WS /api/v1/live`
 
 Clients take a complete REST snapshot before applying ordered WebSocket deltas

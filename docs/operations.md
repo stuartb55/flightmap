@@ -29,19 +29,11 @@ cp .env.example .env
 
 Edit `.env` and set:
 
-- `RECEIVER_BASE_URL` to the directory containing the three JSON files.
-- A long random `POSTGRES_PASSWORD`.
-- The same password in `DATABASE_URL`.
+- A long URL-safe random `POSTGRES_PASSWORD`.
 - For LAN access, `APP_BIND_ADDRESS` to the trusted LAN address.
 - Every address or hostname users enter in `APP_ALLOWED_HOSTS` (without ports).
 - A long random `APP_ACCESS_TOKEN`. The token is exchanged for an HttpOnly,
   SameSite session cookie and is never stored in browser JavaScript.
-
-Receiver latitude/longitude normally come from `receiver.json`. Set both
-`RECEIVER_LAT` and `RECEIVER_LON` only when the receiver does
-not advertise correct coordinates.
-`RECEIVER_NAME` controls the receiver label, and `MAP_STYLE_URL` is injected
-safely into the served UI at runtime.
 
 Validate and start:
 
@@ -57,6 +49,12 @@ waits for PostgreSQL, applies all
 pending migrations under an advisory lock, then starts collection. A new
 installation may need up to a minute to build partitions and become ready.
 
+Sign in, open **Settings**, and configure the receiver data URL. Receiver
+latitude/longitude normally come from `receiver.json`; set both overrides only
+when it does not advertise correct coordinates. The same page controls the
+receiver label, map, polling, retention, alerts, metadata, and storage capacity.
+Those settings are persisted in PostgreSQL.
+
 ## Health and logs
 
 - `GET /health/live` confirms that the process event loop is serving requests.
@@ -71,7 +69,6 @@ Useful commands:
 ```sh
 curl --fail http://127.0.0.1:8080/health/live
 curl --fail http://127.0.0.1:8080/health/ready
-curl --fail http://127.0.0.1:8080/api/v1/status
 docker compose logs --since=15m app
 docker compose logs --since=15m db
 docker compose ps
@@ -92,7 +89,12 @@ The app remains available while the receiver is offline.
 
 ## Configuration changes
 
-After editing `.env`, recreate the app so Docker applies the environment:
+Changes saved on the Settings page take effect in the running server. Reload
+open browser tabs after changing map or display settings.
+
+The small `.env` file is reserved for container binding, host validation,
+access-token security, and the database password. After changing one of those
+boot-time values, recreate the app:
 
 ```sh
 docker compose up -d --force-recreate app
@@ -100,7 +102,7 @@ docker compose up -d --force-recreate app
 
 Changes to PostgreSQL credentials do not alter an already initialized database.
 To rotate credentials without replacing data, change the role password inside
-PostgreSQL first, then update both `POSTGRES_PASSWORD` and `DATABASE_URL`.
+PostgreSQL first, then update `POSTGRES_PASSWORD` in `.env`.
 
 ## Graceful stop and restart
 
@@ -118,8 +120,9 @@ snapshot transaction, and close sockets. PostgreSQL receives 60 seconds. Avoid
 Do not expose port 8080 to the public internet, a guest Wi-Fi network, or an
 untrusted reverse proxy. PostgreSQL has no published host port. Flightmap
 rejects unlisted Host and browser Origin values and cross-origin WebSocket
-upgrades. `APP_ALLOWED_ORIGINS` should only contain explicit trusted
-scheme/host/port origins when a same-host deployment is not possible.
+upgrades. A deployment that deliberately separates the browser and API origins
+must add an explicit `APP_ALLOWED_ORIGINS` value to `.env`; same-origin
+deployments should leave it unset.
 
 `APP_ACCESS_TOKEN` is required in production; development mode may omit it.
 Rotate it by changing `.env` and recreating the app; existing browser sessions
@@ -128,10 +131,9 @@ TLS, preserve the original Host header, and only proxy configured origins.
 Flightmap also applies fixed-window request/login/WebSocket rate limits, but
 these are safeguards rather than an internet-facing identity system.
 
-When `DATABASE_SSL=true`, certificate verification remains enabled. Set
-`DATABASE_SSL_CA_FILE` to a mounted private CA bundle when the server is not
-covered by the operating system trust store. Set
-`DATABASE_VOLUME_CAPACITY_BYTES` to expose database utilization in system
+Custom non-Compose deployments can supply `DATABASE_SSL=true` and a mounted
+`DATABASE_SSL_CA_FILE`; certificate verification remains enabled. Configure
+database volume capacity on the Settings page to expose utilization in system
 health.
 
 MapLibre attribution remains visible because the configured OpenFreeMap style

@@ -1,4 +1,6 @@
 import type {
+  AppSettings,
+  AppSettingsResponse,
   HistoryFilters,
   TrackResponse,
 } from '../types'
@@ -277,6 +279,17 @@ export const api = {
 
   status(signal?: AbortSignal) {
     return request<WireStatus>('/status', { signal }, statusResponseSchema).then(adaptStatus)
+  },
+
+  settings(signal?: AbortSignal) {
+    return request<AppSettingsResponse>('/settings', { signal })
+  },
+
+  updateSettings(settings: AppSettings) {
+    return request<AppSettingsResponse>('/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    })
   },
 }
 

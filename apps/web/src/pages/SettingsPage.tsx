@@ -1,0 +1,381 @@
+import {
+  Bell,
+  Database,
+  MapPinned,
+  RadioTower,
+  RefreshCw,
+  Save,
+  Server,
+} from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api } from '../lib/api'
+import type { AppSettings, AppSettingsResponse } from '../types'
+
+const MEBIBYTE = 1_048_576
+const GIBIBYTE = 1_073_741_824
+
+function requiredNumber(data: FormData, name: string): number {
+  return Number(data.get(name))
+}
+
+function optionalNumber(data: FormData, name: string): number | null {
+  const value = String(data.get(name) ?? '').trim()
+  return value === '' ? null : Number(value)
+}
+
+function buildSettings(data: FormData): AppSettings {
+  const capacityGiB = optionalNumber(data, 'databaseVolumeCapacityGiB')
+  return {
+    receiverBaseUrl: String(data.get('receiverBaseUrl') ?? ''),
+    receiverName: String(data.get('receiverName') ?? ''),
+    receiverLatitude: optionalNumber(data, 'receiverLatitude'),
+    receiverLongitude: optionalNumber(data, 'receiverLongitude'),
+    pollIntervalMs: requiredNumber(data, 'pollIntervalMs'),
+    receiverTimeoutMs: requiredNumber(data, 'receiverTimeoutMs'),
+    receiverInfoIntervalMs: requiredNumber(data, 'receiverInfoIntervalSeconds') * 1_000,
+    receiverStatsIntervalMs: requiredNumber(data, 'receiverStatsIntervalSeconds') * 1_000,
+    displayTimeZone: String(data.get('displayTimeZone') ?? ''),
+    mapStyleUrl: String(data.get('mapStyleUrl') ?? ''),
+    rangeRingsNm: String(data.get('rangeRingsNm') ?? '')
+      .split(',')
+      .map((value) => Number(value.trim())),
+    historyRetentionDays: requiredNumber(data, 'historyRetentionDays'),
+    sessionGapSeconds: requiredNumber(data, 'sessionGapSeconds'),
+    currentAircraftTtlSeconds: requiredNumber(data, 'currentAircraftTtlSeconds'),
+    firstSeenAlertsEnabled: data.get('firstSeenAlertsEnabled') === 'on',
+    firstSeenAlertBaselineHours: requiredNumber(data, 'firstSeenAlertBaselineHours'),
+    metadataUrl: String(data.get('metadataUrl') ?? ''),
+    metadataCheckIntervalMs: requiredNumber(data, 'metadataCheckIntervalHours') * 3_600_000,
+    metadataTimeoutMs: requiredNumber(data, 'metadataTimeoutSeconds') * 1_000,
+    metadataMinRows: requiredNumber(data, 'metadataMinRows'),
+    metadataMaxDownloadBytes: Math.round(requiredNumber(data, 'metadataMaxDownloadMiB') * MEBIBYTE),
+    metadataMaxUncompressedBytes: Math.round(
+      requiredNumber(data, 'metadataMaxUncompressedMiB') * MEBIBYTE,
+    ),
+    databaseVolumeCapacityBytes:
+      capacityGiB === null ? null : Math.round(capacityGiB * GIBIBYTE),
+    collectorEnabled: data.get('collectorEnabled') === 'on',
+    maintenanceEnabled: data.get('maintenanceEnabled') === 'on',
+    metadataUpdatesEnabled: data.get('metadataUpdatesEnabled') === 'on',
+  }
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="settings-field">
+      <span>
+        <strong>{label}</strong>
+        {hint ? <small>{hint}</small> : null}
+      </span>
+      {children}
+    </label>
+  )
+}
+
+function SettingsCard({
+  icon,
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ReactNode
+  eyebrow: string
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="settings-card">
+      <header>
+        <span className="settings-card-icon">{icon}</span>
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+      </header>
+      <div className="settings-card-body">{children}</div>
+    </section>
+  )
+}
+
+export function SettingsPage() {
+  const [response, setResponse] = useState<AppSettingsResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void api
+      .settings(controller.signal)
+      .then((result) => {
+        setResponse(result)
+        setError(null)
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : 'Settings could not be loaded')
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const result = await api.updateSettings(buildSettings(new FormData(event.currentTarget)))
+      setResponse(result)
+      setSaved(true)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Settings could not be saved')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const settings = response?.settings
+
+  return (
+    <div className="standard-page settings-page">
+      <header className="standard-page-header settings-header">
+        <div className="page-heading">
+          <span className="eyebrow">ADMINISTRATION</span>
+          <h1>Settings</h1>
+          <p>Configure this receiver and its data pipeline without recreating the containers.</p>
+        </div>
+        {response?.updatedAt ? (
+          <small>Last saved {new Date(response.updatedAt).toLocaleString('en-GB')}</small>
+        ) : null}
+      </header>
+
+      {loading ? (
+        <div className="settings-loading" role="status">
+          <RefreshCw size={20} className="spin" />
+          Loading settings…
+        </div>
+      ) : settings ? (
+        <form
+          className="settings-form"
+          key={response.updatedAt ?? 'defaults'}
+          onSubmit={(event) => void submit(event)}
+        >
+          {error ? <div className="settings-message error" role="alert">{error}</div> : null}
+          {saved ? (
+            <div className="settings-message saved" role="status">
+              Settings saved and applied. Reload open browser tabs to apply map and display changes.
+            </div>
+          ) : null}
+
+          <SettingsCard
+            icon={<RadioTower size={20} />}
+            eyebrow="SOURCE"
+            title="ADS-B receiver"
+            description="Where Flightmap collects readsb or dump1090 JSON data."
+          >
+            <Field label="Receiver name">
+              <input name="receiverName" defaultValue={settings.receiverName} required maxLength={100} />
+            </Field>
+            <Field label="Receiver data URL" hint="Directory containing aircraft.json, receiver.json, and stats.json">
+              <input name="receiverBaseUrl" type="url" defaultValue={settings.receiverBaseUrl} required />
+            </Field>
+            <div className="settings-field-pair">
+              <Field label="Latitude" hint="Leave both coordinates empty to discover them from receiver.json">
+                <input name="receiverLatitude" type="number" step="any" min={-90} max={90} defaultValue={settings.receiverLatitude ?? ''} />
+              </Field>
+              <Field label="Longitude">
+                <input name="receiverLongitude" type="number" step="any" min={-180} max={180} defaultValue={settings.receiverLongitude ?? ''} />
+              </Field>
+            </div>
+            <details className="settings-advanced">
+              <summary>Polling and timeout controls</summary>
+              <div className="settings-field-grid">
+                <Field label="Aircraft poll interval" hint="Milliseconds">
+                  <input name="pollIntervalMs" type="number" min={200} max={60_000} step={100} defaultValue={settings.pollIntervalMs} required />
+                </Field>
+                <Field label="Request timeout" hint="Milliseconds">
+                  <input name="receiverTimeoutMs" type="number" min={100} max={30_000} step={100} defaultValue={settings.receiverTimeoutMs} required />
+                </Field>
+                <Field label="Receiver info interval" hint="Seconds">
+                  <input name="receiverInfoIntervalSeconds" type="number" min={10} max={86_400} defaultValue={settings.receiverInfoIntervalMs / 1_000} required />
+                </Field>
+                <Field label="Statistics interval" hint="Seconds">
+                  <input name="receiverStatsIntervalSeconds" type="number" min={10} max={86_400} defaultValue={settings.receiverStatsIntervalMs / 1_000} required />
+                </Field>
+              </div>
+            </details>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<MapPinned size={20} />}
+            eyebrow="INTERFACE"
+            title="Map and display"
+            description="These values are embedded when a browser loads Flightmap."
+          >
+            <Field label="Display time zone" hint="IANA name, for example Europe/London">
+              <input name="displayTimeZone" defaultValue={settings.displayTimeZone} required />
+            </Field>
+            <Field label="Map style URL">
+              <input name="mapStyleUrl" type="url" defaultValue={settings.mapStyleUrl} required />
+            </Field>
+            <Field label="Range rings" hint="Nautical miles, comma-separated">
+              <input name="rangeRingsNm" defaultValue={settings.rangeRingsNm.join(', ')} required />
+            </Field>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Database size={20} />}
+            eyebrow="STORAGE"
+            title="Collection and retention"
+            description="Control detailed history, live expiry, and session boundaries."
+          >
+            <div className="settings-toggle-stack">
+              <label className="settings-toggle">
+                <span>
+                  <strong>Collect receiver data</strong>
+                  <small>Poll and store live aircraft, receiver information, and statistics.</small>
+                </span>
+                <input
+                  name="collectorEnabled"
+                  type="checkbox"
+                  defaultChecked={settings.collectorEnabled}
+                />
+              </label>
+              <label className="settings-toggle">
+                <span>
+                  <strong>Automatic maintenance</strong>
+                  <small>Create partitions and enforce detailed-history retention daily.</small>
+                </span>
+                <input
+                  name="maintenanceEnabled"
+                  type="checkbox"
+                  defaultChecked={settings.maintenanceEnabled}
+                />
+              </label>
+            </div>
+            <div className="settings-field-grid">
+              <Field label="Detailed history retention" hint="Days">
+                <input name="historyRetentionDays" type="number" min={1} max={365} defaultValue={settings.historyRetentionDays} required />
+              </Field>
+              <Field label="Session gap" hint="Seconds">
+                <input name="sessionGapSeconds" type="number" min={60} max={3_600} defaultValue={settings.sessionGapSeconds} required />
+              </Field>
+              <Field label="Live aircraft expiry" hint="Seconds">
+                <input name="currentAircraftTtlSeconds" type="number" min={15} max={3_600} defaultValue={settings.currentAircraftTtlSeconds} required />
+              </Field>
+              <Field label="Database volume capacity" hint="GiB; optional, used only for health reporting">
+                <input
+                  name="databaseVolumeCapacityGiB"
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  defaultValue={
+                    settings.databaseVolumeCapacityBytes === null
+                      ? ''
+                      : settings.databaseVolumeCapacityBytes / GIBIBYTE
+                  }
+                />
+              </Field>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Bell size={20} />}
+            eyebrow="ALERTING"
+            title="First-seen alerts"
+            description="Emergency and watchlist alerts remain enabled independently."
+          >
+            <label className="settings-toggle">
+              <span>
+                <strong>Alert on a receiver’s first sighting</strong>
+                <small>Creates an informational alert for a previously unseen ICAO address.</small>
+              </span>
+              <input
+                name="firstSeenAlertsEnabled"
+                type="checkbox"
+                defaultChecked={settings.firstSeenAlertsEnabled}
+              />
+            </label>
+            <Field label="New-install baseline" hint="Hours; avoids alerting for the initial population">
+              <input
+                name="firstSeenAlertBaselineHours"
+                type="number"
+                min={0}
+                max={720}
+                defaultValue={settings.firstSeenAlertBaselineHours}
+                required
+              />
+            </Field>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Server size={20} />}
+            eyebrow="LOOKUP DATA"
+            title="Aircraft metadata"
+            description="Source and validation limits for registration, type, and operator data."
+          >
+            <label className="settings-toggle">
+              <span>
+                <strong>Automatic metadata updates</strong>
+                <small>Check the configured source on the schedule below.</small>
+              </span>
+              <input
+                name="metadataUpdatesEnabled"
+                type="checkbox"
+                defaultChecked={settings.metadataUpdatesEnabled}
+              />
+            </label>
+            <Field label="Metadata URL">
+              <input name="metadataUrl" type="url" defaultValue={settings.metadataUrl} required />
+            </Field>
+            <div className="settings-field-grid">
+              <Field label="Update check interval" hint="Hours">
+                <input name="metadataCheckIntervalHours" type="number" min={1 / 60} max={720} step={1 / 60} defaultValue={settings.metadataCheckIntervalMs / 3_600_000} required />
+              </Field>
+              <Field label="Request timeout" hint="Seconds">
+                <input name="metadataTimeoutSeconds" type="number" min={1} max={300} defaultValue={settings.metadataTimeoutMs / 1_000} required />
+              </Field>
+              <Field label="Minimum valid rows">
+                <input name="metadataMinRows" type="number" min={1} max={10_000_000} defaultValue={settings.metadataMinRows} required />
+              </Field>
+              <Field label="Maximum download" hint="MiB">
+                <input name="metadataMaxDownloadMiB" type="number" min={1_000_000 / MEBIBYTE} max={500_000_000 / MEBIBYTE} step="any" defaultValue={settings.metadataMaxDownloadBytes / MEBIBYTE} required />
+              </Field>
+              <Field label="Maximum uncompressed data" hint="MiB">
+                <input name="metadataMaxUncompressedMiB" type="number" min={5_000_000 / MEBIBYTE} max={1_000_000_000 / MEBIBYTE} step="any" defaultValue={settings.metadataMaxUncompressedBytes / MEBIBYTE} required />
+              </Field>
+            </div>
+          </SettingsCard>
+
+          <div className="settings-save-bar">
+            <span>Container and security settings remain in <code>.env</code>.</span>
+            <button className="primary-button" type="submit" disabled={saving}>
+              <Save size={16} />
+              {saving ? 'Saving…' : 'Save settings'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="settings-loading error" role="alert">
+          {error ?? 'Settings could not be loaded'}
+        </div>
+      )}
+    </div>
+  )
+}

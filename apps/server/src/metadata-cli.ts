@@ -1,9 +1,10 @@
 import { loadConfig } from "./config.js";
 import { Database } from "./db/database.js";
 import { MetadataService } from "./services/metadata.js";
+import { AppSettingsService } from "./settings.js";
 
-const config = loadConfig();
-const database = new Database(config);
+const bootConfig = loadConfig();
+const database = new Database(bootConfig);
 const logger = {
   info: (object: unknown, message?: string) =>
     process.stdout.write(`${message ?? "info"} ${JSON.stringify(object)}\n`),
@@ -12,6 +13,9 @@ const logger = {
 };
 
 try {
+  const settings = new AppSettingsService(database);
+  await settings.load();
+  const config = settings.runtimeConfig(bootConfig);
   const service = new MetadataService(database, config, logger);
   const result = await service.refresh(true);
   process.stdout.write(`${JSON.stringify(result)}\n`);

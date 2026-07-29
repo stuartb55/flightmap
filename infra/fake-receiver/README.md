@@ -16,11 +16,8 @@ Or run the Compose testing profile without publishing another host port:
 docker compose --profile testing up -d fake-receiver
 ```
 
-When the app also runs in Compose, set:
-
-```dotenv
-RECEIVER_BASE_URL=http://fake-receiver:8081/data
-```
+When the app also runs in Compose, set the receiver data URL in Flightmap
+Settings to `http://fake-receiver:8081/data`.
 
 The control endpoint accepts JSON:
 

@@ -8,9 +8,13 @@ import { LiveHub } from "./realtime/live-hub.js";
 import { MaintenanceService } from "./services/maintenance.js";
 import { MetadataService } from "./services/metadata.js";
 import { StatusService } from "./services/status.js";
+import { AppSettingsService } from "./settings.js";
 
-const config = loadConfig();
-const database = new Database(config);
+const bootConfig = loadConfig();
+const database = new Database(bootConfig);
+const settings = new AppSettingsService(database);
+await settings.load();
+const config = settings.runtimeConfig(bootConfig);
 const repository = new FlightRepository(database, config);
 const hub = new LiveHub();
 const logger = pino({
@@ -41,15 +45,30 @@ const collector = new ReceiverCollector(
 );
 const maintenance = new MaintenanceService(
   database,
-  config.historyRetentionDays,
-  logger,
-  config.sessionGapSeconds
+  config,
+  logger
 );
 const metadata = new MetadataService(database, config, logger);
 const status = new StatusService(config, repository, collector.state);
+const applyRuntimeSettings = async (): Promise<void> => {
+  collector.applySettings();
+  if (config.collectorEnabled) await collector.start();
+  else await collector.stop();
+  if (config.maintenanceEnabled) maintenance.start();
+  else await maintenance.stop();
+  if (config.metadataUpdatesEnabled) metadata.start();
+  else await metadata.stop();
+};
 const app = await buildApp({
   config,
-  dependencies: { repository, collector, hub, status },
+  dependencies: {
+    repository,
+    collector,
+    hub,
+    status,
+    settings,
+    applyRuntimeSettings
+  },
   loggerInstance: logger
 });
 
@@ -79,9 +98,7 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 
 try {
   await app.listen({ host: config.host, port: config.port });
-  if (config.collectorEnabled) await collector.start();
-  if (config.maintenanceEnabled) maintenance.start();
-  if (config.metadataUpdatesEnabled) metadata.start();
+  await applyRuntimeSettings();
 } catch (error) {
   app.log.fatal({ error }, "Application startup failed");
   await shutdown("startup_error");

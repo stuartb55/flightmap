@@ -235,7 +235,7 @@ export class MetadataService {
   private running = false;
   private started = false;
   private activeRefresh: Promise<unknown> | null = null;
-  private readonly abortController = new AbortController();
+  private abortController = new AbortController();
 
   constructor(
     private readonly database: Database,
@@ -272,6 +272,11 @@ export class MetadataService {
   }> {
     if (this.running) throw new Error("Metadata refresh is already running");
     this.running = true;
+    const stopSignal = this.abortController.signal;
+    const requestSignal = AbortSignal.any([
+      AbortSignal.timeout(this.config.metadataTimeoutMs),
+      stopSignal
+    ]);
     try {
       const previous = await this.state();
       const headers = new Headers({ accept: "text/csv, application/gzip" });
@@ -281,10 +286,7 @@ export class MetadataService {
       }
       const response = await this.fetchImplementation(this.config.metadataUrl, {
         headers,
-        signal: AbortSignal.any([
-          AbortSignal.timeout(this.config.metadataTimeoutMs),
-          this.abortController.signal
-        ])
+        signal: requestSignal
       });
       if (response.status === 304) {
         await this.database.query(
@@ -326,12 +328,13 @@ export class MetadataService {
             this.config.metadataMaxDownloadBytes,
             "Metadata download"
           ),
-          createWriteStream(downloadPath, { flags: "wx", mode: 0o600 })
+          createWriteStream(downloadPath, { flags: "wx", mode: 0o600 }),
+          { signal: requestSignal }
         );
         rowCount = await this.replaceFromFile(downloadPath, {
           etag: response.headers.get("etag"),
           lastModified: response.headers.get("last-modified")
-        });
+        }, stopSignal);
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
@@ -342,7 +345,7 @@ export class MetadataService {
       return { changed: true, rowCount };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!this.abortController.signal.aborted) {
+      if (!stopSignal.aborted) {
         await this.recordFailure(message).catch(() => undefined);
       }
       throw error;
@@ -360,7 +363,8 @@ export class MetadataService {
 
   private async replaceFromFile(
     downloadPath: string,
-    headers: MetadataImportState
+    headers: MetadataImportState,
+    stopSignal: AbortSignal = this.abortController.signal
   ): Promise<number> {
     const file = await open(downloadPath, "r");
     const signature = Buffer.alloc(2);
@@ -398,8 +402,10 @@ export class MetadataService {
         "Uncompressed metadata"
       );
       const parsing = compressed
-        ? pipeline(source, createGunzip(), limiter, parser)
-        : pipeline(source, limiter, parser);
+        ? pipeline(source, createGunzip(), limiter, parser, {
+            signal: stopSignal
+          })
+        : pipeline(source, limiter, parser, { signal: stopSignal });
       void parsing.catch(() => undefined);
 
       let columns: Map<string, number> | null = null;
@@ -407,6 +413,7 @@ export class MetadataService {
       let batch: MetadataRecord[] = [];
       const insertBatch = async (): Promise<void> => {
         if (batch.length === 0) return;
+        stopSignal.throwIfAborted();
         const values = batch.map((row) => ({
           icao: row.icao,
           registration: row.registration,
@@ -439,6 +446,7 @@ export class MetadataService {
       };
       try {
         for await (const value of parser) {
+          stopSignal.throwIfAborted();
           const row = value as string[];
           if (!columns) {
             const detected = columnsFor(row);
@@ -524,6 +532,9 @@ export class MetadataService {
 
   start(): void {
     if (this.started) return;
+    if (this.abortController.signal.aborted) {
+      this.abortController = new AbortController();
+    }
     this.started = true;
     const schedule = async (): Promise<void> => {
       this.activeRefresh = this.refresh();

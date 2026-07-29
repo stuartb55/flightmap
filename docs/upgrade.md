@@ -30,7 +30,6 @@ pending migrations, collector recovery, and readiness. In a second terminal:
 
 ```sh
 curl --fail http://127.0.0.1:8080/health/ready
-curl --fail http://127.0.0.1:8080/api/v1/status
 ```
 
 Check that:
@@ -40,6 +39,24 @@ Check that:
 - the newest retained sample advances;
 - database and metadata statuses are healthy;
 - a browser reload receives the live REST snapshot and WebSocket deltas.
+
+## Upgrade to database-backed settings
+
+The release that introduces the Settings page creates an
+`application_settings` row with safe defaults. Before that first upgrade, note
+any receiver, display, polling, retention, first-seen alert, metadata, or
+database-capacity values customized in the old `.env`. After the app is ready,
+sign in and transfer those values to **Settings**, then remove the obsolete
+entries from `.env`. The new `.env.example` is the authoritative list of the
+five remaining deployment values.
+
+Subsequent upgrades retain these application settings in PostgreSQL. They are
+included in normal Flightmap database backups and restores.
+
+Compose continues to honor an existing custom `POSTGRES_DB`, `POSTGRES_USER`,
+or `DATABASE_URL` for upgrade compatibility. Keep those advanced overrides
+only when the installation intentionally differs from the standard database
+layout.
 
 ## Manual migration
 

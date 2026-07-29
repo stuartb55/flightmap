@@ -11,11 +11,15 @@ Automatic daily maintenance:
 - closes sessions with no positioned report for five minutes (the collector
   also sweeps these once per minute);
 - drops complete position partitions older than
-  `HISTORY_RETENTION_DAYS` (30 by default);
+  the detailed-history retention configured in Settings (30 days by default);
 - removes expired detailed sessions, alerts, and receiver samples;
 - preserves `aircraft_summary`, `daily_aircraft_summary`, metadata, and the
   watchlist indefinitely;
 - records the outcome in `maintenance_log`.
+
+Automatic maintenance can be paused and resumed from Settings. Leave it enabled
+for normal operation; disabling it also disables retention enforcement and
+upcoming-partition creation.
 
 Dropping a partition is intentionally used instead of deleting millions of
 individual position rows. The cutoff follows UTC partition boundaries, so the

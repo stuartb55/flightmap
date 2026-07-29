@@ -28,16 +28,15 @@ headroom for WAL, temporary queries, maintenance, metadata, and backups in
 progress.
 
 At sustained high aircraft counts, 40 GB is insufficient. Either provide a much
-larger SSD volume or reduce `HISTORY_RETENTION_DAYS`. The 250-aircraft test is a
-throughput acceptance case and does not imply that a 40 GB volume can retain 250
-aircraft continuously for 30 days.
+larger SSD volume or reduce detailed-history retention in Settings. The
+250-aircraft test is a throughput acceptance case and does not imply that a
+40 GB volume can retain 250 aircraft continuously for 30 days.
 
 ## Measure database use
 
 The system page and `GET /api/v1/status` expose total database use and retained
-bounds. Set `DATABASE_VOLUME_CAPACITY_BYTES` to the usable capacity of the
-PostgreSQL volume so the system page can also show utilization and degrade
-health at 90%. For a table breakdown:
+bounds. Set database volume capacity in Settings so the system page can also
+show utilization and degrade health at 90%. For a table breakdown:
 
 ```sh
 docker compose exec -T db sh -c \
@@ -78,7 +77,7 @@ turn routine pruning into an outage.
 
 If growth is unexpectedly high:
 
-1. confirm `HISTORY_RETENTION_DAYS`;
+1. confirm detailed-history retention in Settings;
 2. verify daily maintenance is succeeding;
 3. check for partitions older than the cutoff;
 4. measure the current average positioned-aircraft count;

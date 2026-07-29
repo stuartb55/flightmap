@@ -6,17 +6,9 @@ the [`csv` branch of tar1090-db](https://github.com/wiedehopf/tar1090-db/tree/cs
 the database format recommended by
 [readsb](https://github.com/wiedehopf/readsb/blob/dev/README.md).
 
-Default:
-
-```dotenv
-METADATA_URL=https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz
-METADATA_CHECK_INTERVAL_MS=604800000
-METADATA_TIMEOUT_MS=30000
-METADATA_MIN_ROWS=100000
-METADATA_MAX_DOWNLOAD_BYTES=50000000
-METADATA_MAX_UNCOMPRESSED_BYTES=250000000
-METADATA_UPDATES_ENABLED=true
-```
+The source URL, weekly check interval, request timeout, minimum row count, and
+compressed/uncompressed size limits are configured on the Settings page and
+persisted with the rest of the application settings.
 
 ## Update behavior
 
@@ -31,8 +23,8 @@ For a changed file, the updater:
 2. streams decompression and CSV parsing with a separate uncompressed-byte
    limit into a temporary staging table;
 3. normalizes ICAO identifiers to lowercase six-character hexadecimal values;
-4. rejects invalid rows and validates the resulting row count against
-   `METADATA_MIN_ROWS`;
+4. rejects invalid rows and validates the resulting row count against the
+   configured minimum;
 5. replaces `aircraft_metadata` in one database transaction;
 6. records source URL, validators, version/date, row count, and import time in
    `aircraft_metadata_import`.
@@ -42,8 +34,8 @@ The prior active metadata remains searchable, and the failure is exposed through
 the status API and structured logs.
 
 The source format is maintained outside this project and can change. Do not
-lower `METADATA_MIN_ROWS` merely to make a failed import pass; first inspect the
-file and parser expectations.
+lower the minimum row setting merely to make a failed import pass; first
+inspect the file and parser expectations.
 
 ## Manual refresh
 
@@ -62,18 +54,17 @@ docker compose run --rm app npm run metadata:refresh
 Then inspect:
 
 ```sh
-curl --fail http://127.0.0.1:8080/api/v1/status
 docker compose logs --since=15m app
 ```
 
-If the response is unchanged because the server returned `304`, that is a
-successful refresh check. To switch sources, update `METADATA_URL`, recreate the
-app container, and run a manual refresh. Use only a source compatible with the
-readsb/tar1090 CSV columns.
+Check the metadata card on the System page. An unchanged dataset after the
+server returned `304` is a successful refresh check. To switch sources, update
+the URL in Settings and run a manual refresh. Use only a source compatible with
+the readsb/tar1090 CSV columns.
 
 ## Offline installations
 
-Set `METADATA_UPDATES_ENABLED=false` when the host intentionally has no outbound
-access. Existing imported rows continue to work. A completely new offline
-installation starts with no registration/type/operator enrichment until a
-compatible source is made reachable and a refresh succeeds.
+Existing imported rows continue to work when the host has no outbound access.
+Disable automatic metadata updates in Settings to avoid repeated failed checks.
+A completely new offline installation starts with no registration/type/operator
+enrichment until a compatible source is made reachable and a refresh succeeds.

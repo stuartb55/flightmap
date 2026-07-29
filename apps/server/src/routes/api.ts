@@ -13,6 +13,7 @@ import type { FlightRepository } from "../db/repository.js";
 import type { ReceiverCollector } from "../ingestion/collector.js";
 import type { LiveHub } from "../realtime/live-hub.js";
 import type { StatusService } from "../services/status.js";
+import type { AppSettingsService } from "../settings.js";
 
 const uuidParamsSchema = z.object({ id: z.string().uuid() });
 const icaoParamsSchema = z.object({ icao: icaoSchema });
@@ -22,13 +23,22 @@ export type ApiDependencies = {
   collector: ReceiverCollector;
   hub: LiveHub;
   status: StatusService;
+  settings: AppSettingsService;
+  applyRuntimeSettings: () => Promise<void>;
 };
 
 export async function registerApiRoutes(
   app: FastifyInstance,
   dependencies: ApiDependencies
 ): Promise<void> {
-  const { repository, collector, hub, status } = dependencies;
+  const {
+    repository,
+    collector,
+    hub,
+    status,
+    settings,
+    applyRuntimeSettings
+  } = dependencies;
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -45,6 +55,14 @@ export async function registerApiRoutes(
   });
 
   app.get("/api/v1/status", async () => status.status());
+
+  app.get("/api/v1/settings", async () => settings.get());
+
+  app.patch("/api/v1/settings", async (request) => {
+    const response = await settings.update(request.body ?? {});
+    await applyRuntimeSettings();
+    return response;
+  });
 
   app.get("/api/v1/aircraft/live", async () => {
     // Capturing before the DB read can cause a harmless replayed upsert, but

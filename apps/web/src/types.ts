@@ -219,6 +219,40 @@ export interface SystemStatus {
   uptimeSeconds: number | null
 }
 
+export interface AppSettings {
+  receiverBaseUrl: string
+  receiverName: string
+  receiverLatitude: number | null
+  receiverLongitude: number | null
+  pollIntervalMs: number
+  receiverTimeoutMs: number
+  receiverInfoIntervalMs: number
+  receiverStatsIntervalMs: number
+  displayTimeZone: string
+  mapStyleUrl: string
+  rangeRingsNm: number[]
+  historyRetentionDays: number
+  sessionGapSeconds: number
+  currentAircraftTtlSeconds: number
+  firstSeenAlertsEnabled: boolean
+  firstSeenAlertBaselineHours: number
+  metadataUrl: string
+  metadataCheckIntervalMs: number
+  metadataTimeoutMs: number
+  metadataMinRows: number
+  metadataMaxDownloadBytes: number
+  metadataMaxUncompressedBytes: number
+  databaseVolumeCapacityBytes: number | null
+  collectorEnabled: boolean
+  maintenanceEnabled: boolean
+  metadataUpdatesEnabled: boolean
+}
+
+export interface AppSettingsResponse {
+  settings: AppSettings
+  updatedAt: string | null
+}
+
 export interface HistoryFilters {
   query: string
   from: string
