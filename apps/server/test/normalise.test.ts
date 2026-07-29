@@ -78,6 +78,28 @@ describe("receiver aircraft normalisation", () => {
       expected: { source: "mlat" }
     },
     {
+      name: "dump1090-fa ADS-B without an explicit type",
+      record: {
+        hex: "000005",
+        version: 0,
+        nac_p: 7,
+        sil: 2,
+        mlat: [],
+        tisb: []
+      },
+      expected: { source: "adsb" }
+    },
+    {
+      name: "MLAT fields before inferred ADS-B evidence",
+      record: {
+        hex: "000006",
+        version: 2,
+        mlat: ["lat", "lon"],
+        tisb: []
+      },
+      expected: { source: "mlat" }
+    },
+    {
       name: "stale",
       record: { hex: "000003", seen: 18 },
       expected: { stale: true }

@@ -49,6 +49,23 @@ function sourceFor(record: ReceiverAircraft): LiveAircraft["source"] {
   if (type === "mlat" || (record.mlat?.length ?? 0) > 0) return "mlat";
   if (type.startsWith("adsc")) return "adsc";
   if (type === "mode_s" || type === "mode_ac") return "mode_s";
+  // Some dump1090-fa payloads omit the readsb `type` field but retain
+  // indicators that can only have been decoded from ADS-B messages.
+  if (
+    [
+      record.version,
+      record.category,
+      record.nic,
+      record.nic_baro,
+      record.nac_p,
+      record.nac_v,
+      record.sil,
+      record.gva,
+      record.sda
+    ].some((value) => value !== null && value !== undefined)
+  ) {
+    return "adsb";
+  }
   return "unknown";
 }
 
