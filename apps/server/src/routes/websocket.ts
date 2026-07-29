@@ -29,7 +29,6 @@ export async function registerWebSocketRoute(
           request.headers.origin,
           request.headers.host
         ) ||
-        !security.authenticated(request) ||
         !connectionLimiter.consume(request.ip)
       ) {
         socket.close(1008, "WebSocket policy rejected");

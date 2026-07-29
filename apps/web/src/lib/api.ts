@@ -40,7 +40,6 @@ import type {
 import { dateTimeInputToIso } from './format'
 
 const API_ROOT = '/api/v1'
-export const AUTHENTICATION_REQUIRED_EVENT = 'flightmap:authentication-required'
 
 export class ApiError extends Error {
   readonly code: string
@@ -75,9 +74,6 @@ async function request<T>(
   })
 
   if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/auth/')) {
-      window.dispatchEvent(new Event(AUTHENTICATION_REQUIRED_EVENT))
-    }
     let body: ApiErrorBody = {}
     try {
       body = (await response.json()) as ApiErrorBody
@@ -121,21 +117,6 @@ function alertPage(includeDismissed: boolean, cursor?: string | null, signal?: A
 }
 
 export const api = {
-  authSession(signal?: AbortSignal) {
-    return request<{ required: boolean; authenticated: boolean }>('/auth/session', { signal })
-  },
-
-  login(token: string) {
-    return request<{ authenticated: boolean }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    })
-  },
-
-  logout() {
-    return request<void>('/auth/session', { method: 'DELETE' })
-  },
-
   live(signal?: AbortSignal) {
     return request<{
       sequence: number

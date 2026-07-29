@@ -3,15 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function openFlightmap(page: Page) {
   await page.goto('/')
-  const tokenInput = page.getByLabel('Access token')
   const appReady = page.getByRole('link', { name: 'Flightmap live dashboard' })
-  await expect(tokenInput.or(appReady)).toBeVisible()
-  if (await tokenInput.isVisible()) {
-    await tokenInput.fill(
-      process.env.FLIGHTMAP_E2E_TOKEN ?? 'flightmap-ci-access-token',
-    )
-    await page.getByRole('button', { name: 'Open flightmap' }).click()
-  }
   await expect(appReady).toBeVisible()
 }
 
@@ -30,7 +22,9 @@ test('loads live data and supports primary navigation', async ({ page }) => {
   await page.getByRole('link', { name: 'Settings' }).first().click()
   await expect(page).toHaveTitle('Settings · Flightmap')
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  const saveBar = page.locator('.settings-save-bar')
   await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
+  await expect(saveBar).toHaveCSS('position', 'static')
 })
 
 test('has no serious automated accessibility violations', async ({ page }) => {

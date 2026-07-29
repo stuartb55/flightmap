@@ -12,11 +12,6 @@ const commaSeparatedSchema = z
   .transform((value) =>
     [...new Set(value.split(",").map((part) => part.trim()).filter(Boolean))]
   );
-const optionalSecret = z.preprocess(
-  emptyToUndefined,
-  z.string().min(16).max(1024).optional()
-);
-
 const configSchema = z
   .object({
     NODE_ENV: z
@@ -29,8 +24,6 @@ const configSchema = z
       "localhost,127.0.0.1,[::1]"
     ),
     APP_ALLOWED_ORIGINS: commaSeparatedSchema.default(""),
-    APP_ACCESS_TOKEN: optionalSecret,
-    APP_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
@@ -80,18 +73,6 @@ const configSchema = z
       });
     }
     if (
-      config.NODE_ENV === "production" &&
-      (!config.APP_ACCESS_TOKEN ||
-        config.APP_ACCESS_TOKEN.includes("replace-with"))
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["APP_ACCESS_TOKEN"],
-        message:
-          "APP_ACCESS_TOKEN must be set to a unique secret in production"
-      });
-    }
-    if (
       config.APP_ALLOWED_HOSTS.includes("*") &&
       config.NODE_ENV === "production"
     ) {
@@ -110,8 +91,6 @@ type BootConfig = Readonly<{
   version: string;
   allowedHosts: readonly string[];
   allowedOrigins: readonly string[];
-  accessToken: string | null;
-  sessionHours: number;
   logLevel: string;
   databaseUrl: string;
   databasePoolMax: number;
@@ -140,8 +119,6 @@ export function loadConfig(
     version: config.APP_VERSION,
     allowedHosts: config.APP_ALLOWED_HOSTS,
     allowedOrigins: config.APP_ALLOWED_ORIGINS,
-    accessToken: config.APP_ACCESS_TOKEN ?? null,
-    sessionHours: config.APP_SESSION_HOURS,
     logLevel: config.LOG_LEVEL,
     databaseUrl: config.DATABASE_URL,
     databasePoolMax: config.DATABASE_POOL_MAX,

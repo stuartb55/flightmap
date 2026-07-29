@@ -139,7 +139,6 @@ button:disabled {
   background: var(--bg);
 }
 
-.auth-page,
 .fatal-error {
   display: grid;
   place-items: center;
@@ -150,59 +149,17 @@ button:disabled {
     var(--bg);
 }
 
-.auth-card,
 .fatal-error {
   text-align: left;
 }
 
-.auth-card {
-  display: grid;
-  gap: 14px;
-  width: min(100%, 390px);
-  padding: 30px;
-  border: 1px solid var(--line-bright);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.auth-card h1,
-.auth-card p,
 .fatal-error h1,
 .fatal-error p {
   margin: 0;
 }
 
-.auth-card > p,
 .fatal-error p {
   color: var(--muted-bright);
-}
-
-.auth-card label {
-  margin-top: 8px;
-  color: var(--muted-bright);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.auth-card input {
-  min-height: 44px;
-  padding: 0 12px;
-  color: var(--text);
-  border: 1px solid var(--line-bright);
-  border-radius: 7px;
-  background: var(--bg-raised);
-}
-
-.auth-mark {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.3);
-  border-radius: 50%;
-  background: var(--accent-dim);
 }
 
 .primary-button {
@@ -3110,7 +3067,7 @@ input[aria-invalid='true'] {
 /* Settings */
 
 .settings-page {
-  padding-bottom: 100px;
+  padding-bottom: 30px;
 }
 
 .settings-header {
@@ -3357,9 +3314,6 @@ input[aria-invalid='true'] {
 }
 
 .settings-save-bar {
-  position: sticky;
-  z-index: 20;
-  bottom: 14px;
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -3368,9 +3322,7 @@ input[aria-invalid='true'] {
   padding: 12px 14px;
   border: 1px solid var(--line-bright);
   border-radius: 10px;
-  background: rgba(12, 19, 25, 0.96);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
+  background: #0c1319;
 }
 
 .settings-save-bar > span {
@@ -3993,9 +3945,6 @@ input[aria-invalid='true'] {
     margin: 12px 10px 0;
   }
 
-  .settings-save-bar {
-    bottom: calc(var(--mobile-nav-height) + 8px);
-  }
 }
 
 @media (max-width: 480px) {

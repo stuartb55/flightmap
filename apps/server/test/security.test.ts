@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-import type {
-  FastifyReply,
-  FastifyRequest
-} from "fastify";
+import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import {
   FixedWindowRateLimiter,
@@ -13,9 +9,8 @@ function security() {
   return new RequestSecurity(
     loadConfig({
       NODE_ENV: "test",
-      APP_ALLOWED_HOSTS: "flightmap.local,127.0.0.1",
-      APP_ALLOWED_ORIGINS: "https://dashboard.example",
-      APP_ACCESS_TOKEN: "a-secure-test-access-token"
+      APP_ALLOWED_HOSTS: "flightmap.local,127.0.0.1,[::1]",
+      APP_ALLOWED_ORIGINS: "https://dashboard.example,not an origin"
     })
   );
 }
@@ -40,26 +35,14 @@ describe("request security", () => {
     expect(
       guard.originAllowed("https://evil.example", "flightmap.local:8080")
     ).toBe(false);
-  });
-
-  it("exchanges the access token for an HttpOnly strict session cookie", () => {
-    const guard = security();
-    const header = vi.fn();
-    guard.setSessionCookie(
-      { protocol: "https" } as FastifyRequest,
-      { header } as unknown as FastifyReply
-    );
-    const value = String(header.mock.calls[0]?.[1]);
-    expect(value).toContain("HttpOnly");
-    expect(value).toContain("SameSite=Strict");
-    expect(value).toContain("Secure");
-    const cookie = value.split(";", 1)[0];
+    expect(guard.hostAllowed("[::1]:8080")).toBe(true);
+    expect(guard.hostAllowed("[broken")).toBe(false);
+    expect(guard.hostAllowed(undefined)).toBe(false);
+    expect(guard.originAllowed(undefined, "flightmap.local:8080")).toBe(false);
     expect(
-      guard.authenticated({
-        headers: { cookie }
-      } as FastifyRequest)
-    ).toBe(true);
-    expect(guard.tokenMatches("wrong-token-value")).toBe(false);
+      guard.originAllowed("ftp://flightmap.local", "flightmap.local")
+    ).toBe(false);
+    expect(guard.originAllowed("not a URL", "flightmap.local")).toBe(false);
   });
 });
 
@@ -71,5 +54,13 @@ describe("fixed-window rate limiting", () => {
     expect(limiter.consume("client", 2)).toBe(false);
     expect(limiter.consume("other", 2)).toBe(true);
     expect(limiter.consume("client", 1_001)).toBe(true);
+  });
+
+  it("prunes expired client buckets after sustained key growth", () => {
+    const limiter = new FixedWindowRateLimiter(1, 1_000);
+    for (let index = 0; index <= 10_000; index += 1) {
+      expect(limiter.consume(`client-${index}`, 0)).toBe(true);
+    }
+    expect(limiter.consume("current-client", 1_001)).toBe(true);
   });
 });

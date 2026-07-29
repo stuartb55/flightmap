@@ -63,7 +63,7 @@ docker compose exec -T db sh -c \
 Filesystem free space:
 
 ```sh
-docker compose exec -T db df -h /var/lib/postgresql/data
+docker compose exec -T db sh -c 'df -h "$PGDATA"'
 ```
 
 Container-layer use shown by `docker system df` is not a substitute for checking

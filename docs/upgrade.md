@@ -46,9 +46,9 @@ The release that introduces the Settings page creates an
 `application_settings` row with safe defaults. Before that first upgrade, note
 any receiver, display, polling, retention, first-seen alert, metadata, or
 database-capacity values customized in the old `.env`. After the app is ready,
-sign in and transfer those values to **Settings**, then remove the obsolete
-entries from `.env`. The new `.env.example` is the authoritative list of the
-five remaining deployment values.
+transfer those values to **Settings**, then remove the obsolete entries from
+`.env`. The new `.env.example` is the authoritative list of the four remaining
+deployment values.
 
 Subsequent upgrades retain these application settings in PostgreSQL. They are
 included in normal Flightmap database backups and restores.
@@ -74,6 +74,16 @@ advisory lock. Do not edit `schema_migrations` by hand.
 
 Changing the `postgres:` major tag is not an application upgrade. A PostgreSQL
 data directory cannot simply be started by a different major version.
+Flightmap uses PostgreSQL 18's versioned data layout and mounts the named volume
+at `/var/lib/postgresql`; PostgreSQL 17 installations used the legacy
+`/var/lib/postgresql/data` layout.
+
+The PostgreSQL 18 Compose service uses a new `flightmap-db-v18` volume so that
+an existing PostgreSQL 17 `flightmap-db` volume remains intact. Before checking
+out this change, create and copy off-host a logical backup with the PostgreSQL
+17 stack. After starting PostgreSQL 18, restore that archive before resuming
+normal collection. Do not delete the PostgreSQL 17 volume until the restored
+database and a new PostgreSQL 18 backup have both been verified.
 
 For a major database upgrade:
 

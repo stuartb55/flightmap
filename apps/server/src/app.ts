@@ -6,7 +6,6 @@ import Fastify, {
   type FastifyInstance
 } from "fastify";
 import { ZodError } from "zod";
-import { z } from "zod";
 import type { Config } from "./config.js";
 import { RepositoryInputError } from "./db/repository.js";
 import { registerApiRoutes, type ApiDependencies } from "./routes/api.js";
@@ -46,7 +45,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const security = new RequestSecurity(options.config);
   const apiLimiter = new FixedWindowRateLimiter(300, 60_000);
   const mutationLimiter = new FixedWindowRateLimiter(90, 60_000);
-  const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const websocketLimiter = new FixedWindowRateLimiter(30, 60_000);
 
   app.addHook("onRequest", async (request, reply) => {
@@ -91,21 +89,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
           }
         });
       }
-    }
-    const publicApi =
-      request.url.startsWith("/api/v1/auth/") ||
-      request.url.startsWith("/health/");
-    if (
-      request.url.startsWith("/api/") &&
-      !publicApi &&
-      !security.authenticated(request)
-    ) {
-      return reply.code(401).send({
-        error: {
-          code: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required"
-        }
-      });
     }
   });
 
@@ -194,42 +177,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     });
   });
 
-  app.get("/api/v1/auth/session", async (request) => ({
-    required: security.authRequired,
-    authenticated: security.authenticated(request)
-  }));
-  app.post("/api/v1/auth/login", async (request, reply) => {
-    if (!loginLimiter.consume(request.ip)) {
-      reply.header("retry-after", "60");
-      return reply.code(429).send({
-        error: {
-          code: "RATE_LIMITED",
-          message: "Too many login attempts"
-        }
-      });
-    }
-    if (!security.authRequired) {
-      return { authenticated: true };
-    }
-    const body = z
-      .object({ token: z.string().min(1).max(1024) })
-      .parse(request.body);
-    if (!security.tokenMatches(body.token)) {
-      return reply.code(401).send({
-        error: {
-          code: "INVALID_ACCESS_TOKEN",
-          message: "The access token was not accepted"
-        }
-      });
-    }
-    security.setSessionCookie(request, reply);
-    return { authenticated: true };
-  });
-  app.delete("/api/v1/auth/session", async (request, reply) => {
-    security.clearSessionCookie(request, reply);
-    return reply.code(204).send();
-  });
-
   await registerWebSocketRoute(
     app,
     options.dependencies.hub,
@@ -250,8 +197,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
             mapStyleUrl: options.config.mapStyleUrl,
             receiverName: options.config.receiverName,
             displayTimeZone: options.config.displayTimeZone,
-            rangeRingsNm: options.config.rangeRingsNm,
-            authRequired: security.authRequired
+            rangeRingsNm: options.config.rangeRingsNm
           })
         )}"></head>`
       ) ?? null;

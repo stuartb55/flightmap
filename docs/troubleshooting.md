@@ -9,15 +9,10 @@ docker compose logs --since=15m db
 curl --show-error http://127.0.0.1:8080/health/ready
 ```
 
-If `APP_ACCESS_TOKEN` is configured, sign in for command-line API checks:
+The API requires no application credentials:
 
 ```sh
-curl --cookie-jar /tmp/flightmap-cookie \
-  --header 'Content-Type: application/json' \
-  --header 'Origin: http://127.0.0.1:8080' \
-  --data '{"token":"YOUR_APP_ACCESS_TOKEN"}' \
-  http://127.0.0.1:8080/api/v1/auth/login
-curl --cookie /tmp/flightmap-cookie http://127.0.0.1:8080/api/v1/status
+curl --fail http://127.0.0.1:8080/api/v1/status
 ```
 
 Logs are structured JSON. Preserve the timestamp, `errorCode`, and component
@@ -101,7 +96,7 @@ run `VACUUM FULL` on a nearly full volume; it needs additional space.
 If PostgreSQL has already stopped because the filesystem is full, free space
 outside the database first (old image layers or safely copied backups), start
 only `db`, then run maintenance. Do not remove files from
-`/var/lib/postgresql/data` by hand.
+the directory identified by `PGDATA` by hand.
 
 ## Metadata is stale
 

@@ -3,7 +3,6 @@ type RuntimeConfig = {
   receiverName?: string
   displayTimeZone?: string
   rangeRingsNm?: number[]
-  authRequired?: boolean
 }
 
 function runtimeConfig(): RuntimeConfig {
@@ -37,5 +36,3 @@ export const RANGE_RINGS_NM =
   runtime.rangeRingsNm?.filter(
     (distance) => Number.isFinite(distance) && distance > 0,
   ) ?? [10, 20, 40, 80]
-
-export const AUTH_REQUIRED = runtime.authRequired ?? false

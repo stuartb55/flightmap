@@ -1,8 +1,6 @@
 const baseUrl = process.env.FLIGHTMAP_LOAD_URL ?? "http://127.0.0.1:8080";
 const total = Number(process.env.LOAD_REQUESTS ?? 120);
 const concurrency = Number(process.env.LOAD_CONCURRENCY ?? 12);
-const token =
-  process.env.FLIGHTMAP_LOAD_TOKEN ?? "flightmap-ci-access-token";
 
 if (
   !Number.isInteger(total) ||
@@ -14,20 +12,6 @@ if (
   throw new Error("LOAD_REQUESTS and LOAD_CONCURRENCY must be positive integers");
 }
 
-const origin = new URL(baseUrl).origin;
-const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
-  method: "POST",
-  headers: {
-    accept: "application/json",
-    "content-type": "application/json",
-    origin
-  },
-  body: JSON.stringify({ token })
-});
-if (!login.ok) {
-  throw new Error(`Load smoke login failed with HTTP ${login.status}`);
-}
-const cookie = login.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
 const latencies = [];
 let failures = 0;
 let next = 0;
@@ -41,7 +25,7 @@ async function worker() {
     const started = performance.now();
     try {
       const response = await fetch(`${baseUrl}${path}`, {
-        headers: { accept: "application/json", cookie }
+        headers: { accept: "application/json" }
       });
       if (!response.ok) failures += 1;
       else await response.arrayBuffer();

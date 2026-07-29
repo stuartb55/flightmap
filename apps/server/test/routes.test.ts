@@ -131,45 +131,11 @@ describe("structured route errors", () => {
   });
 });
 
-describe("browser authentication", () => {
-  it("requires a valid access token and accepts the resulting session cookie", async () => {
-    const server = await buildApp({
-      config: loadConfig({
-        NODE_ENV: "test",
-        APP_ACCESS_TOKEN: "flightmap-route-test-token",
-        SERVE_WEB: "false"
-      }),
-      dependencies: dependencies() as never,
-      logger: false
-    });
-    expect((await server.inject("/api/v1/status")).statusCode).toBe(401);
-    expect(
-      (
-        await server.inject({
-          method: "POST",
-          url: "/api/v1/auth/login",
-          headers: { host: "localhost", origin: "http://localhost" },
-          payload: { token: "wrong-token-value" }
-        })
-      ).statusCode
-    ).toBe(401);
-    const login = await server.inject({
-      method: "POST",
-      url: "/api/v1/auth/login",
-      headers: { host: "localhost", origin: "http://localhost" },
-      payload: { token: "flightmap-route-test-token" }
-    });
-    expect(login.statusCode).toBe(200);
-    const cookie = login.headers["set-cookie"]?.split(";", 1)[0];
-    expect(cookie).toBeTruthy();
-    expect(
-      (
-        await server.inject({
-          url: "/api/v1/status",
-          headers: { cookie: cookie! }
-        })
-      ).statusCode
-    ).toBe(200);
+describe("request security", () => {
+  it("serves the API without authentication and exposes no login route", async () => {
+    const server = await app();
+    expect((await server.inject("/api/v1/status")).statusCode).toBe(200);
+    expect((await server.inject("/api/v1/auth/session")).statusCode).toBe(404);
     await server.close();
   });
 

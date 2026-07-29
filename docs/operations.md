@@ -32,8 +32,6 @@ Edit `.env` and set:
 - A long URL-safe random `POSTGRES_PASSWORD`.
 - For LAN access, `APP_BIND_ADDRESS` to the trusted LAN address.
 - Every address or hostname users enter in `APP_ALLOWED_HOSTS` (without ports).
-- A long random `APP_ACCESS_TOKEN`. The token is exchanged for an HttpOnly,
-  SameSite session cookie and is never stored in browser JavaScript.
 
 Validate and start:
 
@@ -49,7 +47,7 @@ waits for PostgreSQL, applies all
 pending migrations under an advisory lock, then starts collection. A new
 installation may need up to a minute to build partitions and become ready.
 
-Sign in, open **Settings**, and configure the receiver data URL. Receiver
+Open **Settings** and configure the receiver data URL. Receiver
 latitude/longitude normally come from `receiver.json`; set both overrides only
 when it does not advertise correct coordinates. The same page controls the
 receiver label, map, polling, retention, alerts, metadata, and storage capacity.
@@ -92,9 +90,9 @@ The app remains available while the receiver is offline.
 Changes saved on the Settings page take effect in the running server. Reload
 open browser tabs after changing map or display settings.
 
-The small `.env` file is reserved for container binding, host validation,
-access-token security, and the database password. After changing one of those
-boot-time values, recreate the app:
+The small `.env` file is reserved for container binding, host/origin validation,
+and the database password. After changing one of those boot-time values,
+recreate the app:
 
 ```sh
 docker compose up -d --force-recreate app
@@ -124,12 +122,12 @@ upgrades. A deployment that deliberately separates the browser and API origins
 must add an explicit `APP_ALLOWED_ORIGINS` value to `.env`; same-origin
 deployments should leave it unset.
 
-`APP_ACCESS_TOKEN` is required in production; development mode may omit it.
-Rotate it by changing `.env` and recreating the app; existing browser sessions
-are invalidated immediately. A reverse proxy should terminate
-TLS, preserve the original Host header, and only proxy configured origins.
-Flightmap also applies fixed-window request/login/WebSocket rate limits, but
-these are safeguards rather than an internet-facing identity system.
+Flightmap intentionally has no built-in authentication. Anyone who can reach
+the configured application address can view data and change settings. A reverse
+proxy should terminate TLS, preserve the original Host header, only proxy
+configured origins, and provide authentication if remote or untrusted-network
+access is required. Flightmap also applies fixed-window HTTP and WebSocket rate
+limits, but these are safeguards rather than an identity system.
 
 Custom non-Compose deployments can supply `DATABASE_SSL=true` and a mounted
 `DATABASE_SSL_CA_FILE`; certificate verification remains enabled. Configure

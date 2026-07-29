@@ -1,8 +1,8 @@
 # Backup and restore
 
-PostgreSQL data lives in the named Docker volume `flightmap-db`. A volume is not
-a backup: accidental deletion, filesystem corruption, and host failure affect
-it too. Keep versioned database dumps on separate storage.
+PostgreSQL data lives in the named Docker volume `flightmap-db-v18`. A volume is
+not a backup: accidental deletion, filesystem corruption, and host failure
+affect it too. Keep versioned database dumps on separate storage.
 
 ## Create a logical backup
 

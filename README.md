@@ -36,8 +36,7 @@ cp .env.example .env
 Edit `.env`:
 
 1. Replace `POSTGRES_PASSWORD` with a long URL-safe random value.
-2. Replace `APP_ACCESS_TOKEN` with a different long random value.
-3. For LAN access, bind `APP_BIND_ADDRESS` to the host's trusted LAN IP and
+2. For LAN access, bind `APP_BIND_ADDRESS` to the host's trusted LAN IP and
    add the address/hostname users enter to `APP_ALLOWED_HOSTS`.
 
 Then:
@@ -47,11 +46,10 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Open `http://HOST:8080`, enter the access token, then open **Settings** and set
-the receiver data URL. Receiver, display, retention, alerting, and metadata
-options are saved in PostgreSQL and can be changed in the running app.
-PostgreSQL is not published on a host port. The app applies pending migrations
-before it becomes ready.
+Open `http://HOST:8080`, then open **Settings** and set the receiver data URL.
+Receiver, display, retention, alerting, and metadata options are saved in
+PostgreSQL and can be changed in the running app. PostgreSQL is not published
+on a host port. The app applies pending migrations before it becomes ready.
 
 ```sh
 curl --fail http://127.0.0.1:8080/health/ready
@@ -159,8 +157,7 @@ unavailable values are null.
 - [Upgrade and rollback](docs/upgrade.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
-Flightmap supports an optional access-token login backed by an HttpOnly,
-SameSite session cookie, strict host/origin checks, request rate limits, and a
-restrictive browser security policy. Keep port 8080 on a trusted LAN and do not
-expose it directly to the internet; use an authenticated TLS reverse proxy for
-remote access.
+Flightmap has no built-in authentication. It retains strict host/origin checks,
+request rate limits, and a restrictive browser security policy. Keep port 8080
+on a trusted LAN and do not expose it directly to the internet; use an
+authenticated TLS reverse proxy for remote access.

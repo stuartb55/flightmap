@@ -24,10 +24,7 @@ const logger = pino({
       "req.headers.authorization",
       "req.headers.cookie",
       "request.headers.authorization",
-      "request.headers.cookie",
-      "token",
-      "accessToken",
-      "config.accessToken"
+      "request.headers.cookie"
     ],
     censor: "[Redacted]"
   },

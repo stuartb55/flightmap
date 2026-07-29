@@ -1,7 +1,5 @@
-import { Activity, Bell, Clock3, LogOut, Map, RadioTower, Settings2 } from 'lucide-react'
+import { Activity, Bell, Clock3, Map, RadioTower, Settings2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
-import { AUTH_REQUIRED } from '../config'
-import { api } from '../lib/api'
 import { NavLink, useLocation } from '../lib/router'
 import { useLive } from '../state/LiveContext'
 
@@ -63,17 +61,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <small>{receiverState}</small>
             </span>
           </div>
-          {AUTH_REQUIRED ? (
-            <button
-              type="button"
-              className="icon-button"
-              title="Sign out"
-              aria-label="Sign out"
-              onClick={() => void api.logout().finally(() => window.location.reload())}
-            >
-              <LogOut size={16} aria-hidden="true" />
-            </button>
-          ) : null}
         </div>
       </header>
 
