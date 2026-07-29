@@ -11,6 +11,7 @@ import { LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
+import { manchesterWaypointData } from './manchester-waypoints'
 
 export interface RadarMapHandle {
   fitAircraft: () => void
@@ -31,6 +32,7 @@ interface Props {
 const AIRCRAFT_SOURCE = 'live-aircraft'
 const RECEIVER_SOURCE = 'receiver'
 const RINGS_SOURCE = 'range-rings'
+const MANCHESTER_WAYPOINT_SOURCE = 'manchester-waypoints'
 const TRACK_SOURCE = 'history-tracks'
 const REPLAY_SOURCE = 'replay-aircraft'
 
@@ -440,6 +442,64 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
+      map.addSource(MANCHESTER_WAYPOINT_SOURCE, {
+        type: 'geojson',
+        data: manchesterWaypointData(),
+      })
+      map.addLayer({
+        id: 'manchester-waypoint-markers',
+        type: 'circle',
+        source: MANCHESTER_WAYPOINT_SOURCE,
+        minzoom: 6,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3.2, 10, 4.5],
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'arrival',
+            '#f2b85e',
+            '#58d5b1',
+          ],
+          'circle-opacity': 0.16,
+          'circle-stroke-color': [
+            'match',
+            ['get', 'kind'],
+            'arrival',
+            '#ffd287',
+            '#7ce8c9',
+          ],
+          'circle-stroke-opacity': 0.9,
+          'circle-stroke-width': 1.4,
+        },
+      })
+      map.addLayer({
+        id: 'manchester-waypoint-labels',
+        type: 'symbol',
+        source: MANCHESTER_WAYPOINT_SOURCE,
+        minzoom: 6.4,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 11,
+          'text-letter-spacing': 0.08,
+          'text-offset': [0.65, 0.55],
+          'text-anchor': 'top-left',
+          'text-allow-overlap': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': [
+            'match',
+            ['get', 'kind'],
+            'arrival',
+            '#ffd287',
+            '#7ce8c9',
+          ],
+          'text-halo-color': '#071014',
+          'text-halo-width': 1.2,
+          'text-opacity': 0.88,
+        },
+      })
+
       map.addSource(TRACK_SOURCE, { type: 'geojson', data: trackData(tracksRef.current) })
       map.addLayer({
         id: 'history-track-shadow',
@@ -671,8 +731,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       <div
         ref={containerRef}
         className="radar-map-canvas"
-        role="img"
-        aria-label="Interactive aircraft radar map. Use the adjacent controls to zoom and centre the view."
+        role="region"
+        aria-label="Interactive aircraft radar map with Manchester arrival and departure fixes. Use the adjacent controls to zoom and centre the view."
       />
       <div className="map-controls" aria-label="Map controls">
         <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
@@ -688,13 +748,19 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <Maximize2 size={17} />
         </button>
       </div>
-      <div className="map-legend" aria-label="Altitude colour legend">
-        <span>GND</span>
-        <i />
-        <span>10k</span>
-        <span>20k</span>
-        <span>30k</span>
-        <span>40k+</span>
+      <div className="map-legend" aria-label="Map legend">
+        <div className="map-altitude-scale" aria-label="Altitude colour scale">
+          <span>GND</span>
+          <i />
+          <span>10k</span>
+          <span>20k</span>
+          <span>30k</span>
+          <span>40k+</span>
+        </div>
+        <div className="map-waypoint-key">
+          <span><i className="arrival" />Arrival fix</span>
+          <span><i className="departure" />Departure fix</span>
+        </div>
       </div>
       {mapError ? (
         <div className="map-error" role="status">
