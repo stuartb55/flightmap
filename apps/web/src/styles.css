@@ -957,9 +957,6 @@ button:disabled {
   z-index: 3;
   right: 14px;
   bottom: 28px;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 3px;
   width: 250px;
   padding: 9px 11px 8px;
   color: #8c9ba6;
@@ -972,7 +969,13 @@ button:disabled {
   backdrop-filter: blur(10px);
 }
 
-.map-legend i {
+.map-altitude-scale {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+}
+
+.map-altitude-scale > i {
   grid-column: 1 / -1;
   grid-row: 1;
   height: 3px;
@@ -980,8 +983,41 @@ button:disabled {
   background: linear-gradient(90deg, #aeb9c3, #67dda9, #52d5df, #5a9ff5, #a987f0, #e57bd4, #ff7684);
 }
 
-.map-legend span {
+.map-altitude-scale > span {
   grid-row: 2;
+}
+
+.map-waypoint-key {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(53, 70, 82, 0.52);
+}
+
+.map-waypoint-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.map-waypoint-key i {
+  width: 7px;
+  height: 7px;
+  border: 1px solid;
+  border-radius: 50%;
+}
+
+.map-waypoint-key i.arrival {
+  border-color: #ffd287;
+  background: rgba(242, 184, 94, 0.16);
+}
+
+.map-waypoint-key i.departure {
+  border-color: #7ce8c9;
+  background: rgba(88, 213, 177, 0.16);
 }
 
 .map-error {
