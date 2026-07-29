@@ -1,0 +1,135 @@
+name: flightmap
+
+services:
+  db:
+    image: postgres:17-bookworm@sha256:4f736ae292687621d4dbe0d499ffd024a36bd2ee7d8ca6f2ccd4c800f047b394
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flightmap}
+      POSTGRES_USER: ${POSTGRES_USER:-flightmap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replace-with-a-long-random-password}
+      POSTGRES_INITDB_ARGS: --data-checksums
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - flightmap-db:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend
+    shm_size: 256mb
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready --username=\"$${POSTGRES_USER}\" --dbname=\"$${POSTGRES_DB}\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 60s
+
+  app:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_PORT: ${APP_PORT:-8080}
+      APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
+      APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:-}
+      APP_SESSION_HOURS: ${APP_SESSION_HOURS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DISPLAY_TIME_ZONE: ${DISPLAY_TIME_ZONE:-Europe/London}
+      MAP_STYLE_URL: ${MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/dark}
+      RECEIVER_NAME: ${RECEIVER_NAME:-Home receiver}
+      RANGE_RINGS_NM: ${RANGE_RINGS_NM:-5,10,25,50,100}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://flightmap:replace-with-a-long-random-password@db:5432/flightmap}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-20}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      DATABASE_SSL_CA_FILE: ${DATABASE_SSL_CA_FILE:-}
+      DATABASE_VOLUME_CAPACITY_BYTES: ${DATABASE_VOLUME_CAPACITY_BYTES:-}
+      DATABASE_CONNECTION_TIMEOUT_MS: ${DATABASE_CONNECTION_TIMEOUT_MS:-5000}
+      DATABASE_STATEMENT_TIMEOUT_MS: ${DATABASE_STATEMENT_TIMEOUT_MS:-60000}
+      RECEIVER_BASE_URL: ${RECEIVER_BASE_URL:-http://192.168.1.118:81/data}
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-1000}
+      RECEIVER_TIMEOUT_MS: ${RECEIVER_TIMEOUT_MS:-800}
+      RECEIVER_INFO_INTERVAL_MS: ${RECEIVER_INFO_INTERVAL_MS:-300000}
+      RECEIVER_STATS_INTERVAL_MS: ${RECEIVER_STATS_INTERVAL_MS:-60000}
+      RECEIVER_LAT: ${RECEIVER_LAT:-}
+      RECEIVER_LON: ${RECEIVER_LON:-}
+      HISTORY_RETENTION_DAYS: ${HISTORY_RETENTION_DAYS:-30}
+      SESSION_GAP_SECONDS: ${SESSION_GAP_SECONDS:-300}
+      CURRENT_AIRCRAFT_TTL_SECONDS: ${CURRENT_AIRCRAFT_TTL_SECONDS:-60}
+      FIRST_SEEN_ALERTS_ENABLED: ${FIRST_SEEN_ALERTS_ENABLED:-true}
+      FIRST_SEEN_ALERT_BASELINE_HOURS: ${FIRST_SEEN_ALERT_BASELINE_HOURS:-24}
+      MAINTENANCE_ENABLED: ${MAINTENANCE_ENABLED:-true}
+      METADATA_URL: ${METADATA_URL:-https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz}
+      METADATA_CHECK_INTERVAL_MS: ${METADATA_CHECK_INTERVAL_MS:-604800000}
+      METADATA_TIMEOUT_MS: ${METADATA_TIMEOUT_MS:-30000}
+      METADATA_MIN_ROWS: ${METADATA_MIN_ROWS:-100000}
+      METADATA_MAX_DOWNLOAD_BYTES: ${METADATA_MAX_DOWNLOAD_BYTES:-50000000}
+      METADATA_MAX_UNCOMPRESSED_BYTES: ${METADATA_MAX_UNCOMPRESSED_BYTES:-250000000}
+      METADATA_UPDATES_ENABLED: ${METADATA_UPDATES_ENABLED:-true}
+      WEB_DIST_DIR: /app/apps/web/dist
+      SERVE_WEB: "true"
+      COLLECTOR_ENABLED: "true"
+      TZ: UTC
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:${APP_PORT:-8080}"
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "infra/healthcheck.mjs", "ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    stop_grace_period: 30s
+
+  fake-receiver:
+    profiles: ["testing"]
+    build:
+      context: ./infra/fake-receiver
+    environment:
+      PORT: ${FAKE_RECEIVER_PORT:-8081}
+      RECEIVER_LAT: ${FAKE_RECEIVER_LAT:-53.61}
+      RECEIVER_LON: ${FAKE_RECEIVER_LON:--2.31}
+      AIRCRAFT_COUNT: ${FAKE_RECEIVER_AIRCRAFT_COUNT:-3}
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  backend:
+    internal: false
+
+volumes:
+  flightmap-db:

@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+*.log
+*.dump
+*.dump.sha256
+backups
+docs
+plan.md
+.DS_Store

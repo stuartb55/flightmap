@@ -1,0 +1,40 @@
+{
+  "name": "flightmap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LAN-only ADS-B live map and flight history",
+  "engines": {
+    "node": ">=24.0.0 <25.0.0",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c cyan,magenta \"npm run dev -w @flightmap/server\" \"npm run dev -w @flightmap/web\"",
+    "build": "npm run build -w @flightmap/shared && npm run build -w @flightmap/web && npm run build -w @flightmap/server",
+    "start": "npm run start -w @flightmap/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "test:load": "node infra/scripts/load-smoke.mjs",
+    "db:migrate": "npm run db:migrate -w @flightmap/server",
+    "db:maintenance": "npm run db:maintenance -w @flightmap/server",
+    "metadata:refresh": "npm run metadata:refresh -w @flightmap/server"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.65.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "timezone": "Europe/London",
+  "schedule": ["before 6am on Monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Keep every application runtime on Node.js 24",
+      "matchDatasources": ["docker", "node-version"],
+      "matchPackageNames": ["node"],
+      "allowedVersions": "/^24(?:\\.|-|$)/"
+    },
+    {
+      "description": "Group non-major npm dependency updates",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "npm non-major dependencies"
+    },
+    {
+      "description": "Group Docker digest refreshes",
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "Docker image digests"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    }
+  ]
+}

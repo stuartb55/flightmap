@@ -1,0 +1,687 @@
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  CalendarClock,
+  Check,
+  ChevronRight,
+  CircleStop,
+  Clock3,
+  Database,
+  FastForward,
+  MapPinned,
+  Pause,
+  Play,
+  Search,
+  SlidersHorizontal,
+} from 'lucide-react'
+import { RadarMap } from '../components/RadarMap'
+import { api } from '../lib/api'
+import { useLocation } from '../lib/router'
+import {
+  dateTimeInputToIso,
+  formatAltitude,
+  formatDate,
+  formatDateTimeInput,
+  formatDistance,
+  formatDuration,
+  formatTime,
+} from '../lib/format'
+import type {
+  HistoricalSummary,
+  HistoryFilters,
+  SessionSummary,
+  TrackResponse,
+} from '../types'
+
+const SPEEDS = [1, 5, 20, 60] as const
+type Resolution = 'auto' | '1s' | '5s' | '15s' | '60s'
+
+function defaultFilters(query = ''): HistoryFilters {
+  const now = new Date()
+  return {
+    query,
+    from: formatDateTimeInput(new Date(now.getTime() - 6 * 60 * 60_000)),
+    to: formatDateTimeInput(now),
+    alert: '',
+  }
+}
+
+function filtersFromSearch(search: string): HistoryFilters {
+  const params = new URLSearchParams(search)
+  const defaults = defaultFilters(params.get('aircraft') ?? '')
+  const alert = params.get('alert')
+  return {
+    query: params.get('q') ?? defaults.query,
+    from: params.get('from') ?? defaults.from,
+    to: params.get('to') ?? defaults.to,
+    alert: ['emergency_squawk', 'emergency_state', 'first_seen', 'watchlist'].includes(alert ?? '')
+      ? (alert as HistoryFilters['alert'])
+      : '',
+  }
+}
+
+function filtersSearch(filters: HistoryFilters): string {
+  const params = new URLSearchParams()
+  if (filters.query.trim()) params.set('q', filters.query.trim())
+  if (filters.from) params.set('from', filters.from)
+  if (filters.to) params.set('to', filters.to)
+  if (filters.alert) params.set('alert', filters.alert)
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export function shouldShowSummarySection(
+  visibleSummaryCount: number,
+  nextCursor: string | null,
+): boolean {
+  return visibleSummaryCount > 0 || nextCursor !== null
+}
+
+function SessionCard({
+  session,
+  selected,
+  loading,
+  onToggle,
+}: {
+  session: SessionSummary
+  selected: boolean
+  loading: boolean
+  onToggle: () => void
+}) {
+  const label = session.callsigns[0] || session.registration || session.icao.toUpperCase()
+  return (
+    <article className={`session-card ${selected ? 'selected' : ''}`}>
+      <button type="button" onClick={onToggle} disabled={!session.hasDetailedTrack || loading}>
+        <span className="session-select" aria-hidden="true">
+          {loading ? <span className="mini-spinner" /> : selected ? <Check size={13} /> : null}
+        </span>
+        <span className="session-main">
+          <span className="session-title">
+            <strong>{label}</strong>
+            <small>{session.registration || session.icao.toUpperCase()}</small>
+            {session.alertKinds.length ? <span className="alert-tag">{session.alertKinds[0]?.replace('_', ' ')}</span> : null}
+          </span>
+          <span className="session-time">
+            <span>{formatTime(session.startedAt)}</span>
+            <i />
+            <span>{session.endedAt ? formatTime(session.endedAt) : 'Active'}</span>
+            <small>{formatDuration(session.startedAt, session.endedAt)}</small>
+          </span>
+          <span className="session-stats">
+            <span><small>Altitude</small>{formatAltitude(session.maximumAltitudeFt)}</span>
+            <span><small>Max speed</small>{session.maximumSpeedKt == null ? '—' : `${Math.round(session.maximumSpeedKt)} kt`}</span>
+            <span><small>Closest</small>{formatDistance(session.closestDistanceNm)}</span>
+            <span><small>Samples</small>{session.sampleCount.toLocaleString('en-GB')}</span>
+          </span>
+          {!session.hasDetailedTrack ? (
+            <span className="expired-track">
+              <Database size={13} /> Detailed track expired · summary retained
+            </span>
+          ) : null}
+        </span>
+        <ChevronRight size={16} className="session-chevron" />
+      </button>
+    </article>
+  )
+}
+
+function SummaryCard({ summary }: { summary: HistoricalSummary }) {
+  return (
+    <article className="summary-card">
+      <div>
+        <Database size={15} />
+        <span>
+          <strong>{summary.callsigns[0] || summary.registration || summary.icao.toUpperCase()}</strong>
+          <small>{summary.registration || summary.icao.toUpperCase()} · {formatDate(summary.date)}</small>
+        </span>
+      </div>
+      <dl>
+        <div><dt>Observations</dt><dd>{summary.observationCount.toLocaleString('en-GB')}</dd></div>
+        <div><dt>Sessions</dt><dd>{summary.sessionCount}</dd></div>
+        <div><dt>Highest</dt><dd>{formatAltitude(summary.maximumAltitudeFt)}</dd></div>
+        <div><dt>Closest</dt><dd>{formatDistance(summary.closestDistanceNm)}</dd></div>
+      </dl>
+      <p>
+        {summary.hasDetailedTrack
+          ? 'Daily summary · narrow the date range to select detailed tracks'
+          : 'Summary retained · one-second track no longer available'}
+      </p>
+    </article>
+  )
+}
+
+export function HistoryPage() {
+  const { search: routeSearch, navigate } = useLocation()
+  const [filters, setFilters] = useState<HistoryFilters>(() =>
+    filtersFromSearch(routeSearch),
+  )
+  const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(filters)
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [summaries, setSummaries] = useState<HistoricalSummary[]>([])
+  const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null)
+  const [summaryNextCursor, setSummaryNextCursor] = useState<string | null>(null)
+  const [tracks, setTracks] = useState<Record<string, TrackResponse>>({})
+  const [trackLoading, setTrackLoading] = useState<Set<string>>(new Set())
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadingMoreSummaries, setLoadingMoreSummaries] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [trackError, setTrackError] = useState<string | null>(null)
+  const [searchNotice, setSearchNotice] = useState<string | null>(null)
+  const [resolution, setResolution] = useState<Resolution>('auto')
+  const [replayTime, setReplayTime] = useState<number | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
+  const [follow, setFollow] = useState(false)
+  const animationRef = useRef<number | null>(null)
+  const lastFrameRef = useRef<number | null>(null)
+  const searchGenerationRef = useRef(0)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const wideAppliedRange = useMemo(() => {
+    try {
+      return (
+        Date.parse(dateTimeInputToIso(appliedFilters.to)) -
+          Date.parse(dateTimeInputToIso(appliedFilters.from)) >
+        32 * 86_400_000
+      )
+    } catch {
+      return false
+    }
+  }, [appliedFilters.from, appliedFilters.to])
+
+  const search = useCallback(async (nextFilters: HistoryFilters) => {
+    const generation = ++searchGenerationRef.current
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+    setSessionError(null)
+    setSummaryError(null)
+    setTrackError(null)
+    setSearchNotice(null)
+    let from: string
+    let to: string
+    try {
+      from = dateTimeInputToIso(nextFilters.from)
+      to = dateTimeInputToIso(nextFilters.to)
+      if (Date.parse(from) > Date.parse(to)) throw new Error('The start must be before the end.')
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'Enter a valid range.'
+      setSessionError(message)
+      setSummaryError(message)
+      setSessionLoading(false)
+      setSummaryLoading(false)
+      return
+    }
+    setTracks({})
+    setReplayTime(null)
+    setPlaying(false)
+
+    const wideRange = Date.parse(to) - Date.parse(from) > 32 * 86_400_000
+    if (wideRange) {
+      setSessions([])
+      setSessionNextCursor(null)
+      setSessionLoading(false)
+      setSearchNotice('Detailed sessions are limited to 32 days; retained daily summaries are shown.')
+    } else {
+      setSessionLoading(true)
+      void api
+        .sessions(nextFilters, null, controller.signal)
+        .then((page) => {
+          if (generation !== searchGenerationRef.current) return
+          setSessions(page.sessions)
+          setSessionNextCursor(page.nextCursor)
+        })
+        .catch((requestError) => {
+          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
+            setSessionError(requestError instanceof Error ? requestError.message : 'Session search failed')
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
+            setSessionLoading(false)
+          }
+        })
+    }
+
+    if (nextFilters.alert) {
+      setSummaries([])
+      setSummaryNextCursor(null)
+      setSummaryLoading(false)
+      setSearchNotice((notice) =>
+        [notice, 'Daily summaries do not retain alert state, so only detailed sessions can be filtered by alert.']
+          .filter(Boolean)
+          .join(' '),
+      )
+    } else {
+      setSummaryLoading(true)
+      void api
+        .summaries(nextFilters, null, controller.signal)
+        .then((page) => {
+          if (generation !== searchGenerationRef.current) return
+          setSummaries(
+            page.items.filter(
+              (summary) => wideRange || !summary.hasDetailedTrack,
+            ),
+          )
+          setSummaryNextCursor(page.nextCursor)
+        })
+        .catch((requestError) => {
+          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
+            setSummaryError(requestError instanceof Error ? requestError.message : 'Summary search failed')
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
+            setSummaryLoading(false)
+          }
+        })
+    }
+  }, [])
+
+  const loadMoreSessions = async () => {
+    if (!sessionNextCursor) return
+    const generation = searchGenerationRef.current
+    setLoadingMore(true)
+    setSessionError(null)
+    try {
+      const page = await api.sessions(appliedFilters, sessionNextCursor)
+      if (generation !== searchGenerationRef.current) return
+      setSessions((current) => [...current, ...page.sessions])
+      setSessionNextCursor(page.nextCursor)
+    } catch (requestError) {
+      setSessionError(requestError instanceof Error ? requestError.message : 'More sessions could not be loaded')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  const loadMoreSummaries = async () => {
+    if (!summaryNextCursor) return
+    const generation = searchGenerationRef.current
+    setLoadingMoreSummaries(true)
+    setSummaryError(null)
+    try {
+      const page = await api.summaries(appliedFilters, summaryNextCursor)
+      if (generation !== searchGenerationRef.current) return
+      const expired = page.items.filter(
+        (summary) => wideAppliedRange || !summary.hasDetailedTrack,
+      )
+      setSummaries((current) => {
+        const byId = new Map(current.map((summary) => [summary.id, summary]))
+        for (const summary of expired) byId.set(summary.id, summary)
+        return [...byId.values()]
+      })
+      setSummaryNextCursor(page.nextCursor)
+    } catch (requestError) {
+      setSummaryError(requestError instanceof Error ? requestError.message : 'More summaries could not be loaded')
+    } finally {
+      setLoadingMoreSummaries(false)
+    }
+  }
+
+  useEffect(() => {
+    const next = filtersFromSearch(routeSearch)
+    setFilters(next)
+    setAppliedFilters(next)
+    void search(next)
+    return () => searchAbortRef.current?.abort()
+  }, [routeSearch, search])
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    setAppliedFilters(filters)
+    const nextSearch = filtersSearch(filters)
+    if (routeSearch === nextSearch) void search(filters)
+    else navigate(`/history${nextSearch}`)
+  }
+
+  const loadTrack = async (session: SessionSummary) => {
+    if (tracks[session.id]) {
+      setTracks((current) => {
+        const next = { ...current }
+        delete next[session.id]
+        return next
+      })
+      return
+    }
+    if (!session.hasDetailedTrack) return
+    setTrackLoading((current) => new Set(current).add(session.id))
+    setTrackError(null)
+    try {
+      const track = await api.track(session.id, resolution)
+      setTracks((current) => ({ ...current, [session.id]: track }))
+    } catch (requestError) {
+      setTrackError(requestError instanceof Error ? requestError.message : 'Track could not be loaded')
+    } finally {
+      setTrackLoading((current) => {
+        const next = new Set(current)
+        next.delete(session.id)
+        return next
+      })
+    }
+  }
+
+  const selectedTracks = useMemo(() => Object.values(tracks), [tracks])
+  const replayBounds = useMemo(() => {
+    const times = selectedTracks.flatMap((track) =>
+      track.points.length
+        ? [
+            new Date(track.points[0]!.recordedAt).getTime(),
+            new Date(track.points[track.points.length - 1]!.recordedAt).getTime(),
+          ]
+        : [],
+    )
+    return times.length ? { start: Math.min(...times), end: Math.max(...times) } : null
+  }, [selectedTracks])
+
+  useEffect(() => {
+    if (!replayBounds) {
+      setReplayTime(null)
+      setPlaying(false)
+      return
+    }
+    setReplayTime((current) =>
+      current == null || current < replayBounds.start || current > replayBounds.end
+        ? replayBounds.start
+        : current,
+    )
+  }, [replayBounds])
+
+  useEffect(() => {
+    if (!playing || !replayBounds) return
+    const frame = (timestamp: number) => {
+      const previous = lastFrameRef.current ?? timestamp
+      lastFrameRef.current = timestamp
+      setReplayTime((current) => {
+        const next = (current ?? replayBounds.start) + (timestamp - previous) * speed
+        if (next >= replayBounds.end) {
+          setPlaying(false)
+          return replayBounds.end
+        }
+        return next
+      })
+      animationRef.current = requestAnimationFrame(frame)
+    }
+    animationRef.current = requestAnimationFrame(frame)
+    return () => {
+      if (animationRef.current != null) cancelAnimationFrame(animationRef.current)
+      lastFrameRef.current = null
+    }
+  }, [playing, speed, replayBounds])
+
+  const changeResolution = async (value: Resolution) => {
+    setResolution(value)
+    const selectedIds = Object.keys(tracks)
+    if (!selectedIds.length) return
+    setTrackLoading(new Set(selectedIds))
+    try {
+      const refreshed = await Promise.all(
+        selectedIds.map((id) => api.track(id, value).then((track) => [id, track] as const)),
+      )
+      setTracks(Object.fromEntries(refreshed))
+    } catch (requestError) {
+      setTrackError(requestError instanceof Error ? requestError.message : 'Track resolution update failed')
+    } finally {
+      setTrackLoading(new Set())
+    }
+  }
+
+  return (
+    <div className="history-page">
+      <aside className="history-sidebar">
+        <div className="page-heading">
+          <span className="eyebrow">DETAILED ARCHIVE</span>
+          <h1>Flight history</h1>
+          <p>Search detailed tracks and indefinite receiver summaries.</p>
+        </div>
+
+        <form className="history-search" onSubmit={handleSubmit}>
+          <label className="field search-field">
+            <span>Aircraft</span>
+            <span className="input-with-icon">
+              <Search size={15} />
+              <input
+                value={filters.query}
+                onChange={(event) => setFilters({ ...filters, query: event.target.value })}
+                placeholder="ICAO, callsign, registration, type…"
+              />
+            </span>
+          </label>
+          <div className="field-pair">
+            <label className="field">
+              <span>From</span>
+              <input
+                type="datetime-local"
+                value={filters.from}
+                onChange={(event) => setFilters({ ...filters, from: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>To</span>
+              <input
+                type="datetime-local"
+                value={filters.to}
+                onChange={(event) => setFilters({ ...filters, to: event.target.value })}
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span>Alert state</span>
+            <select
+              value={filters.alert}
+              onChange={(event) =>
+                setFilters({ ...filters, alert: event.target.value as HistoryFilters['alert'] })
+              }
+            >
+              <option value="">All sessions</option>
+              <option value="emergency_squawk">Emergency squawk</option>
+              <option value="emergency_state">Emergency state</option>
+              <option value="watchlist">Watchlist match</option>
+              <option value="first_seen">First seen</option>
+            </select>
+          </label>
+          <button
+            className="primary-button full-width"
+            type="submit"
+            disabled={sessionLoading || summaryLoading}
+          >
+            <Search size={16} />
+            {sessionLoading || summaryLoading ? 'Searching…' : 'Search history'}
+          </button>
+        </form>
+
+        <div className="results-heading">
+          <div>
+            <h2>Track sessions</h2>
+            <span>{sessions.length} results</span>
+          </div>
+          <label className="compact-select">
+            <SlidersHorizontal size={13} />
+            <select
+              value={resolution}
+              onChange={(event) => void changeResolution(event.target.value as Resolution)}
+              aria-label="Track resolution"
+            >
+              <option value="auto">Adaptive</option>
+              <option value="1s">Exact · 1 sec</option>
+              <option value="5s">5 sec</option>
+              <option value="15s">15 sec</option>
+              <option value="60s">60 sec</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="session-list" aria-live="polite">
+          {sessionLoading ? (
+            Array.from({ length: 4 }, (_, index) => <div className="session-skeleton" key={index} />)
+          ) : sessions.length ? (
+            sessions.map((session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                selected={Boolean(tracks[session.id])}
+                loading={trackLoading.has(session.id)}
+                onToggle={() => void loadTrack(session)}
+              />
+            ))
+          ) : (
+            <div className="empty-state">
+              <Clock3 size={24} />
+              <strong>No sessions found</strong>
+              <span>Try a wider date range or fewer search terms.</span>
+            </div>
+          )}
+          {sessionNextCursor ? (
+            <button
+              type="button"
+              className="secondary-button full-width"
+              disabled={loadingMore}
+              onClick={() => void loadMoreSessions()}
+            >
+              {loadingMore ? 'Loading…' : 'Load more sessions'}
+            </button>
+          ) : null}
+        </div>
+
+        {summaryLoading ? (
+          <div className="session-skeleton" aria-label="Loading retained summaries" />
+        ) : shouldShowSummarySection(summaries.length, summaryNextCursor) ? (
+          <section className="summary-results">
+            <div className="results-heading">
+              <div>
+                <h2>{wideAppliedRange ? 'Daily summaries' : 'Older summaries'}</h2>
+                <span>
+                  {summaries.length
+                    ? wideAppliedRange
+                      ? 'Range overview'
+                      : 'Details expired'
+                    : 'More results available'}
+                </span>
+              </div>
+            </div>
+            {summaries.map((summary) => <SummaryCard key={summary.id} summary={summary} />)}
+            {summaryNextCursor ? (
+              <button
+                type="button"
+                className="secondary-button summary-load-more"
+                disabled={loadingMoreSummaries}
+                onClick={() => void loadMoreSummaries()}
+              >
+                {loadingMoreSummaries
+                  ? 'Loading…'
+                  : summaries.length
+                    ? 'Load more summaries'
+                    : 'Load older summaries'}
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+        {searchNotice ? <p className="history-notice" role="status">{searchNotice}</p> : null}
+        {sessionError ? <p className="form-error" role="alert">Sessions: {sessionError}</p> : null}
+        {summaryError ? <p className="form-error" role="alert">Summaries: {summaryError}</p> : null}
+        {trackError ? <p className="form-error" role="alert">Track: {trackError}</p> : null}
+      </aside>
+
+      <section className="history-map-stage">
+        <RadarMap
+          tracks={selectedTracks}
+          replayTime={replayTime}
+          followReplay={follow}
+          className="history-map"
+        />
+        {!selectedTracks.length ? (
+          <div className="history-map-empty">
+            <span><MapPinned size={22} /></span>
+            <strong>Select a track to begin</strong>
+            <p>Choose one or more sessions to compare their routes and replay movement.</p>
+          </div>
+        ) : null}
+        {selectedTracks.some((track) => track.truncated) ? (
+          <p className="map-data-warning" role="status">
+            One or more tracks reached the 20,000-point display limit. Choose a coarser resolution
+            to view the full route.
+          </p>
+        ) : null}
+
+        {replayBounds && replayTime != null ? (
+          <div className="replay-panel">
+            <div className="replay-topline">
+              <div>
+                <span className="eyebrow">REPLAY</span>
+                <strong>{formatDate(new Date(replayTime).toISOString())} · {formatTime(new Date(replayTime).toISOString())}</strong>
+              </div>
+              <div className="replay-track-count">
+                <PlaneIcon />
+                {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <input
+              className="time-slider"
+              type="range"
+              min={replayBounds.start}
+              max={replayBounds.end}
+              step={1000}
+              value={replayTime}
+              onChange={(event) => {
+                setPlaying(false)
+                setReplayTime(Number(event.target.value))
+              }}
+              aria-label="Replay position"
+            />
+            <div className="replay-ticks">
+              <span>{formatTime(new Date(replayBounds.start).toISOString())}</span>
+              <span>{formatTime(new Date(replayBounds.end).toISOString())}</span>
+            </div>
+            <div className="replay-controls">
+              <button
+                className="play-button"
+                type="button"
+                onClick={() => {
+                  if (replayTime >= replayBounds.end) setReplayTime(replayBounds.start)
+                  setPlaying((value) => !value)
+                }}
+                aria-label={playing ? 'Pause replay' : 'Play replay'}
+              >
+                {playing ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" />}
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => {
+                  setPlaying(false)
+                  setReplayTime(replayBounds.start)
+                }}
+                aria-label="Reset replay"
+              >
+                <CircleStop size={17} />
+              </button>
+              <div className="speed-control" aria-label="Replay speed">
+                <FastForward size={15} />
+                {SPEEDS.map((option) => (
+                  <button
+                    type="button"
+                    key={option}
+                    className={speed === option ? 'active' : ''}
+                    onClick={() => setSpeed(option)}
+                    aria-pressed={speed === option}
+                  >
+                    {option}×
+                  </button>
+                ))}
+              </div>
+              <label className="follow-toggle">
+                <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+                <span>Follow aircraft</span>
+              </label>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+function PlaneIcon() {
+  return <CalendarClock size={14} aria-hidden="true" />
+}
