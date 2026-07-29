@@ -45,7 +45,9 @@ function buildSettings(data: FormData): AppSettings {
     firstSeenAlertsEnabled: data.get('firstSeenAlertsEnabled') === 'on',
     firstSeenAlertBaselineHours: requiredNumber(data, 'firstSeenAlertBaselineHours'),
     metadataUrl: String(data.get('metadataUrl') ?? ''),
-    metadataCheckIntervalMs: requiredNumber(data, 'metadataCheckIntervalHours') * 3_600_000,
+    metadataCheckIntervalMs: Math.round(
+      requiredNumber(data, 'metadataCheckIntervalHours') * 3_600_000,
+    ),
     metadataTimeoutMs: requiredNumber(data, 'metadataTimeoutSeconds') * 1_000,
     metadataMinRows: requiredNumber(data, 'metadataMinRows'),
     metadataMaxDownloadBytes: Math.round(requiredNumber(data, 'metadataMaxDownloadMiB') * MEBIBYTE),
@@ -346,7 +348,7 @@ export function SettingsPage() {
             </Field>
             <div className="settings-field-grid">
               <Field label="Update check interval" hint="Hours">
-                <input name="metadataCheckIntervalHours" type="number" min={1 / 60} max={720} step={1 / 60} defaultValue={settings.metadataCheckIntervalMs / 3_600_000} required />
+                <input name="metadataCheckIntervalHours" type="number" min={1 / 60} max={720} step="any" defaultValue={settings.metadataCheckIntervalMs / 3_600_000} required />
               </Field>
               <Field label="Request timeout" hint="Seconds">
                 <input name="metadataTimeoutSeconds" type="number" min={1} max={300} defaultValue={settings.metadataTimeoutMs / 1_000} required />
