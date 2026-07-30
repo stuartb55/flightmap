@@ -8,11 +8,14 @@ import {
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import { manchesterWaypointData } from './manchester-waypoints'
+
+maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
 export interface RadarMapHandle {
   fitAircraft: () => void

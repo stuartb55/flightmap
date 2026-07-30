@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Response } from '@playwright/test'
 
 async function openFlightmap(page: Page) {
   await page.goto('/')
@@ -25,6 +25,19 @@ test('loads live data and supports primary navigation', async ({ page }) => {
   const saveBar = page.locator('.settings-save-bar')
   await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
   await expect(saveBar).toHaveCSS('position', 'static')
+})
+
+test('serves the MapLibre worker as JavaScript', async ({ page }) => {
+  let workerResponse: Response | null = null
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname.includes('maplibre-gl-worker')) {
+      workerResponse = response
+    }
+  })
+
+  await openFlightmap(page)
+  await expect.poll(() => workerResponse?.status() ?? 0).toBe(200)
+  expect(await workerResponse!.headerValue('content-type')).toMatch(/javascript/)
 })
 
 test('has no serious automated accessibility violations', async ({ page }) => {
