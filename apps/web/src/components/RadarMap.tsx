@@ -111,6 +111,36 @@ function planeImage(colour: string): ImageData {
   return context.getImageData(0, 0, 34, 34)
 }
 
+type StyleImageMap = Pick<MapLibreMap, 'addImage' | 'getImage' | 'hasImage'>
+
+const STYLE_IMAGE_ALIASES: Readonly<Record<string, string>> = {
+  'circle-11': 'circle_11',
+}
+
+export function resolveStyleImageAlias(map: StyleImageMap, id: string): void {
+  const sourceId = STYLE_IMAGE_ALIASES[id]
+  if (!sourceId || map.hasImage(id) || !map.hasImage(sourceId)) return
+
+  const source = map.getImage(sourceId)
+  map.addImage(
+    id,
+    {
+      width: source.data.width,
+      height: source.data.height,
+      data: source.data.data,
+    },
+    {
+      pixelRatio: source.pixelRatio,
+      sdf: source.sdf,
+      stretchX: source.stretchX,
+      stretchY: source.stretchY,
+      content: source.content,
+      textFitWidth: source.textFitWidth,
+      textFitHeight: source.textFitHeight,
+    },
+  )
+}
+
 function destinationPoint(
   latitude: number,
   longitude: number,
@@ -409,6 +439,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       return
     }
     mapRef.current = map
+    map.setMissingStyleImageResolver((id) => resolveStyleImageAlias(map, id))
     map.addControl(
       new maplibregl.AttributionControl({
         compact: true,
@@ -483,6 +514,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         minzoom: 6.4,
         layout: {
           'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 11,
           'text-letter-spacing': 0.08,
           'text-offset': [0.65, 0.55],
@@ -613,6 +645,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         minzoom: 7.2,
         layout: {
           'text-field': ['concat', ['get', 'label'], '  ', ['get', 'secondary']],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 13,
           'text-offset': [0, 2.1],
           'text-anchor': 'top',
@@ -649,6 +682,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: REPLAY_SOURCE,
         layout: {
           'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 14,
           'text-offset': [0, 2.2],
           'text-anchor': 'top',

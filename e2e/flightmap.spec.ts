@@ -27,17 +27,55 @@ test('loads live data and supports primary navigation', async ({ page }) => {
   await expect(saveBar).toHaveCSS('position', 'static')
 })
 
-test('serves the MapLibre worker as JavaScript', async ({ page }) => {
+test('loads the MapLibre worker and style assets without warnings', async ({ page }) => {
   let workerResponse: Response | null = null
+  let styleResponse: Response | null = null
+  const glyphResponses: Response[] = []
+  const failedMapAssets: string[] = []
+  const mapWarnings: string[] = []
+
   page.on('response', (response) => {
-    if (new URL(response.url()).pathname.includes('maplibre-gl-worker')) {
+    const url = new URL(response.url())
+    if (url.pathname.includes('maplibre-gl-worker')) {
       workerResponse = response
+    }
+    if (url.hostname === 'tiles.openfreemap.org' && url.pathname === '/styles/dark') {
+      styleResponse = response
+    }
+    if (url.hostname === 'tiles.openfreemap.org' && url.pathname.startsWith('/fonts/')) {
+      glyphResponses.push(response)
+    }
+    if (
+      url.hostname === 'tiles.openfreemap.org' &&
+      response.status() >= 400 &&
+      ['/fonts/', '/sprites/', '/styles/'].some((path) => url.pathname.startsWith(path))
+    ) {
+      failedMapAssets.push(`${response.status()} ${url.pathname}`)
+    }
+  })
+  page.on('console', (message) => {
+    const text = message.text()
+    if (
+      text.includes('could not be loaded') ||
+      text.includes('Unable to load glyph range')
+    ) {
+      mapWarnings.push(text)
     }
   })
 
   await openFlightmap(page)
   await expect.poll(() => workerResponse?.status() ?? 0).toBe(200)
   expect(await workerResponse!.headerValue('content-type')).toMatch(/javascript/)
+  await expect.poll(() => styleResponse?.status() ?? 0).toBe(200)
+  await expect.poll(() => glyphResponses.length).toBeGreaterThan(0)
+  expect(
+    glyphResponses.some((response) =>
+      decodeURIComponent(response.url()).includes('/fonts/Noto Sans Regular/'),
+    ),
+  ).toBe(true)
+  expect(glyphResponses.every((response) => response.status() === 200)).toBe(true)
+  expect(failedMapAssets).toEqual([])
+  expect(mapWarnings).toEqual([])
 })
 
 test('has no serious automated accessibility violations', async ({ page }) => {

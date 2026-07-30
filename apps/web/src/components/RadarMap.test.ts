@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { interpolateTrack, isEmergencyAircraft, replayPointAtTime } from './RadarMap'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  interpolateTrack,
+  isEmergencyAircraft,
+  replayPointAtTime,
+  resolveStyleImageAlias,
+} from './RadarMap'
 import type { TrackPoint } from '../types'
 
 describe('track interpolation', () => {
@@ -49,5 +54,51 @@ describe('track interpolation', () => {
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no_emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'general' })).toBe(true)
+  })
+})
+
+describe('resolveStyleImageAlias', () => {
+  it('registers the OpenFreeMap circle image under the ID used by its style', () => {
+    const source = {
+      data: {
+        width: 15,
+        height: 15,
+        data: new Uint8Array(15 * 15 * 4),
+      },
+      pixelRatio: 1,
+      sdf: false,
+    }
+    const map = {
+      hasImage: vi.fn((id: string) => id === 'circle_11'),
+      getImage: vi.fn(() => source),
+      addImage: vi.fn(),
+    }
+
+    resolveStyleImageAlias(map as never, 'circle-11')
+
+    expect(map.getImage).toHaveBeenCalledWith('circle_11')
+    expect(map.addImage).toHaveBeenCalledWith(
+      'circle-11',
+      {
+        width: 15,
+        height: 15,
+        data: source.data.data,
+      },
+      expect.objectContaining({ pixelRatio: 1, sdf: false }),
+    )
+  })
+
+  it('ignores unrelated missing images', () => {
+    const map = {
+      hasImage: vi.fn(),
+      getImage: vi.fn(),
+      addImage: vi.fn(),
+    }
+
+    resolveStyleImageAlias(map as never, 'airport')
+
+    expect(map.hasImage).not.toHaveBeenCalled()
+    expect(map.getImage).not.toHaveBeenCalled()
+    expect(map.addImage).not.toHaveBeenCalled()
   })
 })
