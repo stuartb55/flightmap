@@ -26,15 +26,17 @@
     "metadata:refresh": "npm run metadata:refresh -w @flightmap/server"
   },
   "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2",
     "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.0",
     "@vitest/coverage-v8": "^4.1.10",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.4",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^16.5.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.65.0"
+    "globals": "^17.8.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.1.5"
   }
 }
