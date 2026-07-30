@@ -7,8 +7,9 @@ import {
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
-const commaSeparatedSchema = z
+const commaSeparatedSchema = (defaultValue: string) => z
   .string()
+  .default(defaultValue)
   .transform((value) =>
     [...new Set(value.split(",").map((part) => part.trim()).filter(Boolean))]
   );
@@ -20,10 +21,10 @@ const configSchema = z
     APP_HOST: z.string().default("0.0.0.0"),
     APP_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
     APP_VERSION: z.string().default("0.1.0"),
-    APP_ALLOWED_HOSTS: commaSeparatedSchema.default(
+    APP_ALLOWED_HOSTS: commaSeparatedSchema(
       "localhost,127.0.0.1,[::1]"
     ),
-    APP_ALLOWED_ORIGINS: commaSeparatedSchema.default(""),
+    APP_ALLOWED_ORIGINS: commaSeparatedSchema(""),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),

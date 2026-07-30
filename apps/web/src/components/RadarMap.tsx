@@ -6,7 +6,8 @@ import {
   useState,
 } from 'react'
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import { LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
