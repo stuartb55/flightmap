@@ -1,6 +1,7 @@
 import {
   Bell,
   Database,
+  HardDrive,
   MapPinned,
   RadioTower,
   RefreshCw,
@@ -9,7 +10,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../lib/api'
-import type { AppSettings, AppSettingsResponse } from '../types'
+import { formatBytes } from '../lib/format'
+import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
 const GIBIBYTE = 1_073_741_824
@@ -112,7 +114,9 @@ function SettingsCard({
 
 export function SettingsPage() {
   const [response, setResponse] = useState<AppSettingsResponse | null>(null)
+  const [databaseStatus, setDatabaseStatus] = useState<SystemStatus['database'] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [storageLoading, setStorageLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -132,6 +136,17 @@ export function SettingsPage() {
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
+      })
+    void api
+      .status(controller.signal)
+      .then((result) => {
+        setDatabaseStatus(result.database)
+      })
+      .catch(() => {
+        // Settings remain usable if the read-only health check is unavailable.
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setStorageLoading(false)
       })
     return () => controller.abort()
   }, [])
@@ -153,6 +168,11 @@ export function SettingsPage() {
   }
 
   const settings = response?.settings
+  const storageCapacityBytes = settings?.databaseVolumeCapacityBytes ?? null
+  const storageUsePercent =
+    databaseStatus?.sizeBytes != null && storageCapacityBytes != null
+      ? Math.min(100, (databaseStatus.sizeBytes / storageCapacityBytes) * 100)
+      : null
 
   return (
     <div className="standard-page settings-page">
@@ -247,6 +267,36 @@ export function SettingsPage() {
             title="Collection and retention"
             description="Control detailed history, live expiry, and session boundaries."
           >
+            <div className="settings-storage-usage" aria-live="polite">
+              <HardDrive size={20} aria-hidden="true" />
+              <span>
+                <small>Storage used</small>
+                <strong>
+                  {storageLoading
+                    ? 'Checking…'
+                    : databaseStatus?.sizeBytes == null
+                      ? 'Unavailable'
+                      : formatBytes(databaseStatus.sizeBytes)}
+                </strong>
+                <small>
+                  {storageUsePercent == null || storageCapacityBytes == null
+                    ? 'Current PostgreSQL database size'
+                    : `${storageUsePercent.toFixed(1)}% of ${formatBytes(storageCapacityBytes)} configured capacity`}
+                </small>
+              </span>
+              {storageUsePercent != null ? (
+                <span
+                  className="settings-storage-meter"
+                  role="progressbar"
+                  aria-label="Database storage used"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={storageUsePercent}
+                >
+                  <span style={{ width: `${storageUsePercent}%` }} />
+                </span>
+              ) : null}
+            </div>
             <div className="settings-toggle-stack">
               <label className="settings-toggle">
                 <span>

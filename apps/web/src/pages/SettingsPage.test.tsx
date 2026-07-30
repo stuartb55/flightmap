@@ -5,6 +5,7 @@ import type { AppSettings } from '../types'
 
 const apiMock = vi.hoisted(() => ({
   settings: vi.fn(),
+  status: vi.fn(),
   updateSettings: vi.fn(),
 }))
 
@@ -43,6 +44,18 @@ const defaultSettings: AppSettings = {
 
 beforeEach(() => {
   apiMock.settings.mockReset()
+  apiMock.status.mockReset()
+  apiMock.status.mockResolvedValue({
+    database: {
+      status: 'ok',
+      sizeBytes: 6 * 1_073_741_824,
+      capacityBytes: null,
+      usePercent: null,
+      oldestSampleAt: null,
+      newestSampleAt: null,
+      retainedDays: 30,
+    },
+  })
   apiMock.updateSettings.mockReset()
 })
 
@@ -67,6 +80,8 @@ describe('SettingsPage', () => {
     const receiverName = await screen.findByRole('textbox', {
       name: 'Receiver name',
     })
+    expect(await screen.findByText('6.0 GB')).toBeInTheDocument()
+    expect(screen.getByText('Storage used')).toBeInTheDocument()
     await user.clear(receiverName)
     await user.type(receiverName, 'Roof receiver')
     await user.click(
