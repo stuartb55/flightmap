@@ -19,7 +19,6 @@ const columns: { key: AircraftSortKey; label: string }[] = [
   { key: 'altitude', label: 'Altitude' },
   { key: 'speed', label: 'Speed' },
   { key: 'distance', label: 'Range' },
-  { key: 'freshness', label: 'Age' },
 ]
 
 export function AircraftTable({
@@ -87,13 +86,19 @@ export function AircraftTable({
                   >
                     <span className="aircraft-id-top">
                       <strong>{aircraftLabel(item)}</strong>
-                      {item.watched ? <Star size={12} fill="currentColor" aria-label="Watched" /> : null}
+                      {item.watched ? <Star size={14} fill="currentColor" aria-label="Watched" /> : null}
                       {item.hasActiveAlert ? (
-                        <AlertTriangle size={13} aria-label="Active alert" />
+                        <AlertTriangle size={15} aria-label="Active alert" />
                       ) : null}
                       {item.latitude == null || item.longitude == null ? (
-                        <MapPinOff size={12} aria-label="No position" />
+                        <MapPinOff size={14} aria-label="No position" />
                       ) : null}
+                      <span
+                        className={`freshness ${isStale ? 'freshness-stale' : ''}`}
+                        title="Time since last report"
+                      >
+                        {item.seenSeconds == null ? '—' : `${Math.round(item.seenSeconds)}s`}
+                      </span>
                     </span>
                     <small>
                       {item.registration || item.icao.toUpperCase()}
@@ -103,21 +108,12 @@ export function AircraftTable({
                 </td>
                 <td>
                   <span className="primary-cell">{formatAltitude(item.altitudeBaro)}</span>
-                  <small>{item.verticalRate == null ? '—' : `${item.verticalRate > 100 ? '↑' : item.verticalRate < -100 ? '↓' : '→'} ${Math.abs(item.verticalRate).toLocaleString()}`}</small>
                 </td>
                 <td>
                   <span className="primary-cell">{formatSpeed(item.groundSpeed)}</span>
-                  <small>{item.track == null ? '—' : `${Math.round(item.track)}° track`}</small>
                 </td>
                 <td>
                   <span className="primary-cell">{formatDistance(item.distanceNm)}</span>
-                  <small>{item.bearing == null ? '—' : `${Math.round(item.bearing)}° bearing`}</small>
-                </td>
-                <td>
-                  <span className={`freshness ${isStale ? 'freshness-stale' : ''}`}>
-                    {item.seenSeconds == null ? '—' : `${Math.round(item.seenSeconds)}s`}
-                  </span>
-                  <small>{item.source?.toUpperCase() ?? '—'}</small>
                 </td>
               </tr>
             )

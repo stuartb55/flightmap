@@ -509,9 +509,10 @@ button:disabled {
 }
 
 .live-page {
+  --live-list-width: clamp(410px, 25vw, 480px);
   position: relative;
   display: grid;
-  grid-template-columns: minmax(360px, 31vw) minmax(0, 1fr);
+  grid-template-columns: var(--live-list-width) minmax(0, 1fr);
   grid-template-areas: 'list map';
   width: 100%;
   height: 100%;
@@ -521,7 +522,8 @@ button:disabled {
 }
 
 .live-page.has-detail {
-  grid-template-columns: minmax(340px, 27vw) minmax(360px, 1fr) minmax(320px, 25vw);
+  --live-list-width: clamp(360px, 23vw, 420px);
+  grid-template-columns: var(--live-list-width) minmax(360px, 1fr) minmax(320px, 23vw);
   grid-template-areas: 'list map detail';
 }
 
@@ -559,14 +561,14 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
-  min-height: 92px;
-  padding: 16px 17px 12px;
+  min-height: 74px;
+  padding: 14px 16px 12px;
 }
 
 .aircraft-panel-header h1,
 .aircraft-panel-header h2 {
-  margin: 5px 0 0;
-  font-size: 24px;
+  margin: 0;
+  font-size: 25px;
   line-height: 1.15;
 }
 
@@ -574,8 +576,13 @@ button:disabled {
   margin-left: 4px;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
+}
+
+.aircraft-panel-header .icon-button {
+  width: 40px;
+  height: 40px;
 }
 
 .aircraft-toolbar {
@@ -685,7 +692,7 @@ button:disabled {
   border-bottom: 1px solid var(--line);
   background: #0c1218;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-align: right;
@@ -693,7 +700,7 @@ button:disabled {
 }
 
 .aircraft-table th:first-child {
-  width: 38%;
+  width: 43%;
   padding-left: 14px;
   text-align: left;
 }
@@ -718,12 +725,12 @@ button:disabled {
 }
 
 .aircraft-table td {
-  height: 76px;
+  height: 70px;
   padding: 10px 7px;
   color: var(--muted-bright);
   border-bottom: 1px solid rgba(29, 42, 53, 0.72);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   text-align: right;
   transition: background 120ms ease;
 }
@@ -783,7 +790,7 @@ button:disabled {
   overflow: hidden;
   color: #e0e9ef;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -805,7 +812,7 @@ button:disabled {
   margin-top: 4px;
   color: #647481;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -820,12 +827,15 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
-  height: 26px;
-  padding: 0 5px;
+  flex: 0 0 auto;
+  min-width: 32px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 6px;
   color: #8edcc5;
   border-radius: 4px;
   background: rgba(88, 213, 177, 0.08);
+  font-size: 12px;
 }
 
 .freshness-stale {
@@ -845,7 +855,7 @@ button:disabled {
   border-top: 1px solid var(--line);
   background: #0b1117;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .legend-dot {
@@ -933,8 +943,8 @@ button:disabled {
 .map-controls button {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   padding: 0;
   color: #a7b4bd;
   border: 0;
@@ -957,14 +967,14 @@ button:disabled {
   z-index: 3;
   right: 14px;
   bottom: 28px;
-  width: 250px;
-  padding: 9px 11px 8px;
+  width: 270px;
+  padding: 11px 13px 10px;
   color: #8c9ba6;
   border: 1px solid rgba(53, 70, 82, 0.62);
   border-radius: 7px;
   background: rgba(8, 13, 18, 0.86);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
   backdrop-filter: blur(10px);
 }
@@ -1045,39 +1055,6 @@ button:disabled {
 .map-error span {
   color: var(--muted);
   font-size: 13px;
-}
-
-.map-summary-card {
-  position: absolute;
-  z-index: 4;
-  top: 14px;
-  left: 14px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 60px;
-  padding: 8px 12px;
-  border: 1px solid rgba(52, 71, 83, 0.68);
-  border-radius: 9px;
-  background: rgba(8, 13, 18, 0.88);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
-}
-
-.map-summary-card > div {
-  display: flex;
-  flex-direction: column;
-}
-
-.map-summary-card strong {
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 16px;
-}
-
-.map-summary-card small {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .selected-map-card {
@@ -1406,10 +1383,6 @@ button:disabled {
   font-size: 13px;
 }
 
-.list-collapsed .map-summary-card {
-  left: 74px;
-}
-
 .filter-backdrop {
   position: absolute;
   z-index: 39;
@@ -1424,7 +1397,7 @@ button:disabled {
   position: absolute;
   z-index: 40;
   top: 12px;
-  left: min(calc(31vw + 12px), calc(100% - 374px));
+  left: min(calc(var(--live-list-width) + 12px), calc(100% - 374px));
   width: 360px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
@@ -3439,7 +3412,8 @@ input[aria-invalid='true'] {
 
 @media (max-width: 1350px) {
   .live-page.has-detail {
-    grid-template-columns: 330px minmax(320px, 1fr) 320px;
+    --live-list-width: 330px;
+    grid-template-columns: var(--live-list-width) minmax(320px, 1fr) 320px;
   }
 
   .live-page.list-collapsed.has-detail {
@@ -3459,9 +3433,6 @@ input[aria-invalid='true'] {
     width: 42%;
   }
 
-  .filters-drawer {
-    left: 342px;
-  }
 }
 
 @media (max-width: 1050px) {
@@ -3631,18 +3602,6 @@ input[aria-invalid='true'] {
   .map-stage {
     width: 100%;
     height: 100%;
-  }
-
-  .map-summary-card {
-    top: 10px;
-    left: 10px !important;
-    min-height: 42px;
-    gap: 10px;
-    padding: 6px 9px;
-  }
-
-  .map-summary-card > div:nth-of-type(3) {
-    display: none;
   }
 
   .map-controls {

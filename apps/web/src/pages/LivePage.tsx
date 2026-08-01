@@ -33,10 +33,14 @@ import {
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
 import { useLive } from '../state/LiveContext'
-import type { TrackResponse } from '../types'
+import type { AlertEvent, TrackResponse } from '../types'
 
 type MobilePanel = 'list' | 'filters' | null
 const FILTER_STORAGE_KEY = 'flightmap.aircraft-filters.v1'
+
+export function emergencyBannerAlert(alerts: AlertEvent[]): AlertEvent | undefined {
+  return alerts.find((alert) => alert.type === 'emergency' && !alert.dismissedAt)
+}
 
 function storedFilters(): AircraftFilterState {
   try {
@@ -158,8 +162,7 @@ export function LivePage() {
   const positionedCount = aircraftList.filter(
     (aircraft) => aircraft.latitude != null && aircraft.longitude != null,
   ).length
-  const activeAlerts = alerts.filter((alert) => !alert.dismissedAt)
-  const bannerAlert = activeAlerts.find((alert) => alert.severity === 'critical') ?? activeAlerts[0]
+  const bannerAlert = emergencyBannerAlert(alerts)
   const filterCount = activeFilterCount(filters)
 
   useEffect(() => {
@@ -307,7 +310,6 @@ export function LivePage() {
       <section className="aircraft-panel desktop-aircraft-panel" aria-label="Live aircraft list">
         <div className="aircraft-panel-header">
           <div>
-            <span className="eyebrow">LIVE TRAFFIC</span>
             <h1>
               Aircraft <span>{filtered.length}</span>
             </h1>
@@ -367,7 +369,7 @@ export function LivePage() {
         />
         <footer className="aircraft-panel-footer">
           <span><i className="legend-dot live" /> {positionedCount} on map</span>
-          <span>{aircraftList.length - positionedCount} without position</span>
+          <span>{aircraftList.length - positionedCount} no position</span>
         </footer>
       </section>
 
@@ -419,21 +421,6 @@ export function LivePage() {
           tracks={trail}
         />
         {trackError ? <p className="map-data-warning" role="status">{trackError}</p> : null}
-        <div className="map-summary-card">
-          <span className={`status-dot status-${connection}`} />
-          <div>
-            <strong>{aircraftList.length}</strong>
-            <small>reports</small>
-          </div>
-          <div>
-            <strong>{positionedCount}</strong>
-            <small>positioned</small>
-          </div>
-          <div>
-            <strong>{activeAlerts.length}</strong>
-            <small>alerts</small>
-          </div>
-        </div>
         {selected ? (
           <div className="selected-map-card">
             <button type="button" className="back-control" onClick={closeDetails}>
@@ -489,7 +476,7 @@ export function LivePage() {
       >
         <div className="sheet-handle" />
         <div className="aircraft-panel-header">
-          <div><span className="eyebrow">LIVE TRAFFIC</span><h2>{filtered.length} aircraft</h2></div>
+          <div><h2>{filtered.length} aircraft</h2></div>
           <button className="icon-button" type="button" onClick={() => setMobilePanel(null)} aria-label="Close aircraft list"><X size={18} /></button>
         </div>
         <label className="quick-search mobile-search">

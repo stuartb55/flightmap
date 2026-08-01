@@ -590,7 +590,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         filter: ['==', ['get', 'watched'], 1],
         paint: {
-          'circle-radius': 15,
+          'circle-radius': 19,
           'circle-color': '#f2b85e',
           'circle-opacity': 0.08,
           'circle-stroke-color': '#f2b85e',
@@ -604,7 +604,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         filter: ['==', ['get', 'emergency'], 1],
         paint: {
-          'circle-radius': 18,
+          'circle-radius': 23,
           'circle-color': '#ff4d5f',
           'circle-opacity': 0.16,
           'circle-stroke-color': '#ff5e6e',
@@ -617,7 +617,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         filter: ['==', ['get', 'selected'], 1],
         paint: {
-          'circle-radius': 18,
+          'circle-radius': 23,
           'circle-color': '#f5fcff',
           'circle-opacity': 0.08,
           'circle-stroke-color': '#eafcff',
@@ -630,7 +630,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         layout: {
           'icon-image': ['get', 'icon'],
-          'icon-size': ['case', ['==', ['get', 'selected'], 1], 1.2, 0.92],
+          'icon-size': ['case', ['==', ['get', 'selected'], 1], 1.65, 1.4],
           'icon-rotate': ['get', 'rotation'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
@@ -646,8 +646,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         layout: {
           'text-field': ['concat', ['get', 'label'], '  ', ['get', 'secondary']],
           'text-font': ['Noto Sans Regular'],
-          'text-size': 13,
-          'text-offset': [0, 2.1],
+          'text-size': 14,
+          'text-offset': [0, 2.35],
           'text-anchor': 'top',
           'text-allow-overlap': false,
           'text-optional': true,
@@ -774,16 +774,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       />
       <div className="map-controls" aria-label="Map controls">
         <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
-          <Plus size={17} />
+          <Plus size={20} />
         </button>
         <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => mapRef.current?.zoomOut()}>
-          <Minus size={17} />
+          <Minus size={20} />
         </button>
         <button type="button" title="Centre receiver" aria-label="Centre receiver" onClick={centerReceiver}>
-          <LocateFixed size={17} />
+          <LocateFixed size={20} />
         </button>
         <button type="button" title="Fit active aircraft" aria-label="Fit active aircraft" onClick={fitAircraft}>
-          <Maximize2 size={17} />
+          <Maximize2 size={20} />
         </button>
       </div>
       <div className="map-legend" aria-label="Map legend">
