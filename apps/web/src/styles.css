@@ -3486,8 +3486,8 @@ input[aria-invalid='true'] {
 
 @media (max-width: 800px) {
   :root {
-    --header-height: 64px;
-    --mobile-nav-height: 68px;
+    --header-height: calc(64px + env(safe-area-inset-top));
+    --mobile-nav-height: calc(68px + env(safe-area-inset-bottom));
   }
 
   html,
@@ -3499,7 +3499,7 @@ input[aria-invalid='true'] {
   .app-header {
     grid-template-columns: 1fr auto;
     height: var(--header-height);
-    padding: 0 12px;
+    padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
   }
 
   .brand-mark {
@@ -3514,6 +3514,10 @@ input[aria-invalid='true'] {
 
   .brand-mark::after {
     display: none;
+  }
+
+  .brand {
+    min-height: 44px;
   }
 
   .brand strong {
@@ -3610,14 +3614,19 @@ input[aria-invalid='true'] {
   }
 
   .map-controls button {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 
   .map-legend {
     right: 10px;
     bottom: 68px;
-    width: 190px;
+    width: min(220px, calc(100% - 20px));
+  }
+
+  .map-waypoint-key {
+    gap: 8px;
+    font-size: 11px;
   }
 
   .selected-map-card {
@@ -3648,9 +3657,9 @@ input[aria-invalid='true'] {
   .mobile-map-actions {
     position: absolute;
     z-index: 25;
-    right: 10px;
+    right: max(10px, env(safe-area-inset-right));
     bottom: 12px;
-    left: 10px;
+    left: max(10px, env(safe-area-inset-left));
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
@@ -3687,7 +3696,7 @@ input[aria-invalid='true'] {
 
   .mobile-sheet-backdrop {
     position: absolute;
-    z-index: 49;
+    z-index: 69;
     inset: 0;
     display: block;
     padding: 0;
@@ -3697,7 +3706,7 @@ input[aria-invalid='true'] {
 
   .mobile-sheet {
     position: absolute;
-    z-index: 50;
+    z-index: 70;
     right: 0;
     bottom: 0;
     left: 0;
@@ -3732,8 +3741,23 @@ input[aria-invalid='true'] {
     background: #34434e;
   }
 
+  .mobile-list-sheet {
+    height: min(88%, 720px);
+    max-height: none;
+  }
+
+  .mobile-list-sheet .aircraft-panel-header {
+    min-height: 64px;
+    padding: 10px 14px 8px;
+  }
+
+  .mobile-list-sheet .aircraft-panel-header h2 {
+    font-size: 21px;
+  }
+
   .mobile-list-sheet .aircraft-table-wrap {
-    min-height: 220px;
+    min-height: 0;
+    overscroll-behavior: contain;
   }
 
   .mobile-search {
@@ -3784,8 +3808,9 @@ input[aria-invalid='true'] {
   .history-page {
     display: grid;
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(290px, 48%) minmax(300px, 52%);
+    grid-template-rows: minmax(0, 55%) minmax(0, 45%);
     height: 100%;
+    overflow: hidden;
   }
 
   .history-sidebar {
@@ -3880,10 +3905,15 @@ input[aria-invalid='true'] {
     position: sticky;
     z-index: 5;
     top: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 0;
     padding: 8px 10px;
   }
 
   .segmented-control {
+    grid-column: 1 / -1;
     flex: 1;
   }
 
@@ -3894,11 +3924,19 @@ input[aria-invalid='true'] {
   }
 
   .alert-kind-select {
-    margin-left: 6px;
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
   }
 
   .alert-kind-select select {
-    max-width: 90px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .alerts-toolbar > .secondary-button {
+    white-space: nowrap;
   }
 
   .alert-list {
@@ -3915,6 +3953,11 @@ input[aria-invalid='true'] {
   .alert-card-icon {
     width: 42px;
     height: 42px;
+  }
+
+  .alert-card-heading {
+    flex-wrap: wrap;
+    gap: 4px 9px;
   }
 
   .alert-actions {
@@ -4002,7 +4045,25 @@ input[aria-invalid='true'] {
   }
 
   .history-page {
-    grid-template-rows: minmax(290px, 55%) minmax(280px, 45%);
+    grid-template-rows: minmax(0, 60%) minmax(0, 40%);
+  }
+
+  .history-search .field-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .history-map-empty {
+    padding: 14px;
+  }
+
+  .history-map-empty > span {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 7px;
+  }
+
+  .history-map-empty p {
+    display: none;
   }
 
   .replay-topline .replay-track-count {

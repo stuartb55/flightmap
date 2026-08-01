@@ -78,7 +78,7 @@ function useModalFocus(
       [...dialog.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]',
       )].filter((element) => !element.hasAttribute('inert'))
-    focusable()[0]?.focus()
+    focusable()[0]?.focus({ preventScroll: true })
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -101,7 +101,7 @@ function useModalFocus(
     document.addEventListener('keydown', keydown)
     return () => {
       document.removeEventListener('keydown', keydown)
-      previous?.focus()
+      previous?.focus({ preventScroll: true })
     }
   }, [active, ref])
 }
@@ -485,7 +485,17 @@ export function LivePage() {
             value={filters.query}
             onChange={(event) => setFilters({ ...filters, query: event.target.value })}
             placeholder="Search aircraft"
+            aria-label="Search aircraft"
           />
+          {filters.query ? (
+            <button
+              type="button"
+              onClick={() => setFilters({ ...filters, query: '' })}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </label>
         <AircraftTable
           aircraft={filtered}
