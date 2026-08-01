@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { ZodError, z } from "zod";
@@ -370,6 +373,42 @@ describe("request security", () => {
       error: { code: "ORIGIN_NOT_ALLOWED" }
     });
     await server.close();
+  });
+});
+
+describe("web application delivery", () => {
+  it("revalidates PWA metadata while keeping fingerprinted assets immutable", async () => {
+    const webDirectory = await mkdtemp(join(tmpdir(), "flightmap-web-"));
+    await Promise.all([
+      writeFile(join(webDirectory, "index.html"), "<html><head></head><body></body></html>"),
+      writeFile(join(webDirectory, "sw.js"), "// service worker"),
+      writeFile(join(webDirectory, "manifest.webmanifest"), "{}"),
+      writeFile(join(webDirectory, "app-abc123.js"), "// fingerprinted asset")
+    ]);
+
+    const server = await buildApp({
+      config: loadConfig({
+        NODE_ENV: "test",
+        SERVE_WEB: "true",
+        WEB_DIST_DIR: webDirectory
+      }),
+      dependencies: dependencies() as never,
+      logger: false
+    });
+
+    try {
+      const worker = await server.inject("/sw.js");
+      const manifest = await server.inject("/manifest.webmanifest");
+      const asset = await server.inject("/app-abc123.js");
+
+      expect(worker.headers["cache-control"]).toBe("no-cache");
+      expect(manifest.headers["cache-control"]).toBe("no-cache");
+      expect(asset.headers["cache-control"]).toContain("max-age=31536000");
+      expect(asset.headers["cache-control"]).toContain("immutable");
+    } finally {
+      await server.close();
+      await rm(webDirectory, { recursive: true, force: true });
+    }
   });
 });
 

@@ -19,6 +19,8 @@ history indefinitely.
   and accessible chart data tables.
 - Browser-local map layer preferences plus installation-wide saved views for
   Live, History, and Insights workflows.
+- Installable progressive web app with standalone display, app shortcuts,
+  branded icons, automatic updates, and an offline application shell.
 - In-app alerts for 7500/7600/7700 squawks, explicit emergencies, first-ever
   sightings, and watchlist matches.
 - Local registration/type/operator enrichment from the readsb-compatible
@@ -67,6 +69,14 @@ docker compose logs --follow app
 Receiver coordinates are discovered from `receiver.json`; both can be
 overridden together in Settings. Dates are persisted in UTC and displayed in
 `Europe/London` by default.
+
+### Install as an app
+
+Serve Flightmap from a trusted HTTPS origin (or open it on `localhost`), then
+use the browser's **Install Flightmap** or **Add to Home Screen** action. Browsers
+do not enable service workers for a plain `http://` LAN address. The installed
+app shell and the most recently loaded page remain available offline; live
+aircraft, map tiles, and other receiver-backed data still require a connection.
 
 ## Development
 

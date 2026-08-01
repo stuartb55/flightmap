@@ -217,7 +217,18 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       wildcard: false,
       index: false,
       immutable: true,
-      maxAge: "1y"
+      maxAge: "1y",
+      setHeaders(reply, path) {
+        // These stable filenames must always be revalidated or an installed
+        // client can remain pinned to an old application release for a year.
+        if (
+          path.endsWith("/sw.js") ||
+          path.endsWith("/manifest.webmanifest") ||
+          path.endsWith("/registerSW.js")
+        ) {
+          reply.header("cache-control", "no-cache");
+        }
+      }
     });
     app.get("/", async (_request, reply) => {
       reply.header("cache-control", "no-cache");

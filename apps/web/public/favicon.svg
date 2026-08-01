@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Flightmap">
+  <rect width="512" height="512" rx="112" fill="#070b10"/>
+  <circle cx="256" cy="256" r="174" fill="#0d171c" stroke="#1d5148" stroke-width="12"/>
+  <circle cx="256" cy="256" r="112" fill="none" stroke="#286d60" stroke-width="9"/>
+  <circle cx="256" cy="256" r="52" fill="none" stroke="#58d5b1" stroke-width="10"/>
+  <path d="M256 123a133 133 0 0 1 122 80M134 303a133 133 0 0 1 14-126M353 347a133 133 0 0 1-178 17" fill="none" stroke="#58d5b1" stroke-width="14" stroke-linecap="round"/>
+  <path d="m252 159 27 76 94 28-8 19-89-7-44 76-19-8 20-91-64-59 10-19 73 37z" fill="#e8eff4" stroke="#070b10" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="11" fill="#58d5b1"/>
+</svg>
