@@ -88,3 +88,60 @@ test('has no serious automated accessibility violations', async ({ page }) => {
   )
   expect(important).toEqual([])
 })
+
+test('keeps mobile panels and controls inside the usable viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await openFlightmap(page)
+
+  await page.locator('.mobile-map-actions').getByRole('button', { name: /Aircraft/ }).click()
+  const listSheet = page.locator('.mobile-list-sheet')
+  await expect(listSheet).toHaveClass(/open/)
+  await expect(page.getByRole('dialog', { name: 'Live aircraft list' })).toBeVisible()
+  await expect.poll(() => page.locator('.live-page').evaluate((element) => element.scrollTop)).toBe(0)
+  await expect.poll(async () => {
+    const box = await listSheet.boundingBox()
+    return box ? box.y + box.height : Number.POSITIVE_INFINITY
+  }).toBeLessThanOrEqual(500.5)
+
+  const liveLayout = await page.evaluate(() => {
+    const sheet = document.querySelector('.mobile-list-sheet')!.getBoundingClientRect()
+    const list = document.querySelector('.mobile-list-sheet .aircraft-table-wrap')!.getBoundingClientRect()
+    const navigation = document.querySelector('.mobile-nav')!.getBoundingClientRect()
+    const legend = document.querySelector('.map-legend')!.getBoundingClientRect()
+    return {
+      sheetTop: sheet.top,
+      sheetBottom: sheet.bottom,
+      sheetHeight: sheet.height,
+      listHeight: list.height,
+      navigationTop: navigation.top,
+      legendLeft: legend.left,
+      legendRight: legend.right,
+    }
+  })
+  expect(liveLayout.sheetTop).toBeGreaterThanOrEqual(63)
+  expect(liveLayout.sheetBottom).toBeLessThanOrEqual(liveLayout.navigationTop)
+  expect(liveLayout.sheetHeight).toBeGreaterThan(350)
+  expect(liveLayout.listHeight).toBeGreaterThan(220)
+  expect(liveLayout.legendLeft).toBeGreaterThanOrEqual(0)
+  expect(liveLayout.legendRight).toBeLessThanOrEqual(320)
+
+  await page.getByRole('link', { name: 'History' }).last().click()
+  await expect(page).toHaveTitle('History · Flightmap')
+  const historyLayout = await page.locator('.history-page').evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }))
+  expect(historyLayout.scrollHeight).toBe(historyLayout.clientHeight)
+
+  await page.getByRole('link', { name: 'Alerts' }).last().click()
+  await expect(page).toHaveTitle('Alerts · Flightmap')
+  const toolbarLayout = await page.locator('.alerts-toolbar').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    left: element.getBoundingClientRect().left,
+    right: element.getBoundingClientRect().right,
+  }))
+  expect(toolbarLayout.scrollWidth).toBe(toolbarLayout.clientWidth)
+  expect(toolbarLayout.left).toBeGreaterThanOrEqual(0)
+  expect(toolbarLayout.right).toBeLessThanOrEqual(320)
+})
