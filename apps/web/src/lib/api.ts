@@ -4,12 +4,15 @@ import type {
   HistoryFilters,
   TrackResponse,
 } from '../types'
+import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import {
   aircraftDetailResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
   dismissAlertsResponseSchema,
   liveAircraftResponseSchema,
+  insightCoverageResponseSchema,
+  insightOverviewSchema,
   sessionsResponseSchema,
   statusResponseSchema,
   summariesResponseSchema,
@@ -260,6 +263,30 @@ export const api = {
 
   status(signal?: AbortSignal) {
     return request<WireStatus>('/status', { signal }, statusResponseSchema).then(adaptStatus)
+  },
+
+  insightsOverview(
+    range: { from: string; to: string; bucket: 'hour' | 'day'; compare?: boolean },
+    signal?: AbortSignal,
+  ) {
+    return request<InsightOverview>(
+      `/insights/overview${queryString({
+        from: range.from,
+        to: range.to,
+        bucket: range.bucket,
+        compare: range.compare ? 'true' : undefined,
+      })}`,
+      { signal },
+      insightOverviewSchema,
+    )
+  },
+
+  insightsCoverage(range: { from: string; to: string }, signal?: AbortSignal) {
+    return request<InsightCoverageResponse>(
+      `/insights/coverage${queryString(range)}`,
+      { signal },
+      insightCoverageResponseSchema,
+    )
   },
 
   settings(signal?: AbortSignal) {

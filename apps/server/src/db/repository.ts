@@ -7,6 +7,13 @@ import type {
   AlertQuery,
   AlertsResponse,
   DailyAircraftSummary,
+  InsightAvailability,
+  InsightCoverageQuery,
+  InsightCoverageResponse,
+  InsightLeader,
+  InsightMetrics,
+  InsightOverview,
+  InsightQuery,
   LiveAircraft,
   SessionQuery,
   SessionsResponse,
@@ -21,6 +28,7 @@ import type {
 import type { Config } from "../config.js";
 import { z } from "zod";
 import { evaluateAlerts } from "../domain/alerts.js";
+import { coverageGridCell, utcDay, utcHour } from "../domain/insights.js";
 import { decideSession } from "../domain/session.js";
 import type { NormalisedSnapshot } from "../domain/normalise.js";
 import type { Database, Queryable } from "./database.js";
@@ -96,6 +104,35 @@ function iso(value: Date | string): string {
 
 function number(value: number | string): number {
   return typeof value === "number" ? value : Number(value);
+}
+
+function nullableNumber(value: number | string | null): number | null {
+  return value === null ? null : number(value);
+}
+
+type InsightAggregateRow = {
+  unique_aircraft: number | string;
+  sessions: number | string;
+  reports: number | string;
+  positioned_reports: number | string;
+  maximum_range_nm: number | string | null;
+  maximum_altitude_ft: number | string | null;
+};
+
+type InsightSeriesRow = InsightAggregateRow & {
+  bucket_start: Date | string;
+  bucket_end: Date | string;
+};
+
+function insightMetricsFromRow(row: InsightAggregateRow | undefined): InsightMetrics {
+  return {
+    uniqueAircraft: row ? number(row.unique_aircraft) : 0,
+    sessions: row ? number(row.sessions) : 0,
+    reports: row ? number(row.reports) : 0,
+    positionedReports: row ? number(row.positioned_reports) : 0,
+    maximumRangeNm: row ? nullableNumber(row.maximum_range_nm) : null,
+    maximumAltitudeFt: row ? nullableNumber(row.maximum_altitude_ft) : null
+  };
 }
 
 function metadataFromRow(row: MetadataRow | SessionRow): AircraftMetadata | null {
@@ -362,6 +399,18 @@ export class FlightRepository {
       const sessionIdentityUpdates: Array<Record<string, unknown>> = [];
       const summarySamples: Array<Record<string, unknown>> = [];
       const dailySamples: Array<Record<string, unknown>> = [];
+      const hourlySamples: Array<Record<string, unknown>> = [];
+      const coverageByCell = new Map<
+        string,
+        {
+          coverageDate: string;
+          latitudeIndex: number;
+          longitudeIndex: number;
+          reports: number;
+          aircraftIcaos: Set<string>;
+          maximumAltitudeFt: number | null;
+        }
+      >();
       const alertSamples: Array<Record<string, unknown>> = [];
 
       for (const aircraft of uniqueAircraft) {
@@ -454,6 +503,45 @@ export class FlightRepository {
           distance: aircraft.distanceNm,
           callsigns: aircraft.callsign ? [aircraft.callsign] : []
         });
+        const altitude =
+          aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt;
+        const positioned =
+          aircraft.latitude !== null && aircraft.longitude !== null;
+        hourlySamples.push({
+          bucketHour: utcHour(snapshot.recordedAt),
+          icao: aircraft.icao,
+          recordedAt: aircraft.recordedAt,
+          reports: 1,
+          positionedReports: positioned ? 1 : 0,
+          sessionIds: sessionId ? [sessionId] : [],
+          maximumRangeNm: aircraft.distanceNm,
+          maximumAltitudeFt: altitude
+        });
+        if (positioned) {
+          const cell = coverageGridCell(aircraft.latitude!, aircraft.longitude!);
+          const key = `${cell.latitudeIndex}:${cell.longitudeIndex}`;
+          const existing = coverageByCell.get(key);
+          if (existing) {
+            existing.reports += 1;
+            existing.aircraftIcaos.add(aircraft.icao);
+            if (
+              altitude !== null &&
+              (existing.maximumAltitudeFt === null ||
+                altitude > existing.maximumAltitudeFt)
+            ) {
+              existing.maximumAltitudeFt = altitude;
+            }
+          } else {
+            coverageByCell.set(key, {
+              coverageDate: utcDay(snapshot.recordedAt),
+              latitudeIndex: cell.latitudeIndex,
+              longitudeIndex: cell.longitudeIndex,
+              reports: 1,
+              aircraftIcaos: new Set([aircraft.icao]),
+              maximumAltitudeFt: altitude
+            });
+          }
+        }
 
         for (const candidate of candidates) {
           alertSamples.push({
@@ -470,6 +558,10 @@ export class FlightRepository {
         }
       }
 
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext('flightmap:insights:' || $1)::bigint)",
+        [utcDay(snapshot.recordedAt)]
+      );
       if (sessionSamples.length > 0) {
         await this.upsertSessions(client, sessionSamples);
         await client.query("SELECT ensure_position_partition($1)", [
@@ -492,6 +584,14 @@ export class FlightRepository {
       }
       await this.upsertAircraftSummaries(client, summarySamples);
       await this.upsertDailySummaries(client, dailySamples);
+      await this.upsertHourlyActivity(client, hourlySamples);
+      await this.upsertCoverageCells(
+        client,
+        [...coverageByCell.values()].map((cell) => ({
+          ...cell,
+          aircraftIcaos: [...cell.aircraftIcaos]
+        }))
+      );
       const insertedAlerts = await this.insertAlerts(client, alertSamples);
       const newlyAlertedIcaos = new Set(
         insertedAlerts.map((alert) => alert.icao.trim().toLowerCase())
@@ -783,12 +883,12 @@ export class FlightRepository {
          summary_date, icao, first_seen_at, last_seen_at, observations,
          positioned_observations, session_count, minimum_altitude_ft,
          maximum_altitude_ft, maximum_ground_speed_kt, closest_range_nm,
-         callsigns
+         maximum_range_nm, callsigns
        )
        SELECT
          (x.recorded_at AT TIME ZONE 'UTC')::date, x.icao,
          x.recorded_at, x.recorded_at, 1, x.positioned, x.new_session,
-         x.altitude, x.altitude, x.speed, x.distance, x.callsigns
+         x.altitude, x.altitude, x.speed, x.distance, x.distance, x.callsigns
        FROM jsonb_to_recordset($1::jsonb) AS x(
          icao text, recorded_at timestamptz, positioned integer,
          new_session integer, altitude double precision,
@@ -820,6 +920,11 @@ export class FlightRepository {
            WHEN daily_aircraft_summary.closest_range_nm IS NULL THEN EXCLUDED.closest_range_nm
            ELSE least(daily_aircraft_summary.closest_range_nm, EXCLUDED.closest_range_nm)
          END,
+         maximum_range_nm = CASE
+           WHEN EXCLUDED.maximum_range_nm IS NULL THEN daily_aircraft_summary.maximum_range_nm
+           WHEN daily_aircraft_summary.maximum_range_nm IS NULL THEN EXCLUDED.maximum_range_nm
+           ELSE greatest(daily_aircraft_summary.maximum_range_nm, EXCLUDED.maximum_range_nm)
+         END,
          callsigns = ARRAY(
            SELECT DISTINCT value
            FROM unnest(daily_aircraft_summary.callsigns || EXCLUDED.callsigns) AS value
@@ -835,6 +940,109 @@ export class FlightRepository {
             speed: row.speed,
             distance: row.distance,
             callsigns: row.callsigns
+          }))
+        )
+      ]
+    );
+  }
+
+  private async upsertHourlyActivity(
+    client: Queryable,
+    rows: Array<Record<string, unknown>>
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    await client.query(
+      `INSERT INTO hourly_aircraft_activity (
+         bucket_hour, icao, first_seen_at, last_seen_at, reports,
+         positioned_reports, session_ids, maximum_range_nm, maximum_altitude_ft
+       )
+       SELECT x.bucket_hour, x.icao, x.recorded_at, x.recorded_at, x.reports,
+              x.positioned_reports, x.session_ids, x.maximum_range_nm,
+              x.maximum_altitude_ft
+       FROM jsonb_to_recordset($1::jsonb) AS x(
+         bucket_hour timestamptz, icao text, recorded_at timestamptz,
+         reports bigint, positioned_reports bigint, session_ids uuid[],
+         maximum_range_nm double precision, maximum_altitude_ft double precision
+       )
+       ON CONFLICT (bucket_hour, icao) DO UPDATE SET
+         first_seen_at = least(hourly_aircraft_activity.first_seen_at, EXCLUDED.first_seen_at),
+         last_seen_at = greatest(hourly_aircraft_activity.last_seen_at, EXCLUDED.last_seen_at),
+         reports = hourly_aircraft_activity.reports + EXCLUDED.reports,
+         positioned_reports = hourly_aircraft_activity.positioned_reports + EXCLUDED.positioned_reports,
+         session_ids = ARRAY(
+           SELECT DISTINCT value
+           FROM unnest(hourly_aircraft_activity.session_ids || EXCLUDED.session_ids) value
+         ),
+         maximum_range_nm = CASE
+           WHEN EXCLUDED.maximum_range_nm IS NULL THEN hourly_aircraft_activity.maximum_range_nm
+           WHEN hourly_aircraft_activity.maximum_range_nm IS NULL THEN EXCLUDED.maximum_range_nm
+           ELSE greatest(hourly_aircraft_activity.maximum_range_nm, EXCLUDED.maximum_range_nm)
+         END,
+         maximum_altitude_ft = CASE
+           WHEN EXCLUDED.maximum_altitude_ft IS NULL THEN hourly_aircraft_activity.maximum_altitude_ft
+           WHEN hourly_aircraft_activity.maximum_altitude_ft IS NULL THEN EXCLUDED.maximum_altitude_ft
+           ELSE greatest(hourly_aircraft_activity.maximum_altitude_ft, EXCLUDED.maximum_altitude_ft)
+         END`,
+      [
+        json(
+          rows.map((row) => ({
+            bucket_hour: row.bucketHour,
+            icao: row.icao,
+            recorded_at: row.recordedAt,
+            reports: row.reports,
+            positioned_reports: row.positionedReports,
+            session_ids: row.sessionIds,
+            maximum_range_nm: row.maximumRangeNm,
+            maximum_altitude_ft: row.maximumAltitudeFt
+          }))
+        )
+      ]
+    );
+  }
+
+  private async upsertCoverageCells(
+    client: Queryable,
+    rows: Array<{
+      coverageDate: string;
+      latitudeIndex: number;
+      longitudeIndex: number;
+      reports: number;
+      aircraftIcaos: string[];
+      maximumAltitudeFt: number | null;
+    }>
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    await client.query(
+      `INSERT INTO daily_coverage_cells (
+         coverage_date, latitude_index, longitude_index, reports,
+         aircraft_icaos, maximum_altitude_ft
+       )
+       SELECT x.coverage_date, x.latitude_index, x.longitude_index, x.reports,
+              x.aircraft_icaos, x.maximum_altitude_ft
+       FROM jsonb_to_recordset($1::jsonb) AS x(
+         coverage_date date, latitude_index smallint, longitude_index smallint,
+         reports bigint, aircraft_icaos text[], maximum_altitude_ft double precision
+       )
+       ON CONFLICT (coverage_date, latitude_index, longitude_index) DO UPDATE SET
+         reports = daily_coverage_cells.reports + EXCLUDED.reports,
+         aircraft_icaos = ARRAY(
+           SELECT DISTINCT value
+           FROM unnest(daily_coverage_cells.aircraft_icaos || EXCLUDED.aircraft_icaos) value
+         ),
+         maximum_altitude_ft = CASE
+           WHEN EXCLUDED.maximum_altitude_ft IS NULL THEN daily_coverage_cells.maximum_altitude_ft
+           WHEN daily_coverage_cells.maximum_altitude_ft IS NULL THEN EXCLUDED.maximum_altitude_ft
+           ELSE greatest(daily_coverage_cells.maximum_altitude_ft, EXCLUDED.maximum_altitude_ft)
+         END`,
+      [
+        json(
+          rows.map((row) => ({
+            coverage_date: row.coverageDate,
+            latitude_index: row.latitudeIndex,
+            longitude_index: row.longitudeIndex,
+            reports: row.reports,
+            aircraft_icaos: row.aircraftIcaos,
+            maximum_altitude_ft: row.maximumAltitudeFt
           }))
         )
       ]
@@ -1321,6 +1529,322 @@ export class FlightRepository {
         hasMore && last
           ? encodeCursor({ date: last.date, icao: last.icao })
           : null
+    };
+  }
+
+  async insightAvailability(
+    requestedFrom?: Date,
+    now = new Date()
+  ): Promise<InsightAvailability> {
+    const result = await this.database.query<{
+      hourly_from: Date | string | null;
+      daily_from: Date | string | null;
+      coverage_from: Date | string | null;
+      status: InsightAvailability["backfill"]["status"];
+      processed_days: number | string;
+      total_days: number | string;
+      next_date: Date | string | null;
+      last_error: string | null;
+    }>(
+      `SELECT
+         (SELECT min(bucket_hour) FROM hourly_aircraft_activity) AS hourly_from,
+         (SELECT min(summary_date) FROM daily_aircraft_summary) AS daily_from,
+         (SELECT min(coverage_date) FROM daily_coverage_cells) AS coverage_from,
+         b.status, b.processed_days, b.total_days, b.next_date, b.last_error
+       FROM insight_backfill_state b WHERE b.id = true`
+    );
+    const row = result.rows[0];
+    const cutoff = new Date(
+      now.getTime() - this.config.historyRetentionDays * 86_400_000
+    );
+    cutoff.setUTCMinutes(0, 0, 0);
+    const dailyFrom = row?.daily_from
+      ? String(row.daily_from).slice(0, 10)
+      : null;
+    const coverageFrom = row?.coverage_from
+      ? String(row.coverage_from).slice(0, 10)
+      : null;
+    const notices: string[] = [];
+    const requestedDay = requestedFrom?.toISOString().slice(0, 10) ?? null;
+    if (row && row.status !== "complete") {
+      notices.push(
+        row.status === "failed"
+          ? "Historical aggregate backfill needs attention."
+          : "Historical aggregates are still being backfilled."
+      );
+    }
+    if (requestedDay && dailyFrom && requestedDay < dailyFrom) {
+      notices.push("Activity before the first retained daily summary is unavailable.");
+    }
+    if (requestedDay && coverageFrom && requestedDay < coverageFrom) {
+      notices.push("Coverage before the first aggregated coverage day is unavailable.");
+    }
+    return {
+      hourlyFrom: row?.hourly_from ? iso(row.hourly_from) : null,
+      dailyFrom,
+      coverageFrom,
+      detailedTrackFrom: cutoff.toISOString(),
+      partial: notices.length > 0,
+      notices,
+      backfill: {
+        status: row?.status ?? "pending",
+        processedDays: row ? number(row.processed_days) : 0,
+        totalDays: row ? number(row.total_days) : 0,
+        nextDate: row?.next_date ? String(row.next_date).slice(0, 10) : null,
+        error: row?.last_error ?? null
+      }
+    };
+  }
+
+  async insightsOverview(
+    query: InsightQuery,
+    now = new Date()
+  ): Promise<InsightOverview> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const duration = to.getTime() - from.getTime();
+    if (duration <= 0) {
+      throw new RepositoryInputError("INVALID_RANGE", "from must be before to");
+    }
+    if (duration > 366 * 86_400_000) {
+      throw new RepositoryInputError(
+        "RANGE_TOO_LARGE",
+        "Insight queries are limited to 366 days"
+      );
+    }
+    const cutoff = new Date(
+      now.getTime() - this.config.historyRetentionDays * 86_400_000
+    );
+    cutoff.setUTCMinutes(0, 0, 0);
+    if (query.bucket === "hour" && from < cutoff) {
+      throw new RepositoryInputError(
+        "HOURLY_DETAIL_EXPIRED",
+        `Hourly insights are available from ${cutoff.toISOString()}`
+      );
+    }
+
+    const hourly = query.bucket === "hour";
+    const seriesSql = hourly
+      ? `WITH filtered AS (
+           SELECT * FROM hourly_aircraft_activity
+           WHERE bucket_hour >= $1 AND bucket_hour < $2
+         ), session_counts AS (
+           SELECT f.bucket_hour, count(DISTINCT s.session_id) AS sessions
+           FROM filtered f
+           CROSS JOIN LATERAL unnest(f.session_ids) AS s(session_id)
+           GROUP BY f.bucket_hour
+         )
+         SELECT f.bucket_hour AS bucket_start,
+                f.bucket_hour + interval '1 hour' AS bucket_end,
+                count(*) AS unique_aircraft,
+                COALESCE(sc.sessions, 0) AS sessions,
+                sum(f.reports) AS reports,
+                sum(f.positioned_reports) AS positioned_reports,
+                max(f.maximum_range_nm) AS maximum_range_nm,
+                max(f.maximum_altitude_ft) AS maximum_altitude_ft
+         FROM filtered f
+         LEFT JOIN session_counts sc ON sc.bucket_hour = f.bucket_hour
+         GROUP BY f.bucket_hour, sc.sessions
+         ORDER BY f.bucket_hour`
+      : `SELECT
+           d.summary_date::timestamp AT TIME ZONE 'UTC' AS bucket_start,
+           (d.summary_date + 1)::timestamp AT TIME ZONE 'UTC' AS bucket_end,
+           count(*) AS unique_aircraft,
+           sum(d.session_count) AS sessions,
+           sum(d.observations) AS reports,
+           sum(d.positioned_observations) AS positioned_reports,
+           max(d.maximum_range_nm) AS maximum_range_nm,
+           max(d.maximum_altitude_ft) AS maximum_altitude_ft
+         FROM daily_aircraft_summary d
+         WHERE d.summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+           AND d.summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
+         GROUP BY d.summary_date
+         ORDER BY d.summary_date`;
+    const metricsSql = hourly
+      ? `WITH filtered AS (
+           SELECT * FROM hourly_aircraft_activity
+           WHERE bucket_hour >= $1 AND bucket_hour < $2
+         )
+         SELECT count(DISTINCT icao) AS unique_aircraft,
+                (SELECT count(DISTINCT s.session_id)
+                 FROM filtered f
+                 CROSS JOIN LATERAL unnest(f.session_ids) AS s(session_id)) AS sessions,
+                COALESCE(sum(reports), 0) AS reports,
+                COALESCE(sum(positioned_reports), 0) AS positioned_reports,
+                max(maximum_range_nm) AS maximum_range_nm,
+                max(maximum_altitude_ft) AS maximum_altitude_ft
+         FROM filtered`
+      : `SELECT count(DISTINCT icao) AS unique_aircraft,
+                COALESCE(sum(session_count), 0) AS sessions,
+                COALESCE(sum(observations), 0) AS reports,
+                COALESCE(sum(positioned_observations), 0) AS positioned_reports,
+                max(maximum_range_nm) AS maximum_range_nm,
+                max(maximum_altitude_ft) AS maximum_altitude_ft
+         FROM daily_aircraft_summary
+         WHERE summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+           AND summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)`;
+    const activityCte = hourly
+      ? `WITH filtered AS (
+           SELECT * FROM hourly_aircraft_activity
+           WHERE bucket_hour >= $1 AND bucket_hour < $2
+         ), activity AS (
+           SELECT f.icao, sum(f.reports) AS reports,
+                  sum(f.positioned_reports) AS positioned_reports,
+                  (SELECT count(DISTINCT s.session_id)
+                   FROM filtered f2
+                   CROSS JOIN LATERAL unnest(f2.session_ids) AS s(session_id)
+                   WHERE f2.icao = f.icao) AS sessions
+           FROM filtered f GROUP BY f.icao
+         )`
+      : `WITH activity AS (
+           SELECT icao, sum(observations) AS reports,
+                  sum(positioned_observations) AS positioned_reports,
+                  sum(session_count) AS sessions
+           FROM daily_aircraft_summary
+           WHERE summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+             AND summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
+           GROUP BY icao
+         )`;
+    const leadersSql = `${activityCte}, leaders AS (
+         SELECT 'aircraft'::text AS kind, trim(a.icao) AS key,
+                COALESCE(NULLIF(m.registration, ''), upper(trim(a.icao))) AS label,
+                NULLIF(concat_ws(' · ', NULLIF(m.type_code, ''), NULLIF(m.operator, '')), '') AS secondary,
+                a.reports, a.positioned_reports, a.sessions
+         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
+         UNION ALL
+         SELECT 'types', COALESCE(NULLIF(lower(m.type_code), ''), 'unknown'),
+                COALESCE(NULLIF(m.type_code, ''), 'Unknown type'), NULL,
+                sum(a.reports), sum(a.positioned_reports), sum(a.sessions)
+         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
+         GROUP BY COALESCE(NULLIF(lower(m.type_code), ''), 'unknown'),
+                  COALESCE(NULLIF(m.type_code, ''), 'Unknown type')
+         UNION ALL
+         SELECT 'operators', COALESCE(NULLIF(lower(m.operator), ''), 'unknown'),
+                COALESCE(NULLIF(m.operator, ''), 'Unknown operator'), NULL,
+                sum(a.reports), sum(a.positioned_reports), sum(a.sessions)
+         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
+         GROUP BY COALESCE(NULLIF(lower(m.operator), ''), 'unknown'),
+                  COALESCE(NULLIF(m.operator, ''), 'Unknown operator')
+       ), ranked AS (
+         SELECT *, row_number() OVER (PARTITION BY kind ORDER BY reports DESC, label) AS rank
+         FROM leaders
+       ) SELECT kind, key, label, secondary, reports, positioned_reports, sessions
+         FROM ranked WHERE rank <= 10 ORDER BY kind, rank`;
+
+    const [seriesResult, metricsResult, leadersResult, availability] =
+      await Promise.all([
+        this.database.query<InsightSeriesRow>(seriesSql, [from, to]),
+        this.database.query<InsightAggregateRow>(metricsSql, [from, to]),
+        this.database.query<{
+          kind: "aircraft" | "types" | "operators";
+          key: string;
+          label: string;
+          secondary: string | null;
+          reports: number | string;
+          positioned_reports: number | string;
+          sessions: number | string;
+        }>(leadersSql, [from, to]),
+        this.insightAvailability(from, now)
+      ]);
+    const leaders: InsightOverview["leaders"] = {
+      aircraft: [],
+      types: [],
+      operators: []
+    };
+    for (const row of leadersResult.rows) {
+      const leader: InsightLeader = {
+        key: row.key.trim().toLowerCase(),
+        label: row.label,
+        secondary: row.secondary,
+        reports: number(row.reports),
+        positionedReports: number(row.positioned_reports),
+        sessions: number(row.sessions)
+      };
+      leaders[row.kind].push(leader);
+    }
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      bucket: query.bucket,
+      metrics: insightMetricsFromRow(metricsResult.rows[0]),
+      series: seriesResult.rows.map((row) => ({
+        bucketStart: iso(row.bucket_start),
+        bucketEnd: iso(row.bucket_end),
+        ...insightMetricsFromRow(row)
+      })),
+      leaders,
+      availability
+    };
+  }
+
+  async insightsCoverage(
+    query: InsightCoverageQuery,
+    now = new Date()
+  ): Promise<InsightCoverageResponse> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const duration = to.getTime() - from.getTime();
+    if (duration <= 0) {
+      throw new RepositoryInputError("INVALID_RANGE", "from must be before to");
+    }
+    if (duration > 366 * 86_400_000) {
+      throw new RepositoryInputError(
+        "RANGE_TOO_LARGE",
+        "Coverage queries are limited to 366 days"
+      );
+    }
+    const limit = 10_000;
+    const [result, availability] = await Promise.all([
+      this.database.query<{
+        latitude_index: number;
+        longitude_index: number;
+        reports: number | string;
+        unique_aircraft: number | string;
+        maximum_altitude_ft: number | string | null;
+      }>(
+        `WITH filtered AS (
+           SELECT * FROM daily_coverage_cells
+           WHERE coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+             AND coverage_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
+         )
+         SELECT f.latitude_index, f.longitude_index, sum(f.reports) AS reports,
+                (SELECT count(DISTINCT icao)
+                 FROM filtered f2
+                 CROSS JOIN LATERAL unnest(f2.aircraft_icaos) AS icao
+                 WHERE f2.latitude_index = f.latitude_index
+                   AND f2.longitude_index = f.longitude_index) AS unique_aircraft,
+                max(f.maximum_altitude_ft) AS maximum_altitude_ft
+         FROM filtered f
+         GROUP BY f.latitude_index, f.longitude_index
+         ORDER BY reports DESC, f.latitude_index, f.longitude_index
+         LIMIT $3`,
+        [from, to, limit + 1]
+      ),
+      this.insightAvailability(from, now)
+    ]);
+    const truncated = result.rows.length > limit;
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      cells: result.rows.slice(0, limit).map((row) => {
+        const cell = coverageGridCell(
+          -90 + row.latitude_index * 0.05,
+          -180 + row.longitude_index * 0.05
+        );
+        return {
+          latitude: cell.latitude,
+          longitude: cell.longitude,
+          south: cell.south,
+          west: cell.west,
+          north: cell.north,
+          east: cell.east,
+          reports: number(row.reports),
+          uniqueAircraft: number(row.unique_aircraft),
+          maximumAltitudeFt: nullableNumber(row.maximum_altitude_ft)
+        };
+      }),
+      truncated,
+      availability
     };
   }
 

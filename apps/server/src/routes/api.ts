@@ -2,6 +2,8 @@ import {
   alertQuerySchema,
   dismissAlertsInputSchema,
   icaoSchema,
+  insightCoverageQuerySchema,
+  insightQuerySchema,
   sessionQuerySchema,
   summaryQuerySchema,
   trackQuerySchema,
@@ -120,6 +122,16 @@ export async function registerApiRoutes(
   app.get("/api/v1/summaries", async (request) => {
     const query = summaryQuerySchema.parse(request.query);
     return repository.summaries(query);
+  });
+
+  app.get("/api/v1/insights/overview", async (request) => {
+    const query = insightQuerySchema.parse(request.query);
+    return repository.insightsOverview(query);
+  });
+
+  app.get("/api/v1/insights/coverage", async (request) => {
+    const query = insightCoverageQuerySchema.parse(request.query);
+    return repository.insightsCoverage(query);
   });
 
   app.get("/api/v1/alerts", async (request) => {

@@ -284,6 +284,110 @@ export const watchlistResponseSchema = z.object({
   items: z.array(watchlistEntrySchema)
 });
 
+export const insightBackfillStatusSchema = z.enum([
+  "pending",
+  "running",
+  "complete",
+  "failed"
+]);
+
+export const insightAvailabilitySchema = z.object({
+  hourlyFrom: isoDateTimeSchema.nullable(),
+  dailyFrom: z.string().date().nullable(),
+  coverageFrom: z.string().date().nullable(),
+  detailedTrackFrom: isoDateTimeSchema,
+  partial: z.boolean(),
+  notices: z.array(z.string()),
+  backfill: z.object({
+    status: insightBackfillStatusSchema,
+    processedDays: z.number().int().nonnegative(),
+    totalDays: z.number().int().nonnegative(),
+    nextDate: z.string().date().nullable(),
+    error: z.string().nullable()
+  })
+});
+
+export const insightSeriesPointSchema = z.object({
+  bucketStart: isoDateTimeSchema,
+  bucketEnd: isoDateTimeSchema,
+  uniqueAircraft: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  reports: z.number().int().nonnegative(),
+  positionedReports: z.number().int().nonnegative(),
+  maximumRangeNm: nullableFiniteNumberSchema,
+  maximumAltitudeFt: nullableFiniteNumberSchema,
+  messageRatePerSecond: nullableFiniteNumberSchema.optional(),
+  receiverAvailabilityPercent: nullableFiniteNumberSchema.optional(),
+  rejectedRecords: z.number().int().nonnegative().nullable().optional(),
+  dataGapMinutes: z.number().int().nonnegative().nullable().optional()
+});
+
+export const insightLeaderSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  secondary: z.string().nullable(),
+  reports: z.number().int().nonnegative(),
+  positionedReports: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative()
+});
+
+export const insightMetricsSchema = z.object({
+  uniqueAircraft: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  reports: z.number().int().nonnegative(),
+  positionedReports: z.number().int().nonnegative(),
+  maximumRangeNm: nullableFiniteNumberSchema,
+  maximumAltitudeFt: nullableFiniteNumberSchema
+});
+
+export const insightComparisonSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  metrics: insightMetricsSchema,
+  changes: z.record(
+    z.string(),
+    z.object({
+      absolute: z.number().finite().nullable(),
+      percent: z.number().finite().nullable()
+    })
+  )
+});
+
+export const insightOverviewSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  bucket: z.enum(["hour", "day"]),
+  metrics: insightMetricsSchema,
+  series: z.array(insightSeriesPointSchema),
+  leaders: z.object({
+    aircraft: z.array(insightLeaderSchema),
+    types: z.array(insightLeaderSchema),
+    operators: z.array(insightLeaderSchema)
+  }),
+  availability: insightAvailabilitySchema,
+  comparison: insightComparisonSchema.nullable().optional()
+});
+
+export const coverageCellSchema = z.object({
+  latitude: z.number().finite(),
+  longitude: z.number().finite(),
+  south: z.number().finite(),
+  west: z.number().finite(),
+  north: z.number().finite(),
+  east: z.number().finite(),
+  reports: z.number().int().nonnegative(),
+  uniqueAircraft: z.number().int().nonnegative(),
+  maximumAltitudeFt: nullableFiniteNumberSchema
+});
+
+export const insightCoverageResponseSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  cells: z.array(coverageCellSchema),
+  truncated: z.boolean(),
+  availability: insightAvailabilitySchema
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -297,6 +401,40 @@ const optionalDateTime = z.preprocess(
   emptyToUndefined,
   isoDateTimeSchema.optional()
 );
+
+export const insightQuerySchema = z
+  .object({
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema,
+    bucket: z.enum(["hour", "day"]),
+    compare: z
+      .preprocess(emptyToUndefined, z.enum(["true", "false"]).optional())
+      .transform((value) => value === "true")
+  })
+  .superRefine((query, context) => {
+    if (Date.parse(query.from) >= Date.parse(query.to)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "from must be before to"
+      });
+    }
+  });
+
+export const insightCoverageQuerySchema = z
+  .object({
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema
+  })
+  .superRefine((query, context) => {
+    if (Date.parse(query.from) >= Date.parse(query.to)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "from must be before to"
+      });
+    }
+  });
 
 export const sessionQuerySchema = z
   .object({
@@ -441,6 +579,15 @@ export type DismissAlertsResponse = z.infer<
   typeof dismissAlertsResponseSchema
 >;
 export type WatchlistResponse = z.infer<typeof watchlistResponseSchema>;
+export type InsightAvailability = z.infer<typeof insightAvailabilitySchema>;
+export type InsightSeriesPoint = z.infer<typeof insightSeriesPointSchema>;
+export type InsightLeader = z.infer<typeof insightLeaderSchema>;
+export type InsightMetrics = z.infer<typeof insightMetricsSchema>;
+export type InsightOverview = z.infer<typeof insightOverviewSchema>;
+export type CoverageCell = z.infer<typeof coverageCellSchema>;
+export type InsightCoverageResponse = z.infer<
+  typeof insightCoverageResponseSchema
+>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type SessionQuery = z.infer<typeof sessionQuerySchema>;
 export type TrackQuery = z.infer<typeof trackQuerySchema>;
@@ -448,6 +595,8 @@ export type SummaryQuery = z.infer<typeof summaryQuerySchema>;
 export type AlertQuery = z.infer<typeof alertQuerySchema>;
 export type DismissAlertsInput = z.infer<typeof dismissAlertsInputSchema>;
 export type WatchlistInput = z.infer<typeof watchlistInputSchema>;
+export type InsightQuery = z.infer<typeof insightQuerySchema>;
+export type InsightCoverageQuery = z.infer<typeof insightCoverageQuerySchema>;
 export type LiveDelta = z.infer<typeof liveDeltaSchema>;
 export type LiveWebSocketMessage = z.infer<
   typeof liveWebSocketMessageSchema

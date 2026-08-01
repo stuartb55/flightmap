@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   icaoSchema,
   dismissAlertsInputSchema,
+  insightCoverageQuerySchema,
+  insightQuerySchema,
   receiverAircraftSchema,
   sessionQuerySchema,
   trackQuerySchema
@@ -49,6 +51,30 @@ describe("shared contracts", () => {
     expect(dismissAlertsInputSchema.parse({ ids: [id] }).ids).toEqual([id]);
     expect(() =>
       dismissAlertsInputSchema.parse({ ids: Array(201).fill(id) })
+    ).toThrow();
+  });
+
+  it("requires ordered UTC insight ranges and an explicit bucket", () => {
+    expect(
+      insightQuerySchema.parse({
+        from: "2026-07-31T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+        bucket: "hour",
+        compare: "true"
+      })
+    ).toMatchObject({ bucket: "hour", compare: true });
+    expect(() =>
+      insightQuerySchema.parse({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-07-31T00:00:00.000Z",
+        bucket: "day"
+      })
+    ).toThrow();
+    expect(() =>
+      insightCoverageQuerySchema.parse({
+        from: "2026-08-01",
+        to: "2026-08-02"
+      })
     ).toThrow();
   });
 });

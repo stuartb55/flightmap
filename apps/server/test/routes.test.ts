@@ -19,6 +19,8 @@ function dependencies() {
   return {
     repository: {
       sessions: vi.fn(),
+      insightsOverview: vi.fn().mockResolvedValue({}),
+      insightsCoverage: vi.fn().mockResolvedValue({}),
       liveAircraft: vi.fn().mockResolvedValue([]),
       databaseReady: vi.fn().mockResolvedValue(true)
     },
@@ -102,6 +104,21 @@ describe("structured route errors", () => {
     expect(response.json()).toMatchObject({
       error: { code: "VALIDATION_ERROR" }
     });
+    await server.close();
+  });
+
+  it("validates insight date ordering before querying aggregates", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject(
+      "/api/v1/insights/overview?from=2026-08-02T00%3A00%3A00Z&to=2026-08-01T00%3A00%3A00Z&bucket=day"
+    );
+    expect(response.statusCode).toBe(400);
+    expect(deps.repository.insightsOverview).not.toHaveBeenCalled();
     await server.close();
   });
 

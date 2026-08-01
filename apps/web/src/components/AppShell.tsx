@@ -1,4 +1,4 @@
-import { Activity, Bell, Clock3, Map, RadioTower, Settings2 } from 'lucide-react'
+import { Activity, BarChart3, Bell, Clock3, Map, RadioTower, Settings2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from '../lib/router'
 import { useLive } from '../state/LiveContext'
@@ -6,6 +6,7 @@ import { useLive } from '../state/LiveContext'
 const navigation = [
   { to: '/', label: 'Live', icon: Map, end: true },
   { to: '/history', label: 'History', icon: Clock3 },
+  { to: '/insights', label: 'Insights', icon: BarChart3 },
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/system', label: 'System', icon: Activity },
   { to: '/settings', label: 'Settings', icon: Settings2 },
