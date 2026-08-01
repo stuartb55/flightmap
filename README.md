@@ -23,6 +23,8 @@ history indefinitely.
   sightings, and watchlist matches.
 - Local registration/type/operator enrichment from the readsb-compatible
   tar1090 aircraft database.
+- Offline airline inference from observed ICAO callsign designators in
+  Insights, with current and last-known metadata fallbacks.
 - Daily PostgreSQL partitions, automated 30-day detail retention, indefinite
   aircraft/day summaries, a system health view, and persistent in-app admin
   settings.

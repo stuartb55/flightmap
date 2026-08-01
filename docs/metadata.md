@@ -68,3 +68,23 @@ Existing imported rows continue to work when the host has no outbound access.
 Disable automatic metadata updates in Settings to avoid repeated failed checks.
 A completely new offline installation starts with no registration/type/operator
 enrichment until a compatible source is made reachable and a refresh succeeds.
+
+## Insight identity inference
+
+Insight rankings retain the callsigns observed in both daily and hourly
+aggregates. When a callsign starts with a recognised three-letter ICAO airline
+designator followed by a flight number, Flightmap uses the airline as the
+operating operator. This is intentionally preferred over registry metadata in
+Insights because a registered owner or lessor is not necessarily the airline
+flying the service. The bundled designator reference keeps this inference
+available offline. For a designator outside that reference, Flightmap can also
+learn the most common operator when at least two previously seen aircraft share
+the designator and the same known operator; ties are resolved deterministically.
+
+If no airline designator matches, Insights uses the current metadata operator,
+then the last-known operator preserved in `aircraft_summary`. Aircraft type
+rankings similarly fall back from the ICAO type code to the model description,
+and aircraft labels fall back from registration to an observed callsign before
+showing the raw ICAO hex identifier. Inferred operator rows are marked with the
+designator used so that derived data remains distinguishable from registry
+metadata.

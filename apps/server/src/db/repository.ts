@@ -37,6 +37,7 @@ import {
   evaluateAlerts,
   isActiveAircraftAlert
 } from "../domain/alerts.js";
+import { airlineOperatorRows } from "../domain/airline-operators.js";
 import {
   coverageGridCell,
   insightMetricChanges,
@@ -567,6 +568,7 @@ export class FlightRepository {
           reports: 1,
           positionedReports: positioned ? 1 : 0,
           sessionIds: sessionId ? [sessionId] : [],
+          callsigns: aircraft.callsign ? [aircraft.callsign] : [],
           maximumRangeNm: aircraft.distanceNm,
           maximumAltitudeFt: altitude
         });
@@ -1009,15 +1011,17 @@ export class FlightRepository {
     await client.query(
       `INSERT INTO hourly_aircraft_activity (
          bucket_hour, icao, first_seen_at, last_seen_at, reports,
-         positioned_reports, session_ids, maximum_range_nm, maximum_altitude_ft
+         positioned_reports, session_ids, callsigns, maximum_range_nm,
+         maximum_altitude_ft
        )
        SELECT x.bucket_hour, x.icao, x.recorded_at, x.recorded_at, x.reports,
-              x.positioned_reports, x.session_ids, x.maximum_range_nm,
-              x.maximum_altitude_ft
+              x.positioned_reports, x.session_ids, x.callsigns,
+              x.maximum_range_nm, x.maximum_altitude_ft
        FROM jsonb_to_recordset($1::jsonb) AS x(
          bucket_hour timestamptz, icao text, recorded_at timestamptz,
          reports bigint, positioned_reports bigint, session_ids uuid[],
-         maximum_range_nm double precision, maximum_altitude_ft double precision
+         callsigns text[], maximum_range_nm double precision,
+         maximum_altitude_ft double precision
        )
        ON CONFLICT (bucket_hour, icao) DO UPDATE SET
          first_seen_at = least(hourly_aircraft_activity.first_seen_at, EXCLUDED.first_seen_at),
@@ -1027,6 +1031,10 @@ export class FlightRepository {
          session_ids = ARRAY(
            SELECT DISTINCT value
            FROM unnest(hourly_aircraft_activity.session_ids || EXCLUDED.session_ids) value
+         ),
+         callsigns = ARRAY(
+           SELECT DISTINCT value
+           FROM unnest(hourly_aircraft_activity.callsigns || EXCLUDED.callsigns) value
          ),
          maximum_range_nm = CASE
            WHEN EXCLUDED.maximum_range_nm IS NULL THEN hourly_aircraft_activity.maximum_range_nm
@@ -1047,6 +1055,7 @@ export class FlightRepository {
             reports: row.reports,
             positioned_reports: row.positionedReports,
             session_ids: row.sessionIds,
+            callsigns: row.callsigns,
             maximum_range_nm: row.maximumRangeNm,
             maximum_altitude_ft: row.maximumAltitudeFt
           }))
@@ -1754,38 +1763,124 @@ export class FlightRepository {
                   (SELECT count(DISTINCT s.session_id)
                    FROM filtered f2
                    CROSS JOIN LATERAL unnest(f2.session_ids) AS s(session_id)
-                   WHERE f2.icao = f.icao) AS sessions
+                   WHERE f2.icao = f.icao) AS sessions,
+                  ARRAY(
+                    SELECT DISTINCT trim(c.callsign)
+                    FROM filtered f3
+                    CROSS JOIN LATERAL unnest(f3.callsigns) AS c(callsign)
+                    WHERE f3.icao = f.icao
+                      AND NULLIF(trim(c.callsign), '') IS NOT NULL
+                  ) AS callsigns
            FROM filtered f GROUP BY f.icao
          )`
-      : `WITH activity AS (
-           SELECT icao, sum(observations) AS reports,
-                  sum(positioned_observations) AS positioned_reports,
-                  sum(session_count) AS sessions
-           FROM daily_aircraft_summary
+      : `WITH filtered AS (
+           SELECT * FROM daily_aircraft_summary
            WHERE summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
              AND summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
-           GROUP BY icao
+         ), activity AS (
+           SELECT f.icao, sum(f.observations) AS reports,
+                  sum(f.positioned_observations) AS positioned_reports,
+                  sum(f.session_count) AS sessions,
+                  ARRAY(
+                    SELECT DISTINCT trim(c.callsign)
+                    FROM filtered f2
+                    CROSS JOIN LATERAL unnest(f2.callsigns) AS c(callsign)
+                    WHERE f2.icao = f.icao
+                      AND NULLIF(trim(c.callsign), '') IS NOT NULL
+                  ) AS callsigns
+           FROM filtered f GROUP BY f.icao
          )`;
-    const leadersSql = `${activityCte}, leaders AS (
-         SELECT 'aircraft'::text AS kind, trim(a.icao) AS key,
-                COALESCE(NULLIF(m.registration, ''), upper(trim(a.icao))) AS label,
-                NULLIF(concat_ws(' · ', NULLIF(m.type_code, ''), NULLIF(m.operator, '')), '') AS secondary,
-                a.reports, a.positioned_reports, a.sessions
-         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
+    const leadersSql = `${activityCte}, reference_designators AS (
+         SELECT upper(d.designator) AS designator, d.operator
+         FROM jsonb_to_recordset($3::jsonb) AS d(
+           designator text, operator text
+         )
+       ), designator_evidence AS (
+         SELECT left(upper(trim(s.latest_callsign)), 3) AS designator,
+                COALESCE(NULLIF(m.operator, ''),
+                         NULLIF(s.latest_operator, '')) AS operator,
+                count(*) AS aircraft_count
+         FROM aircraft_summary s
+         LEFT JOIN aircraft_metadata m ON m.icao = s.icao
+         WHERE upper(trim(s.latest_callsign)) ~ '^[A-Z]{3}[0-9][A-Z0-9]{0,4}$'
+           AND COALESCE(NULLIF(m.operator, ''),
+                        NULLIF(s.latest_operator, '')) IS NOT NULL
+         GROUP BY left(upper(trim(s.latest_callsign)), 3),
+                  COALESCE(NULLIF(m.operator, ''),
+                           NULLIF(s.latest_operator, ''))
+       ), ranked_designator_evidence AS (
+         SELECT designator, operator, aircraft_count,
+                row_number() OVER (
+                  PARTITION BY designator
+                  ORDER BY aircraft_count DESC, operator
+                ) AS rank
+         FROM designator_evidence
+       ), designators AS (
+         SELECT designator, operator FROM reference_designators
          UNION ALL
-         SELECT 'types', COALESCE(NULLIF(lower(m.type_code), ''), 'unknown'),
-                COALESCE(NULLIF(m.type_code, ''), 'Unknown type'), NULL,
-                sum(a.reports), sum(a.positioned_reports), sum(a.sessions)
-         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
-         GROUP BY COALESCE(NULLIF(lower(m.type_code), ''), 'unknown'),
-                  COALESCE(NULLIF(m.type_code, ''), 'Unknown type')
+         SELECT e.designator, e.operator
+         FROM ranked_designator_evidence e
+         WHERE e.rank = 1 AND e.aircraft_count >= 2
+           AND NOT EXISTS (
+             SELECT 1 FROM reference_designators r
+             WHERE r.designator = e.designator
+           )
+       ), resolved AS (
+         SELECT a.icao, a.reports, a.positioned_reports, a.sessions,
+                COALESCE(NULLIF(m.registration, ''),
+                         NULLIF(s.latest_registration, '')) AS registration,
+                COALESCE(NULLIF(m.type_code, ''),
+                         NULLIF(s.latest_type_code, '')) AS type_code,
+                NULLIF(m.description, '') AS description,
+                COALESCE(call.operator, NULLIF(m.operator, ''),
+                         NULLIF(s.latest_operator, '')) AS operator,
+                call.designator AS inferred_designator,
+                (SELECT min(trim(c.callsign))
+                 FROM unnest(a.callsigns) AS c(callsign)
+                 WHERE NULLIF(trim(c.callsign), '') IS NOT NULL) AS callsign
+         FROM activity a
+         LEFT JOIN aircraft_metadata m ON m.icao = a.icao
+         LEFT JOIN aircraft_summary s ON s.icao = a.icao
+         LEFT JOIN LATERAL (
+           SELECT d.operator, d.designator
+           FROM unnest(a.callsigns) AS c(callsign)
+           JOIN designators d
+             ON d.designator = left(upper(trim(c.callsign)), 3)
+           WHERE upper(trim(c.callsign)) ~ '^[A-Z]{3}[0-9][A-Z0-9]{0,4}$'
+           ORDER BY d.designator
+           LIMIT 1
+         ) call ON true
+       ), leaders AS (
+         SELECT 'aircraft'::text AS kind, trim(r.icao) AS key,
+                COALESCE(r.registration, r.callsign,
+                         upper(trim(r.icao))) AS label,
+                NULLIF(concat_ws(' · ',
+                  COALESCE(r.type_code, r.description), r.operator), '') AS secondary,
+                r.reports, r.positioned_reports, r.sessions
+         FROM resolved r
          UNION ALL
-         SELECT 'operators', COALESCE(NULLIF(lower(m.operator), ''), 'unknown'),
-                COALESCE(NULLIF(m.operator, ''), 'Unknown operator'), NULL,
-                sum(a.reports), sum(a.positioned_reports), sum(a.sessions)
-         FROM activity a LEFT JOIN aircraft_metadata m ON m.icao = a.icao
-         GROUP BY COALESCE(NULLIF(lower(m.operator), ''), 'unknown'),
-                  COALESCE(NULLIF(m.operator, ''), 'Unknown operator')
+         SELECT 'types',
+                COALESCE(lower(r.type_code), lower(r.description), 'unknown'),
+                COALESCE(r.type_code, r.description, 'Unknown type'),
+                min(r.description) FILTER (WHERE r.type_code IS NOT NULL),
+                sum(r.reports), sum(r.positioned_reports), sum(r.sessions)
+         FROM resolved r
+         GROUP BY COALESCE(lower(r.type_code), lower(r.description), 'unknown'),
+                  COALESCE(r.type_code, r.description, 'Unknown type')
+         UNION ALL
+         SELECT 'operators', COALESCE(lower(r.operator), 'unknown'),
+                COALESCE(r.operator, 'Unknown operator'),
+                CASE WHEN bool_or(r.inferred_designator IS NOT NULL)
+                  THEN 'Inferred from ' || string_agg(
+                    DISTINCT r.inferred_designator, ', '
+                    ORDER BY r.inferred_designator
+                  ) || ' callsign'
+                  ELSE NULL
+                END,
+                sum(r.reports), sum(r.positioned_reports), sum(r.sessions)
+         FROM resolved r
+         GROUP BY COALESCE(lower(r.operator), 'unknown'),
+                  COALESCE(r.operator, 'Unknown operator')
        ), ranked AS (
          SELECT *, row_number() OVER (PARTITION BY kind ORDER BY reports DESC, label) AS rank
          FROM leaders
@@ -1827,7 +1922,7 @@ export class FlightRepository {
           reports: number | string;
           positioned_reports: number | string;
           sessions: number | string;
-        }>(leadersSql, [from, to]),
+        }>(leadersSql, [from, to, JSON.stringify(airlineOperatorRows)]),
         this.database.query<ReceiverInsightRow>(receiverSql, [from, to, cutoff]),
         query.compare
           ? this.database.query<InsightAggregateRow>(metricsSql, [

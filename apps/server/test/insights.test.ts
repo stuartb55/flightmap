@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { FlightRepository } from "../src/db/repository.js";
+import { airlineOperatorFromCallsign } from "../src/domain/airline-operators.js";
 import {
   COVERAGE_GRID_DEGREES,
   coverageGridCell,
@@ -14,6 +15,68 @@ import {
 } from "../src/services/insight-backfill.js";
 
 describe("insight rollup boundaries", () => {
+  it("infers operating airlines only from valid known ICAO callsigns", () => {
+    expect(airlineOperatorFromCallsign(" EZY42KD ")).toEqual({
+      designator: "EZY",
+      operator: "easyJet"
+    });
+    expect(airlineOperatorFromCallsign("baw123")).toEqual({
+      designator: "BAW",
+      operator: "British Airways"
+    });
+    expect(airlineOperatorFromCallsign("G-TEST")).toBeNull();
+    expect(airlineOperatorFromCallsign("XYZ123")).toBeNull();
+    expect(airlineOperatorFromCallsign("EZYABC")).toBeNull();
+  });
+
+  it("supplies the offline operator reference to identity-ranked insights", async () => {
+    const query = vi.fn(async (sql: string, _parameters?: unknown[]) => ({
+      rows: sql.includes("FROM ranked WHERE rank")
+        ? [{
+            kind: "operators",
+            key: "easyjet",
+            label: "easyJet",
+            secondary: "Inferred from EZY callsign",
+            reports: "12",
+            positioned_reports: "10",
+            sessions: "1"
+          }]
+        : []
+    }));
+    const repository = new FlightRepository({ query } as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+
+    const result = await repository.insightsOverview(
+      {
+        from: "2026-08-01T10:00:00.000Z",
+        to: "2026-08-01T11:00:00.000Z",
+        bucket: "hour",
+        compare: false
+      },
+      new Date("2026-08-01T12:00:00.000Z")
+    );
+
+    expect(result.leaders.operators).toEqual([{
+      key: "easyjet",
+      label: "easyJet",
+      secondary: "Inferred from EZY callsign",
+      reports: 12,
+      positionedReports: 10,
+      sessions: 1
+    }]);
+    const leaderCall = query.mock.calls.find(([sql]) =>
+      sql.includes("reference_designators")
+    );
+    expect(leaderCall?.[0]).toContain("unnest(f3.callsigns)");
+    expect(JSON.parse(String(leaderCall?.[1]?.[2]))).toContainEqual({
+      designator: "EZY",
+      operator: "easyJet"
+    });
+  });
+
   it("bins positions into stable 0.05 degree cells", () => {
     expect(COVERAGE_GRID_DEGREES).toBe(0.05);
     expect(coverageGridCell(53.3499, -2.2795)).toMatchObject({

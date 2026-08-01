@@ -148,11 +148,17 @@ export class InsightBackfillService {
       await client.query(
         `INSERT INTO hourly_aircraft_activity (
            bucket_hour, icao, first_seen_at, last_seen_at, reports,
-           positioned_reports, session_ids, maximum_range_nm, maximum_altitude_ft
+           positioned_reports, session_ids, callsigns, maximum_range_nm,
+           maximum_altitude_ft
          )
          SELECT date_trunc('hour', recorded_at), icao, min(recorded_at),
                 max(recorded_at), count(*), count(*),
-                array_agg(DISTINCT session_id), max(distance_nm),
+                array_agg(DISTINCT session_id),
+                COALESCE(
+                  array_agg(DISTINCT callsign) FILTER (WHERE callsign IS NOT NULL),
+                  '{}'::text[]
+                ),
+                max(distance_nm),
                 max(COALESCE(altitude_barometric_ft, altitude_geometric_ft))
          FROM position_samples
          WHERE recorded_at >= $1::date::timestamp AT TIME ZONE 'UTC'
