@@ -1,4 +1,5 @@
 import type { Database } from "../db/database.js";
+import { utcDay } from "../domain/insights.js";
 
 type Logger = {
   info: (object: unknown, message?: string) => void;
@@ -61,11 +62,12 @@ export class InsightBackfillService {
                 max((recorded_at AT TIME ZONE 'UTC')::date) AS newest_date
          FROM position_samples`
       );
-      const oldest = rangeResult.rows[0]?.oldest_date
-        ? String(rangeResult.rows[0].oldest_date).slice(0, 10)
+      const range = rangeResult.rows[0];
+      const oldest = range?.oldest_date
+        ? utcDay(range.oldest_date)
         : null;
-      const newest = rangeResult.rows[0]?.newest_date
-        ? String(rangeResult.rows[0].newest_date).slice(0, 10)
+      const newest = range?.newest_date
+        ? utcDay(range.newest_date)
         : null;
       if (!oldest || !newest) {
         await this.database.query(
@@ -84,7 +86,7 @@ export class InsightBackfillService {
       const state = stateResult.rows[0];
       if (state?.status === "complete") return;
       let day = state?.next_date
-        ? String(state.next_date).slice(0, 10)
+        ? utcDay(state.next_date)
         : oldest;
       if (day < oldest || day > newest) day = oldest;
       const processed = Math.max(0, daysInclusive(oldest, day) - 1);

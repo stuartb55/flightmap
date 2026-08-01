@@ -5,9 +5,13 @@ import {
   coverageGridCell,
   insightMetricChanges,
   receiverPerformanceForBucket,
+  utcDay,
   utcHour
 } from "../src/domain/insights.js";
-import { nextUtcDate } from "../src/services/insight-backfill.js";
+import {
+  InsightBackfillService,
+  nextUtcDate
+} from "../src/services/insight-backfill.js";
 
 describe("insight rollup boundaries", () => {
   it("bins positions into stable 0.05 degree cells", () => {
@@ -32,6 +36,37 @@ describe("insight rollup boundaries", () => {
     );
     expect(nextUtcDate("2026-03-29")).toBe("2026-03-30");
     expect(nextUtcDate("2024-02-28")).toBe("2024-02-29");
+  });
+
+  it("normalises PostgreSQL date objects before starting the insight backfill", async () => {
+    expect(utcDay(new Date("2026-07-29T00:00:00.000Z"))).toBe("2026-07-29");
+
+    const query = vi.fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          oldest_date: new Date("2026-07-29T00:00:00.000Z"),
+          newest_date: new Date("2026-07-30T00:00:00.000Z")
+        }]
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          status: "pending",
+          next_date: new Date("2026-07-29T00:00:00.000Z")
+        }]
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const service = new InsightBackfillService(
+      { query } as never,
+      { info: vi.fn(), error: vi.fn() }
+    );
+
+    await service.run();
+
+    expect(query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("SET status = 'running'"),
+      ["2026-07-29", "2026-07-30", "2026-07-29", 0, 2]
+    );
   });
 
   it("calculates absolute and percentage comparison changes", () => {
