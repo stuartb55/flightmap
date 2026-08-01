@@ -32,7 +32,11 @@ import type {
 import { savedViewSchema } from "@flightmap/shared";
 import type { Config } from "../config.js";
 import { z } from "zod";
-import { evaluateAlerts } from "../domain/alerts.js";
+import {
+  activeAircraftAlertRules,
+  evaluateAlerts,
+  isActiveAircraftAlert
+} from "../domain/alerts.js";
 import {
   coverageGridCell,
   insightMetricChanges,
@@ -417,8 +421,10 @@ export class FlightRepository {
       );
       const activeAlertResult = await client.query<{ icao: string }>(
         `SELECT DISTINCT icao FROM alert_events
-         WHERE icao = ANY($1::text[]) AND dismissed_at IS NULL`,
-        [icaos]
+         WHERE icao = ANY($1::text[])
+           AND rule = ANY($2::text[])
+           AND dismissed_at IS NULL`,
+        [icaos, [...activeAircraftAlertRules]]
       );
 
       const currentByIcao = new Map(
@@ -641,7 +647,9 @@ export class FlightRepository {
       );
       const insertedAlerts = await this.insertAlerts(client, alertSamples);
       const newlyAlertedIcaos = new Set(
-        insertedAlerts.map((alert) => alert.icao.trim().toLowerCase())
+        insertedAlerts
+          .filter((alert) => isActiveAircraftAlert(alert.rule))
+          .map((alert) => alert.icao.trim().toLowerCase())
       );
       for (const aircraft of uniqueAircraft) {
         aircraft.hasActiveAlert =
@@ -1189,7 +1197,9 @@ export class FlightRepository {
               (w.icao IS NOT NULL) AS watched,
               EXISTS (
                 SELECT 1 FROM alert_events a
-                WHERE a.icao = c.icao AND a.dismissed_at IS NULL
+                WHERE a.icao = c.icao
+                  AND a.rule = ANY($2::text[])
+                  AND a.dismissed_at IS NULL
               ) AS has_active_alert,
               m.icao AS metadata_icao, m.registration, m.type_code,
               m.description, m.operator, m.owner, m.country
@@ -1198,7 +1208,7 @@ export class FlightRepository {
        LEFT JOIN aircraft_metadata m ON m.icao = c.icao
        WHERE c.updated_at >= $1
        ORDER BY c.icao`,
-      [cutoff]
+      [cutoff, [...activeAircraftAlertRules]]
     );
     return result.rows.map((row) => ({
       ...row.state,

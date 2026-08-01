@@ -18,6 +18,16 @@ export type AlertEvaluationContext = {
 
 const emergencySquawks = new Set(["7500", "7600", "7700"]);
 
+export const activeAircraftAlertRules = [
+  "emergency_squawk",
+  "emergency_state",
+  "watchlist"
+] as const satisfies readonly AlertRule[];
+
+export function isActiveAircraftAlert(rule: AlertRule): boolean {
+  return activeAircraftAlertRules.some((activeRule) => activeRule === rule);
+}
+
 export function evaluateAlerts(
   aircraft: Pick<LiveAircraft, "icao" | "callsign" | "squawk" | "emergency">,
   context: AlertEvaluationContext

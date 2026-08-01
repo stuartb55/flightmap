@@ -17,6 +17,29 @@ describe("daily summary track availability", () => {
   });
 });
 
+describe("live aircraft alerts", () => {
+  it("queries only alert rules that require an aircraft warning", async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [] })
+    };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+
+    await repository.liveAircraft(new Date("2026-08-01T12:00:00.000Z"));
+
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining("a.rule = ANY($2::text[])"),
+      [
+        expect.any(Date),
+        ["emergency_squawk", "emergency_state", "watchlist"]
+      ]
+    );
+  });
+});
+
 describe("saved-view persistence", () => {
   it("serialises concurrent creates and enforces the installation-wide limit", async () => {
     const client = {

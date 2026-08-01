@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LiveAircraft } from "@flightmap/shared";
-import { evaluateAlerts } from "../src/domain/alerts.js";
+import {
+  evaluateAlerts,
+  isActiveAircraftAlert
+} from "../src/domain/alerts.js";
 import { calculateRangeAndBearing } from "../src/domain/geo.js";
 import {
   aggregateSessionSample,
@@ -171,6 +174,13 @@ describe("track sessions", () => {
 });
 
 describe("alert rules", () => {
+  it("does not treat an informational first sighting as an active aircraft alert", () => {
+    expect(isActiveAircraftAlert("first_seen")).toBe(false);
+    expect(isActiveAircraftAlert("emergency_squawk")).toBe(true);
+    expect(isActiveAircraftAlert("emergency_state")).toBe(true);
+    expect(isActiveAircraftAlert("watchlist")).toBe(true);
+  });
+
   it("creates first-ever, watchlist, squawk, and state alerts with stable keys", () => {
     const alerts = evaluateAlerts(
       aircraft({ squawk: "7700", emergency: "general" }),
