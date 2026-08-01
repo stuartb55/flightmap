@@ -7,6 +7,18 @@ async function openFlightmap(page: Page) {
   await expect(appReady).toBeVisible()
 }
 
+async function expectSavedViewsClearOfSelectedAircraft(page: Page) {
+  const layout = await page.locator('.map-stage').evaluate((element) => {
+    const savedViews = element.querySelector('.map-saved-views .saved-view-button')!.getBoundingClientRect()
+    const selectedAircraft = element.querySelector('.selected-map-card')!.getBoundingClientRect()
+    return {
+      savedViewsBottom: savedViews.bottom,
+      selectedAircraftTop: selectedAircraft.top,
+    }
+  })
+  expect(layout.selectedAircraftTop - layout.savedViewsBottom).toBeGreaterThanOrEqual(6)
+}
+
 test('loads live data and supports primary navigation', async ({ page }) => {
   await openFlightmap(page)
   await expect(page.getByRole('main')).toBeVisible()
@@ -99,6 +111,8 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   await targetAircraft.click()
   const details = page.locator('.detail-panel')
   await expect(details).toBeVisible()
+  await expect(page.locator('.selected-map-card')).toBeVisible()
+  await expectSavedViewsClearOfSelectedAircraft(page)
   await expect(details.getByRole('link', { name: 'Live' })).toBeVisible()
   await expect(details.getByRole('link', { name: 'History' })).toBeVisible()
 
@@ -243,6 +257,12 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(liveLayout.listHeight).toBeGreaterThan(220)
   expect(liveLayout.legendLeft).toBeGreaterThanOrEqual(0)
   expect(liveLayout.legendRight).toBeLessThanOrEqual(320)
+
+  const targetAircraft = listSheet.getByRole('button', { name: 'Select FLT0001' })
+  await expect(targetAircraft).toBeVisible({ timeout: 15_000 })
+  await targetAircraft.click()
+  await expect(page.locator('.selected-map-card')).toBeVisible()
+  await expectSavedViewsClearOfSelectedAircraft(page)
 
   await page.getByRole('link', { name: 'History' }).last().click()
   await expect(page).toHaveTitle('History · Flightmap')

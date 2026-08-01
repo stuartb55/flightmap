@@ -1438,7 +1438,7 @@ button:disabled {
 .selected-map-card {
   position: absolute;
   z-index: 4;
-  top: 72px;
+  top: 114px;
   left: 14px;
   display: flex;
   align-items: center;
@@ -4896,7 +4896,7 @@ input[aria-invalid='true'] {
   }
 
   .selected-map-card {
-    top: 62px;
+    top: 114px;
     left: 10px;
   }
 
