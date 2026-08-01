@@ -1771,6 +1771,16 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+.identity-inference {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace !important;
 }

@@ -1,3 +1,4 @@
+import { airlineOperatorFromCallsign } from '@flightmap/shared'
 import { type FormEvent, useEffect, useState } from 'react'
 import {
   Activity,
@@ -140,6 +141,8 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
 
   const metadata = detail?.metadata
   const summary = detail?.summary
+  const inferredOperator = airlineOperatorFromCallsign(aircraft.callsign)
+  const operator = inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
 
   return (
@@ -255,9 +258,16 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
         </div>
         <dl className="property-list">
           <div><dt>ICAO address</dt><dd className="mono">{aircraft.icao.toUpperCase()}</dd></div>
+          <div><dt>Callsign</dt><dd className="mono">{aircraft.callsign?.trim() || '—'}</dd></div>
           <div><dt>Registration</dt><dd>{metadata?.registration ?? aircraft.registration ?? '—'}</dd></div>
           <div><dt>Type</dt><dd>{metadata?.description ?? aircraft.description ?? '—'}</dd></div>
-          <div><dt>Operator</dt><dd>{metadata?.operator ?? aircraft.operator ?? '—'}</dd></div>
+          <div>
+            <dt>Operator</dt>
+            <dd title={inferredOperator ? `Inferred from ${inferredOperator.designator} callsign` : undefined}>
+              {operator ?? '—'}
+              {inferredOperator ? <small className="identity-inference">{inferredOperator.designator} callsign</small> : null}
+            </dd>
+          </div>
           <div><dt>Owner</dt><dd>{metadata?.owner ?? '—'}</dd></div>
           <div><dt>Country</dt><dd>{metadata?.country ?? aircraft.country ?? '—'}</dd></div>
         </dl>

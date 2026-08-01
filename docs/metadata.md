@@ -88,3 +88,8 @@ and aircraft labels fall back from registration to an observed callsign before
 showing the raw ICAO hex identifier. Inferred operator rows are marked with the
 designator used so that derived data remains distinguishable from registry
 metadata.
+
+The live Aircraft identity panel uses the same bundled reference for its
+Operator field. A recognised current callsign takes precedence over registry
+metadata and is labelled with the designator used; unrecognised callsigns fall
+back to the imported metadata operator.
