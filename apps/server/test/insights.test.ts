@@ -4,6 +4,7 @@ import { airlineOperatorFromCallsign } from "../src/domain/airline-operators.js"
 import {
   COVERAGE_GRID_DEGREES,
   coverageGridCell,
+  coverageGridCellFromIndices,
   insightMetricChanges,
   receiverPerformanceForBucket,
   utcDay,
@@ -93,6 +94,17 @@ describe("insight rollup boundaries", () => {
     expect(() => coverageGridCell(0, 181)).toThrow(RangeError);
   });
 
+  it("reconstructs adjacent stored grid indexes without collapsing them", () => {
+    const lower = coverageGridCellFromIndices(2866, 3553);
+    const upper = coverageGridCellFromIndices(2867, 3553);
+
+    expect(lower.latitude).toBeCloseTo(53.325);
+    expect(upper.latitude).toBeCloseTo(53.375);
+    expect(upper.latitudeIndex).toBe(2867);
+    expect(upper.latitude).not.toBe(lower.latitude);
+    expect(() => coverageGridCellFromIndices(3600, 0)).toThrow(RangeError);
+  });
+
   it("uses UTC hour and day arithmetic across daylight-saving changes", () => {
     expect(utcHour(new Date("2026-03-29T01:45:00+01:00"))).toBe(
       "2026-03-29T00:00:00.000Z"
@@ -130,6 +142,37 @@ describe("insight rollup boundaries", () => {
       expect.stringContaining("SET status = 'running'"),
       ["2026-07-29", "2026-07-30", "2026-07-29", 0, 2]
     );
+  });
+
+  it("rebuilds altitude extrema from corroborated position samples", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const database = {
+      transaction: async (callback: (client: { query: typeof query }) => Promise<void>) =>
+        callback({ query })
+    };
+    const service = new InsightBackfillService(
+      database as never,
+      { info: vi.fn(), error: vi.fn() }
+    );
+
+    await (service as unknown as { backfillDay: (day: string) => Promise<void> })
+      .backfillDay("2026-08-01");
+
+    const statements = query.mock.calls.map(([sql]) => String(sql));
+    const hourly = statements.find((sql) =>
+      sql.includes("INSERT INTO hourly_aircraft_activity")
+    );
+    const coverage = statements.find((sql) =>
+      sql.includes("INSERT INTO daily_coverage_cells")
+    );
+    const repairedSummaries = statements.find((sql) =>
+      sql.includes("UPDATE track_sessions")
+    );
+    expect(hourly).toContain("altitude_sources_agree");
+    expect(hourly).toContain("max(trusted_altitude_ft)");
+    expect(coverage).toContain("FROM validated_positions");
+    expect(repairedSummaries).toContain("UPDATE daily_aircraft_summary");
+    expect(repairedSummaries).toContain("last_altitude_ft");
   });
 
   it("calculates absolute and percentage comparison changes", () => {
