@@ -284,6 +284,153 @@ export const watchlistResponseSchema = z.object({
   items: z.array(watchlistEntrySchema)
 });
 
+export const mapLayerPreferencesSchema = z
+  .object({
+    coverage: z.boolean(),
+    rangeRings: z.boolean(),
+    aircraftLabels: z.boolean(),
+    trails: z.boolean(),
+    manchesterWaypoints: z.boolean()
+  })
+  .strict();
+
+export const mapViewportSchema = z
+  .object({
+    longitude: z.number().finite().min(-180).max(180),
+    latitude: z.number().finite().min(-90).max(90),
+    zoom: z.number().finite().min(0).max(24),
+    bearing: z.number().finite().min(-360).max(360),
+    pitch: z.number().finite().min(0).max(85)
+  })
+  .strict();
+
+const savedViewBaseSchema = z.object({
+  mapLayers: mapLayerPreferencesSchema,
+  viewport: mapViewportSchema.nullable()
+});
+
+export const liveSavedViewConfigurationSchema = savedViewBaseSchema
+  .extend({
+    surface: z.literal("live"),
+    filters: z
+      .object({
+        query: z.string().max(128),
+        minimumAltitude: z.string().max(16),
+        maximumAltitude: z.string().max(16),
+        minimumSpeed: z.string().max(16),
+        maximumDistance: z.string().max(16),
+        maximumFreshness: z.string().max(16),
+        position: z.enum(["all", "positioned", "unpositioned"]),
+        source: z.string().max(32),
+        category: z.string().max(32),
+        watchedOnly: z.boolean(),
+        alertsOnly: z.boolean()
+      })
+      .strict(),
+    sort: z
+      .object({
+        key: z.enum(["identity", "altitude", "distance", "speed", "freshness"]),
+        direction: z.enum(["asc", "desc"])
+      })
+      .strict()
+  })
+  .strict();
+
+export const historySavedViewConfigurationSchema = savedViewBaseSchema
+  .extend({
+    surface: z.literal("history"),
+    filters: z
+      .object({
+        query: z.string().max(128),
+        from: isoDateTimeSchema,
+        to: isoDateTimeSchema,
+        alert: z.enum(["", "emergency_squawk", "emergency_state", "first_seen", "watchlist"])
+      })
+      .strict(),
+    sort: z.enum(["started_desc", "started_asc"]),
+    selectedSessionIds: z.array(z.string().uuid()).max(8),
+    resolution: z.enum(["auto", "1s", "5s", "15s", "60s"]),
+    replayTime: z.number().finite().nonnegative().nullable()
+  })
+  .strict();
+
+export const insightsSavedViewConfigurationSchema = savedViewBaseSchema
+  .extend({
+    surface: z.literal("insights"),
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema,
+    bucket: z.enum(["hour", "day"]),
+    preset: z.enum(["today", "24h", "7d", "30d", "custom"]),
+    sort: z.literal("reports_desc"),
+    compare: z.boolean()
+  })
+  .strict();
+
+export const savedViewConfigurationSchema = z.discriminatedUnion("surface", [
+  liveSavedViewConfigurationSchema,
+  historySavedViewConfigurationSchema,
+  insightsSavedViewConfigurationSchema
+]).superRefine((configuration, context) => {
+  const from = configuration.surface === "history"
+    ? configuration.filters.from
+    : configuration.surface === "insights"
+      ? configuration.from
+      : null;
+  const to = configuration.surface === "history"
+    ? configuration.filters.to
+    : configuration.surface === "insights"
+      ? configuration.to
+      : null;
+  if (from && to && Date.parse(from) >= Date.parse(to)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: configuration.surface === "history" ? ["filters", "from"] : ["from"],
+      message: "from must be before to"
+    });
+  }
+});
+
+export const savedViewSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(80),
+    surface: z.enum(["live", "history", "insights"]),
+    configuration: savedViewConfigurationSchema,
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema
+  })
+  .strict()
+  .superRefine((view, context) => {
+    if (view.surface !== view.configuration.surface) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["configuration", "surface"],
+        message: "configuration surface must match surface"
+      });
+    }
+  });
+
+export const savedViewsResponseSchema = z.object({
+  items: z.array(savedViewSchema).max(20)
+});
+
+export const savedViewInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    configuration: savedViewConfigurationSchema
+  })
+  .strict();
+
+export const savedViewPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    configuration: savedViewConfigurationSchema.optional()
+  })
+  .strict()
+  .refine((patch) => patch.name !== undefined || patch.configuration !== undefined, {
+    message: "At least one saved-view field is required"
+  });
+
 export const insightBackfillStatusSchema = z.enum([
   "pending",
   "running",
@@ -579,6 +726,15 @@ export type DismissAlertsResponse = z.infer<
   typeof dismissAlertsResponseSchema
 >;
 export type WatchlistResponse = z.infer<typeof watchlistResponseSchema>;
+export type MapLayerPreferences = z.infer<typeof mapLayerPreferencesSchema>;
+export type MapViewport = z.infer<typeof mapViewportSchema>;
+export type SavedViewConfiguration = z.infer<
+  typeof savedViewConfigurationSchema
+>;
+export type SavedView = z.infer<typeof savedViewSchema>;
+export type SavedViewsResponse = z.infer<typeof savedViewsResponseSchema>;
+export type SavedViewInput = z.infer<typeof savedViewInputSchema>;
+export type SavedViewPatch = z.infer<typeof savedViewPatchSchema>;
 export type InsightAvailability = z.infer<typeof insightAvailabilitySchema>;
 export type InsightSeriesPoint = z.infer<typeof insightSeriesPointSchema>;
 export type InsightLeader = z.infer<typeof insightLeaderSchema>;

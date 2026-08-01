@@ -4,6 +4,8 @@ import {
   icaoSchema,
   insightCoverageQuerySchema,
   insightQuerySchema,
+  savedViewInputSchema,
+  savedViewPatchSchema,
   sessionQuerySchema,
   summaryQuerySchema,
   trackQuerySchema,
@@ -201,6 +203,45 @@ export async function registerApiRoutes(
       (aircraft) => aircraft.icao === icao
     );
     if (live) hub.publish({ upserts: [live] });
+    return reply.code(204).send();
+  });
+
+  app.get("/api/v1/saved-views", async () => ({
+    items: await repository.savedViews()
+  }));
+
+  app.post("/api/v1/saved-views", async (request, reply) => {
+    const input = savedViewInputSchema.parse(request.body ?? {});
+    const view = await repository.createSavedView(input);
+    return reply.code(201).send(view);
+  });
+
+  app.patch("/api/v1/saved-views/:id", async (request, reply) => {
+    const { id } = uuidParamsSchema.parse(request.params);
+    const patch = savedViewPatchSchema.parse(request.body ?? {});
+    const view = await repository.updateSavedView(id, patch);
+    if (!view) {
+      return reply.code(404).send({
+        error: {
+          code: "SAVED_VIEW_NOT_FOUND",
+          message: `Saved view ${id} was not found`
+        }
+      });
+    }
+    return view;
+  });
+
+  app.delete("/api/v1/saved-views/:id", async (request, reply) => {
+    const { id } = uuidParamsSchema.parse(request.params);
+    const deleted = await repository.deleteSavedView(id);
+    if (!deleted) {
+      return reply.code(404).send({
+        error: {
+          code: "SAVED_VIEW_NOT_FOUND",
+          message: `Saved view ${id} was not found`
+        }
+      });
+    }
     return reply.code(204).send();
   });
 }

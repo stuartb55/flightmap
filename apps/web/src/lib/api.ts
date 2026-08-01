@@ -4,7 +4,13 @@ import type {
   HistoryFilters,
   TrackResponse,
 } from '../types'
-import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
+import type {
+  InsightCoverageResponse,
+  InsightOverview,
+  SavedView,
+  SavedViewInput,
+  SavedViewPatch,
+} from '@flightmap/shared'
 import {
   aircraftDetailResponseSchema,
   alertEventSchema,
@@ -13,6 +19,8 @@ import {
   liveAircraftResponseSchema,
   insightCoverageResponseSchema,
   insightOverviewSchema,
+  savedViewSchema,
+  savedViewsResponseSchema,
   sessionsResponseSchema,
   statusResponseSchema,
   summariesResponseSchema,
@@ -287,6 +295,32 @@ export const api = {
       { signal },
       insightCoverageResponseSchema,
     )
+  },
+
+  savedViews(signal?: AbortSignal) {
+    return request<{ items: SavedView[] }>('/saved-views', { signal }, savedViewsResponseSchema).then(
+      (response) => response.items,
+    )
+  },
+
+  createSavedView(input: SavedViewInput) {
+    return request<SavedView>(
+      '/saved-views',
+      { method: 'POST', body: JSON.stringify(input) },
+      savedViewSchema,
+    )
+  },
+
+  updateSavedView(id: string, patch: SavedViewPatch) {
+    return request<SavedView>(
+      `/saved-views/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+      savedViewSchema,
+    )
+  },
+
+  deleteSavedView(id: string) {
+    return request<void>(`/saved-views/${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   settings(signal?: AbortSignal) {

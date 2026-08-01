@@ -5,6 +5,8 @@ import {
   insightCoverageQuerySchema,
   insightQuerySchema,
   receiverAircraftSchema,
+  savedViewInputSchema,
+  savedViewPatchSchema,
   sessionQuerySchema,
   trackQuerySchema
 } from "../src/index.js";
@@ -74,6 +76,65 @@ describe("shared contracts", () => {
       insightCoverageQuerySchema.parse({
         from: "2026-08-01",
         to: "2026-08-02"
+      })
+    ).toThrow();
+  });
+
+  it("strictly validates surface-specific saved views", () => {
+    const live = {
+      name: "Nearby aircraft",
+      configuration: {
+        surface: "live",
+        filters: {
+          query: "",
+          minimumAltitude: "",
+          maximumAltitude: "10000",
+          minimumSpeed: "",
+          maximumDistance: "30",
+          maximumFreshness: "15",
+          position: "positioned",
+          source: "adsb",
+          category: "",
+          watchedOnly: false,
+          alertsOnly: false
+        },
+        sort: { key: "distance", direction: "asc" },
+        mapLayers: {
+          coverage: false,
+          rangeRings: true,
+          aircraftLabels: true,
+          trails: true,
+          manchesterWaypoints: true
+        },
+        viewport: null
+      }
+    };
+    expect(savedViewInputSchema.parse(live)).toEqual(live);
+    expect(() =>
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: {
+          ...live.configuration,
+          surface: "history"
+        }
+      })
+    ).toThrow();
+    expect(() => savedViewInputSchema.parse({ ...live, unexpected: true })).toThrow();
+    expect(() => savedViewPatchSchema.parse({})).toThrow();
+    expect(() =>
+      savedViewInputSchema.parse({
+        name: "Reversed insights",
+        configuration: {
+          surface: "insights",
+          from: "2026-08-02T00:00:00.000Z",
+          to: "2026-08-01T00:00:00.000Z",
+          bucket: "day",
+          preset: "custom",
+          sort: "reports_desc",
+          compare: false,
+          mapLayers: live.configuration.mapLayers,
+          viewport: null
+        }
       })
     ).toThrow();
   });

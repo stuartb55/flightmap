@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { FeatureCollection, Point } from 'geojson'
-import type { CoverageCell } from '@flightmap/shared'
+import type { CoverageCell, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -9,6 +9,11 @@ import { DEFAULT_RECEIVER, MAP_STYLE_URL } from '../config'
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
 const SOURCE = 'insight-coverage'
+
+export interface CoverageMapHandle {
+  getViewport: () => MapViewport | null
+  applyViewport: (viewport: MapViewport) => void
+}
 
 function coverageData(cells: CoverageCell[]): FeatureCollection<Point> {
   return {
@@ -33,11 +38,37 @@ function fitCoverage(map: MapLibreMap, cells: CoverageCell[]) {
   map.fitBounds(bounds, { padding: 42, maxZoom: 9, duration: 0 })
 }
 
-export function CoverageMap({ cells }: { cells: CoverageCell[] }) {
+export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[] }>(function CoverageMap(
+  { cells },
+  forwardedRef,
+) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef(cells)
   const [mapError, setMapError] = useState(false)
+
+  useImperativeHandle(forwardedRef, () => ({
+    getViewport: () => {
+      const map = mapRef.current
+      if (!map) return null
+      const center = map.getCenter()
+      return {
+        longitude: center.lng,
+        latitude: center.lat,
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      }
+    },
+    applyViewport: (viewport) => {
+      mapRef.current?.jumpTo({
+        center: [viewport.longitude, viewport.latitude],
+        zoom: viewport.zoom,
+        bearing: viewport.bearing,
+        pitch: viewport.pitch,
+      })
+    },
+  }))
 
   useEffect(() => {
     cellsRef.current = cells
@@ -137,4 +168,4 @@ export function CoverageMap({ cells }: { cells: CoverageCell[] }) {
       ) : null}
     </div>
   )
-}
+})

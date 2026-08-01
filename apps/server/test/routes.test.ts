@@ -21,6 +21,10 @@ function dependencies() {
       sessions: vi.fn(),
       insightsOverview: vi.fn().mockResolvedValue({}),
       insightsCoverage: vi.fn().mockResolvedValue({}),
+      savedViews: vi.fn().mockResolvedValue([]),
+      createSavedView: vi.fn(),
+      updateSavedView: vi.fn(),
+      deleteSavedView: vi.fn(),
       liveAircraft: vi.fn().mockResolvedValue([]),
       databaseReady: vi.fn().mockResolvedValue(true)
     },
@@ -119,6 +123,26 @@ describe("structured route errors", () => {
     );
     expect(response.statusCode).toBe(400);
     expect(deps.repository.insightsOverview).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("validates saved views before persistence", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/saved-views",
+      payload: {
+        name: "Broken view",
+        configuration: { surface: "live", filters: {} }
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(deps.repository.createSavedView).not.toHaveBeenCalled();
     await server.close();
   });
 

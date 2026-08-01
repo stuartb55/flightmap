@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react'
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
+import type { CoverageCell, MapLayerPreferences, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -14,12 +15,16 @@ import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import { manchesterWaypointData } from './manchester-waypoints'
+import { MapLayerMenu } from './MapLayerMenu'
+import { defaultMapLayers } from '../lib/map-preferences'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
 export interface RadarMapHandle {
   fitAircraft: () => void
   centerReceiver: () => void
+  getViewport: () => MapViewport | null
+  applyViewport: (viewport: MapViewport) => void
 }
 
 interface Props {
@@ -31,6 +36,9 @@ interface Props {
   replayTime?: number | null
   followReplay?: boolean
   className?: string
+  mapLayers?: MapLayerPreferences
+  onMapLayersChange?: (layers: MapLayerPreferences) => void
+  coverageCells?: CoverageCell[]
 }
 
 const AIRCRAFT_SOURCE = 'live-aircraft'
@@ -39,6 +47,38 @@ const RINGS_SOURCE = 'range-rings'
 const MANCHESTER_WAYPOINT_SOURCE = 'manchester-waypoints'
 const TRACK_SOURCE = 'history-tracks'
 const REPLAY_SOURCE = 'replay-aircraft'
+const COVERAGE_SOURCE = 'map-coverage'
+
+const layerIds = {
+  coverage: ['map-coverage-heat'],
+  rangeRings: ['range-ring-fill', 'range-ring-line'],
+  aircraftLabels: ['aircraft-labels', 'replay-label'],
+  trails: ['history-track-shadow', 'history-track'],
+  manchesterWaypoints: ['manchester-waypoint-markers', 'manchester-waypoint-labels'],
+} satisfies Record<keyof MapLayerPreferences, string[]>
+
+function coverageData(cells: CoverageCell[]): FeatureCollection<Point> {
+  return {
+    type: 'FeatureCollection',
+    features: cells.map((cell, index) => ({
+      type: 'Feature',
+      id: index,
+      properties: { intensity: Math.max(1, Math.log10(cell.reports + 1)) },
+      geometry: { type: 'Point', coordinates: [cell.longitude, cell.latitude] },
+    })),
+  }
+}
+
+function applyLayerVisibility(map: MapLibreMap, layers: MapLayerPreferences) {
+  for (const [key, ids] of Object.entries(layerIds) as Array<[
+    keyof MapLayerPreferences,
+    string[],
+  ]>) {
+    for (const id of ids) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', layers[key] ? 'visible' : 'none')
+    }
+  }
+}
 
 const AIRCRAFT_COLOURS = {
   ground: '#aeb9c3',
@@ -351,6 +391,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     replayTime,
     followReplay,
     className,
+    mapLayers = defaultMapLayers,
+    onMapLayersChange,
+    coverageCells = [],
   },
   forwardedRef,
 ) {
@@ -362,6 +405,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const tracksRef = useRef(tracks)
   const replayTimeRef = useRef(replayTime)
   const selectedIcaoRef = useRef(selectedIcao)
+  const mapLayersRef = useRef(mapLayers)
+  const coverageCellsRef = useRef(coverageCells)
   const lastFollowAtRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
@@ -372,6 +417,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   tracksRef.current = tracks
   replayTimeRef.current = replayTime
   selectedIcaoRef.current = selectedIcao
+  mapLayersRef.current = mapLayers
+  coverageCellsRef.current = coverageCells
 
   const fitAircraft = () => {
     const positioned = aircraftRef.current.filter(
@@ -415,7 +462,29 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     })
   }
 
-  useImperativeHandle(forwardedRef, () => ({ fitAircraft, centerReceiver }))
+  const getViewport = (): MapViewport | null => {
+    const map = mapRef.current
+    if (!map) return null
+    const center = map.getCenter()
+    return {
+      longitude: center.lng,
+      latitude: center.lat,
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+    }
+  }
+
+  const applyViewport = (viewport: MapViewport) => {
+    mapRef.current?.jumpTo({
+      center: [viewport.longitude, viewport.latitude],
+      zoom: viewport.zoom,
+      bearing: viewport.bearing,
+      pitch: viewport.pitch,
+    })
+  }
+
+  useImperativeHandle(forwardedRef, () => ({ fitAircraft, centerReceiver, getViewport, applyViewport }))
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -457,6 +526,27 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         const id = `aircraft-${name}`
         if (!map.hasImage(id)) map.addImage(id, planeImage(colour), { pixelRatio: 2 })
       }
+
+      map.addSource(COVERAGE_SOURCE, {
+        type: 'geojson',
+        data: coverageData(coverageCellsRef.current),
+      })
+      map.addLayer({
+        id: 'map-coverage-heat',
+        type: 'heatmap',
+        source: COVERAGE_SOURCE,
+        maxzoom: 11,
+        paint: {
+          'heatmap-weight': ['interpolate', ['linear'], ['get', 'intensity'], 1, 0.08, 5, 1],
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 10, 1.8],
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 4, 7, 10, 20],
+          'heatmap-opacity': 0.7,
+          'heatmap-color': [
+            'interpolate', ['linear'], ['heatmap-density'],
+            0, 'rgba(39,72,90,0)', 0.25, '#28697b', 0.55, '#39a594', 0.8, '#e1b85f', 1, '#ff6670',
+          ],
+        },
+      })
 
       map.addSource(RINGS_SOURCE, { type: 'geojson', data: ringData(receiverRef.current) })
       map.addLayer({
@@ -707,6 +797,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       map.on('mouseleave', 'aircraft-icons', () => {
         map.getCanvas().style.cursor = ''
       })
+      applyLayerVisibility(map, mapLayersRef.current)
       setMapError(null)
       setMapReady(true)
     })
@@ -732,6 +823,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     if (!mapReady || !mapRef.current) return
     setSourceData(mapRef.current, TRACK_SOURCE, trackData(tracks))
   }, [tracks, mapReady])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    setSourceData(mapRef.current, COVERAGE_SOURCE, coverageData(coverageCells))
+  }, [coverageCells, mapReady])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    applyLayerVisibility(mapRef.current, mapLayers)
+  }, [mapLayers, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -786,6 +887,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <Maximize2 size={20} />
         </button>
       </div>
+      {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} /> : null}
       <div className="map-legend" aria-label="Map legend">
         <div className="map-altitude-scale" aria-label="Altitude colour scale">
           <span>GND</span>

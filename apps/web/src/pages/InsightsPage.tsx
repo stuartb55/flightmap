@@ -1,9 +1,10 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   InsightCoverageResponse,
   InsightLeader,
   InsightOverview,
   InsightSeriesPoint,
+  SavedViewConfiguration,
 } from '@flightmap/shared'
 import {
   Activity,
@@ -17,6 +18,8 @@ import {
   Route,
 } from 'lucide-react'
 import { CoverageMap } from '../components/CoverageMap'
+import type { CoverageMapHandle } from '../components/CoverageMap'
+import { SavedViewsControl } from '../components/SavedViewsControl'
 import { api } from '../lib/api'
 import {
   compactNumber,
@@ -26,6 +29,7 @@ import {
   formatDateTimeInput,
   formatDistance,
 } from '../lib/format'
+import { useMapLayers } from '../lib/map-preferences'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
 type InsightRange = { from: string; to: string; bucket: 'hour' | 'day' }
@@ -195,6 +199,8 @@ export function InsightsPage() {
   const [error, setError] = useState<string | null>(null)
   const [coverageError, setCoverageError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [mapLayers, setMapLayers] = useMapLayers()
+  const coverageMapRef = useRef<CoverageMapHandle>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -259,6 +265,19 @@ export function InsightsPage() {
     : 0
   const activityEmpty = !loading && overview?.metrics.reports === 0
 
+  const applySavedView = (configuration: SavedViewConfiguration) => {
+    if (configuration.surface !== 'insights') return
+    setPreset(configuration.preset)
+    setRange({ from: configuration.from, to: configuration.to, bucket: configuration.bucket })
+    setCustomFrom(formatDateTimeInput(new Date(configuration.from)))
+    setCustomTo(formatDateTimeInput(new Date(configuration.to)))
+    setMapLayers(configuration.mapLayers)
+    if (configuration.viewport) {
+      const viewport = configuration.viewport
+      window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
+    }
+  }
+
   return (
     <div className="standard-page insights-page">
       <header className="standard-page-header insights-header">
@@ -267,15 +286,32 @@ export function InsightsPage() {
           <h1>Activity &amp; coverage</h1>
           <p>Understand what your receiver hears and where positioned reports are observed.</p>
         </div>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => setRefreshKey((key) => key + 1)}
-          disabled={loading}
-        >
-          <RefreshCw size={15} className={loading ? 'spin' : ''} />
-          Refresh
-        </button>
+        <div className="insights-header-actions">
+          <SavedViewsControl
+            surface="insights"
+            configuration={() => ({
+              surface: 'insights',
+              from: range.from,
+              to: range.to,
+              bucket: range.bucket,
+              preset,
+              sort: 'reports_desc',
+              compare: false,
+              mapLayers,
+              viewport: coverageMapRef.current?.getViewport() ?? null,
+            })}
+            onApply={applySavedView}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setRefreshKey((key) => key + 1)}
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </header>
 
       <section className="insight-controls" aria-label="Insight date range">
@@ -391,7 +427,7 @@ export function InsightsPage() {
           <div className="coverage-empty" role="status"><AlertTriangle size={21} /><strong>Coverage unavailable</strong><span>{coverageError}</span></div>
         ) : coverage?.cells.length ? (
           <>
-            <CoverageMap cells={coverage.cells} />
+            <CoverageMap ref={coverageMapRef} cells={coverage.cells} />
             <p className="coverage-summary">
               {coverage.cells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
               {Math.max(...coverage.cells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.

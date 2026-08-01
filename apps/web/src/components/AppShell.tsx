@@ -2,6 +2,7 @@ import { Activity, BarChart3, Bell, Clock3, Map, RadioTower, Settings2 } from 'l
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from '../lib/router'
 import { useLive } from '../state/LiveContext'
+import { KeyboardShortcuts } from './KeyboardShortcuts'
 
 const navigation = [
   { to: '/', label: 'Live', icon: Map, end: true },
@@ -55,6 +56,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="receiver-actions">
+          <KeyboardShortcuts />
           <div className="receiver-chip" title={receiver?.lastSnapshotAt ?? 'Waiting for receiver'}>
             <span className={`status-dot status-${receiverState}`} aria-hidden="true" />
             <span className="receiver-chip-copy">

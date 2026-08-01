@@ -12,6 +12,10 @@ vi.mock('../lib/api', () => ({
   api: {
     insightsOverview: vi.fn(),
     insightsCoverage: vi.fn(),
+    savedViews: vi.fn().mockResolvedValue([]),
+    createSavedView: vi.fn(),
+    updateSavedView: vi.fn(),
+    deleteSavedView: vi.fn(),
   },
 }))
 

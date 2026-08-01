@@ -17,9 +17,12 @@ import {
   WifiOff,
   X,
 } from 'lucide-react'
+import type { SavedViewConfiguration } from '@flightmap/shared'
 import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
+import { SavedViewsControl } from '../components/SavedViewsControl'
+import { isFormTarget } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
 import { api } from '../lib/api'
 import {
@@ -32,6 +35,7 @@ import {
 } from '../lib/aircraft-filter'
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
+import { useCoverageCells, useMapLayers } from '../lib/map-preferences'
 import { useLive } from '../state/LiveContext'
 import type { AlertEvent, TrackResponse } from '../types'
 
@@ -126,7 +130,10 @@ export function LivePage() {
   const [trackError, setTrackError] = useState<string | null>(null)
   const [bannerError, setBannerError] = useState<string | null>(null)
   const [dismissingBanner, setDismissingBanner] = useState(false)
+  const [mapLayers, setMapLayers] = useMapLayers()
+  const coverage = useCoverageCells(mapLayers.coverage)
   const mapRef = useRef<RadarMapHandle>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersDialogRef = useRef<HTMLElement>(null)
   const mobileListRef = useRef<HTMLElement>(null)
   const mobileFiltersRef = useRef<HTMLElement>(null)
@@ -167,7 +174,7 @@ export function LivePage() {
 
   useEffect(() => {
     const sessionId = selected?.sessionId
-    if (!sessionId) {
+    if (!sessionId || !mapLayers.trails) {
       setSelectedTrack(null)
       return
     }
@@ -215,7 +222,7 @@ export function LivePage() {
       window.clearInterval(timer)
       controller.abort()
     }
-  }, [selected?.sessionId])
+  }, [selected?.sessionId, mapLayers.trails])
 
   const trail = useMemo<TrackResponse[]>(() => {
     if (selectedTrack) return [selectedTrack]
@@ -268,6 +275,35 @@ export function LivePage() {
       setDismissingBanner(false)
     }
   }
+
+  const applySavedView = (configuration: SavedViewConfiguration) => {
+    if (configuration.surface !== 'live') return
+    setFilters(configuration.filters)
+    setSort(configuration.sort)
+    setMapLayers(configuration.mapLayers)
+    if (configuration.viewport) mapRef.current?.applyViewport(configuration.viewport)
+  }
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (isFormTarget(event.target)) return
+      if (event.key === '/') {
+        event.preventDefault()
+        setListCollapsed(false)
+        searchInputRef.current?.focus()
+      } else if (event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        setListCollapsed(false)
+        document.querySelector<HTMLButtonElement>('.desktop-aircraft-panel .aircraft-identity')?.focus()
+      } else if (event.key === 'Escape') {
+        setShowFilters(false)
+        setMobilePanel(null)
+        if (selectedIcao) closeDetails()
+      }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => document.removeEventListener('keydown', keydown)
+  })
 
   return (
     <div
@@ -327,6 +363,7 @@ export function LivePage() {
           <label className="quick-search">
             <Search size={15} />
             <input
+              ref={searchInputRef}
               value={filters.query}
               onChange={(event) => setFilters({ ...filters, query: event.target.value })}
               placeholder="Search aircraft"
@@ -419,8 +456,23 @@ export function LivePage() {
           selectedIcao={selectedIcao}
           onSelectAircraft={selectAircraft}
           tracks={trail}
+          mapLayers={mapLayers}
+          onMapLayersChange={setMapLayers}
+          coverageCells={coverage.cells}
         />
-        {trackError ? <p className="map-data-warning" role="status">{trackError}</p> : null}
+        <SavedViewsControl
+          surface="live"
+          className="map-saved-views"
+          configuration={() => ({
+            surface: 'live',
+            filters,
+            sort,
+            mapLayers,
+            viewport: mapRef.current?.getViewport() ?? null,
+          })}
+          onApply={applySavedView}
+        />
+        {trackError || coverage.error ? <p className="map-data-warning" role="status">{trackError ?? coverage.error}</p> : null}
         {selected ? (
           <div className="selected-map-card">
             <button type="button" className="back-control" onClick={closeDetails}>
