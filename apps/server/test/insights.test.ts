@@ -3,6 +3,8 @@ import { FlightRepository } from "../src/db/repository.js";
 import {
   COVERAGE_GRID_DEGREES,
   coverageGridCell,
+  insightMetricChanges,
+  receiverPerformanceForBucket,
   utcHour
 } from "../src/domain/insights.js";
 import { nextUtcDate } from "../src/services/insight-backfill.js";
@@ -20,6 +22,8 @@ describe("insight rollup boundaries", () => {
       latitudeIndex: 3599,
       longitudeIndex: 7199
     });
+    expect(() => coverageGridCell(Number.NaN, 0)).toThrow(RangeError);
+    expect(() => coverageGridCell(0, 181)).toThrow(RangeError);
   });
 
   it("uses UTC hour and day arithmetic across daylight-saving changes", () => {
@@ -28,6 +32,92 @@ describe("insight rollup boundaries", () => {
     );
     expect(nextUtcDate("2026-03-29")).toBe("2026-03-30");
     expect(nextUtcDate("2024-02-28")).toBe("2024-02-29");
+  });
+
+  it("calculates absolute and percentage comparison changes", () => {
+    expect(
+      insightMetricChanges(
+        {
+          uniqueAircraft: 12,
+          sessions: 8,
+          reports: 150,
+          positionedReports: 120,
+          maximumRangeNm: 90,
+          maximumAltitudeFt: null
+        },
+        {
+          uniqueAircraft: 10,
+          sessions: 10,
+          reports: 100,
+          positionedReports: 80,
+          maximumRangeNm: 0,
+          maximumAltitudeFt: null
+        }
+      )
+    ).toMatchObject({
+      uniqueAircraft: { absolute: 2, percent: 20 },
+      sessions: { absolute: -2, percent: -20 },
+      reports: { absolute: 50, percent: 50 },
+      maximumRangeNm: { absolute: 90, percent: null },
+      maximumAltitudeFt: { absolute: null, percent: null }
+    });
+  });
+
+  it("measures receiver availability and missing sample time within retained detail", () => {
+    expect(
+      receiverPerformanceForBucket(
+        new Date("2026-08-01T10:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-08-01T10:15:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-07-01T00:00:00.000Z"),
+        60_000,
+        {
+          samples: 40,
+          availableSamples: 36,
+          messageRatePerSecond: 125.5,
+          rejectedRecords: 7
+        }
+      )
+    ).toEqual({
+      messageRatePerSecond: 125.5,
+      receiverAvailabilityPercent: 80,
+      rejectedRecords: 7,
+      dataGapMinutes: 5
+    });
+  });
+
+  it("distinguishes unavailable receiver history from a retained data gap", () => {
+    expect(
+      receiverPerformanceForBucket(
+        new Date("2026-08-01T10:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-08-01T10:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        60_000
+      )
+    ).toEqual({
+      messageRatePerSecond: null,
+      receiverAvailabilityPercent: null,
+      rejectedRecords: null,
+      dataGapMinutes: null
+    });
+    expect(
+      receiverPerformanceForBucket(
+        new Date("2026-08-01T10:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-08-01T10:00:00.000Z"),
+        new Date("2026-08-01T11:00:00.000Z"),
+        new Date("2026-07-01T00:00:00.000Z"),
+        60_000
+      )
+    ).toEqual({
+      messageRatePerSecond: null,
+      receiverAvailabilityPercent: 0,
+      rejectedRecords: null,
+      dataGapMinutes: 60
+    });
   });
 
   it("rejects expired hourly queries before touching PostgreSQL", async () => {
@@ -44,6 +134,54 @@ describe("insight rollup boundaries", () => {
           to: "2026-05-02T00:00:00.000Z",
           bucket: "hour",
           compare: false
+        },
+        new Date("2026-08-01T12:00:00.000Z")
+      )
+    ).rejects.toMatchObject({ code: "HOURLY_DETAIL_EXPIRED" });
+    expect(database.query).not.toHaveBeenCalled();
+  });
+
+  it("serialises PostgreSQL date values as ISO calendar dates", async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{
+          hourly_from: new Date("2026-07-01T00:00:00.000Z"),
+          daily_from: new Date("2026-06-01T00:00:00.000Z"),
+          coverage_from: new Date("2026-06-02T00:00:00.000Z"),
+          status: "running",
+          processed_days: 2,
+          total_days: 4,
+          next_date: new Date("2026-06-03T00:00:00.000Z"),
+          last_error: null
+        }]
+      })
+    };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+    await expect(repository.insightAvailability()).resolves.toMatchObject({
+      dailyFrom: "2026-06-01",
+      coverageFrom: "2026-06-02",
+      backfill: { nextDate: "2026-06-03" }
+    });
+  });
+
+  it("rejects hourly comparisons whose preceding period has expired", async () => {
+    const database = { query: vi.fn() };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+    await expect(
+      repository.insightsOverview(
+        {
+          from: "2026-07-02T00:00:00.000Z",
+          to: "2026-08-01T00:00:00.000Z",
+          bucket: "hour",
+          compare: true
         },
         new Date("2026-08-01T12:00:00.000Z")
       )

@@ -5,9 +5,12 @@ import {
   insightCoverageQuerySchema,
   insightQuerySchema,
   receiverAircraftSchema,
+  alertQuerySchema,
   savedViewInputSchema,
   savedViewPatchSchema,
+  sessionExportQuerySchema,
   sessionQuerySchema,
+  summaryQuerySchema,
   trackQuerySchema
 } from "../src/index.js";
 
@@ -46,6 +49,34 @@ describe("shared contracts", () => {
       })
     ).toMatchObject({ limit: 20_000, tail: true });
     expect(() => trackQuerySchema.parse({ limit: "20001" })).toThrow();
+  });
+
+  it("applies bounded export defaults and accepts explicit export options", () => {
+    expect(sessionExportQuerySchema.parse({})).toEqual({
+      format: "csv",
+      resolution: "auto"
+    });
+    expect(
+      sessionExportQuerySchema.parse({
+        format: "geojson",
+        resolution: "15s",
+        from: "2026-08-01T10:00:00.000Z"
+      })
+    ).toEqual({
+      format: "geojson",
+      resolution: "15s",
+      from: "2026-08-01T10:00:00.000Z"
+    });
+    expect(() => sessionExportQuerySchema.parse({ extra: true })).toThrow();
+  });
+
+  it("validates ordered summary ranges and tri-state alert dismissal filters", () => {
+    expect(() =>
+      summaryQuerySchema.parse({ from: "2026-08-02", to: "2026-08-01" })
+    ).toThrow();
+    expect(alertQuerySchema.parse({ dismissed: "true" }).dismissed).toBe(true);
+    expect(alertQuerySchema.parse({ dismissed: "false" }).dismissed).toBe(false);
+    expect(alertQuerySchema.parse({}).dismissed).toBeUndefined();
   });
 
   it("bounds bulk alert dismissals", () => {

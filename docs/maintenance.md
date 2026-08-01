@@ -13,8 +13,9 @@ Automatic daily maintenance:
 - drops complete position partitions older than
   the detailed-history retention configured in Settings (30 days by default);
 - removes expired detailed sessions, alerts, and receiver samples;
-- preserves `aircraft_summary`, `daily_aircraft_summary`, metadata, and the
-  watchlist indefinitely;
+- removes hourly aircraft activity at the same detailed-retention cutoff;
+- preserves `aircraft_summary`, `daily_aircraft_summary`,
+  `daily_coverage_cells`, metadata, saved views, and the watchlist indefinitely;
 - records the outcome in `maintenance_log`.
 
 Automatic maintenance can be paused and resumed from Settings. Leave it enabled
@@ -89,6 +90,11 @@ docker compose exec -T db sh -c \
 The second result should remain stable across detail pruning except for new
 observations. That is the important proof that indefinite sighting history was
 not removed.
+
+Insights exposes asynchronous backfill status in both the Insights and System
+pages. A failed or interrupted batch is safe to retry by restarting the app;
+each UTC day is recomputed and upserted transactionally before the checkpoint
+advances. Application readiness does not wait for this work.
 
 ## PostgreSQL housekeeping
 

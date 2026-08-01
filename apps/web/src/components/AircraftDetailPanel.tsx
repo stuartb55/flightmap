@@ -89,6 +89,9 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
         setSavedWatchFields(next)
       }
       else await api.removeWatchlist(aircraft.icao)
+      // Re-apply the authoritative result in case a receiver delta that was
+      // already in flight briefly replaced the optimistic local state.
+      dispatch({ type: 'watch-state', icao: aircraft.icao, watched })
     } catch (requestError) {
       dispatch({ type: 'watch-state', icao: aircraft.icao, watched: !watched })
       setError(requestError instanceof Error ? requestError.message : 'Watchlist update failed')

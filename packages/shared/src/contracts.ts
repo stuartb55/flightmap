@@ -583,6 +583,21 @@ export const insightCoverageQuerySchema = z
     }
   });
 
+export const sessionExportQuerySchema = z
+  .object({
+    format: z
+      .preprocess(emptyToUndefined, z.enum(["csv", "geojson"]).optional())
+      .transform((value) => value ?? "csv"),
+    resolution: z
+      .preprocess(
+        emptyToUndefined,
+        z.enum(["auto", "1s", "5s", "15s", "60s"]).optional()
+      )
+      .transform((value) => value ?? "auto"),
+    from: optionalDateTime
+  })
+  .strict();
+
 export const sessionQuerySchema = z
   .object({
     from: optionalDateTime,
@@ -753,6 +768,7 @@ export type DismissAlertsInput = z.infer<typeof dismissAlertsInputSchema>;
 export type WatchlistInput = z.infer<typeof watchlistInputSchema>;
 export type InsightQuery = z.infer<typeof insightQuerySchema>;
 export type InsightCoverageQuery = z.infer<typeof insightCoverageQuerySchema>;
+export type SessionExportQuery = z.infer<typeof sessionExportQuerySchema>;
 export type LiveDelta = z.infer<typeof liveDeltaSchema>;
 export type LiveWebSocketMessage = z.infer<
   typeof liveWebSocketMessageSchema

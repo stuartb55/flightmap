@@ -100,7 +100,16 @@ async function request<T>(
 
   if (response.status === 204) return undefined as T
   const body: unknown = await response.json()
-  return schema ? schema.parse(body) : (body as T)
+  if (!schema) return body as T
+  try {
+    return schema.parse(body)
+  } catch {
+    throw new ApiError(
+      'The server returned data this version of Flightmap could not read. Retry after checking that the server and web app are the same version.',
+      'invalid_response',
+      502,
+    )
+  }
 }
 
 function queryString(values: Record<string, string | number | undefined | null>): string {

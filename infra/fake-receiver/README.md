@@ -10,7 +10,8 @@ Run it directly:
 PORT=8081 AIRCRAFT_COUNT=3 node infra/fake-receiver/server.mjs
 ```
 
-Or run the Compose testing profile without publishing another host port:
+Or run the Compose testing profile, which binds the control service to
+`127.0.0.1:8081` by default:
 
 ```sh
 docker compose --profile testing up -d fake-receiver
@@ -33,3 +34,7 @@ Supported scenarios are `normal`, `timeout`, `invalid-json`, `partial`,
 controllable. POST a complete fixture to `/__control/snapshot`; send
 `{"clearCustomSnapshot":true}` to `/__control` to resume generated snapshots.
 POST `/__control/reset` to restore defaults.
+
+`npm run test:load` can exercise 250- and 1,000-aircraft-per-second rollup
+scenarios when `FLIGHTMAP_FAKE_RECEIVER_URL=http://127.0.0.1:8081` is set. It
+also requires 30-day Insights responses to complete within two seconds.

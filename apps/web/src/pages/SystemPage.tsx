@@ -117,6 +117,7 @@ export function SystemPage() {
         <div className="system-error" role="alert">
           <Wifi size={18} />
           <span><strong>Status endpoint unavailable</strong><small>{error}</small></span>
+          <button type="button" className="secondary-button small" onClick={() => void load(true)} disabled={refreshing}>Retry</button>
         </div>
       ) : null}
 

@@ -133,6 +133,7 @@ export function LivePage() {
   const [mapLayers, setMapLayers] = useMapLayers()
   const coverage = useCoverageCells(mapLayers.coverage)
   const mapRef = useRef<RadarMapHandle>(null)
+  const livePageRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersDialogRef = useRef<HTMLElement>(null)
   const mobileListRef = useRef<HTMLElement>(null)
@@ -141,6 +142,10 @@ export function LivePage() {
   useModalFocus(showFilters, filtersDialogRef, () => setShowFilters(false))
   useModalFocus(mobilePanel === 'list', mobileListRef, () => setMobilePanel(null))
   useModalFocus(mobilePanel === 'filters', mobileFiltersRef, () => setMobilePanel(null))
+
+  useEffect(() => {
+    if (mobilePanel) livePageRef.current?.scrollTo({ top: 0, left: 0 })
+  }, [mobilePanel])
 
   useEffect(() => {
     try {
@@ -307,6 +312,7 @@ export function LivePage() {
 
   return (
     <div
+      ref={livePageRef}
       className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''}`}
     >
       {bannerAlert ? (

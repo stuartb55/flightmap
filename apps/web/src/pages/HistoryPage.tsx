@@ -738,8 +738,8 @@ export function HistoryPage() {
           </section>
         ) : null}
         {searchNotice ? <p className="history-notice" role="status">{searchNotice}</p> : null}
-        {sessionError ? <p className="form-error" role="alert">Sessions: {sessionError}</p> : null}
-        {summaryError ? <p className="form-error" role="alert">Summaries: {summaryError}</p> : null}
+        {sessionError ? <div className="form-error retry-error" role="alert"><span>Sessions: {sessionError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
+        {summaryError ? <div className="form-error retry-error" role="alert"><span>Summaries: {summaryError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
         {trackError ? <p className="form-error" role="alert">Track: {trackError}</p> : null}
       </aside>
 
@@ -797,9 +797,15 @@ export function HistoryPage() {
             </header>
             <div className="selected-track-chips">
               {selectedTracks.map((track) => (
-                <button key={track.session.id} type="button" onClick={() => void loadTrack(track.session)} aria-label={`Remove ${track.session.callsigns[0] || track.session.icao} track`}>
-                  <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
-                </button>
+                <article key={track.session.id}>
+                  <button type="button" onClick={() => void loadTrack(track.session)} aria-label={`Remove ${track.session.callsigns[0] || track.session.icao} track`}>
+                    <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
+                  </button>
+                  <span className="track-export-links">
+                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=csv&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} telemetry as CSV`}>CSV</a>
+                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=geojson&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} track as GeoJSON`}>GeoJSON</a>
+                  </span>
+                </article>
               ))}
             </div>
             <dl>

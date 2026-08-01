@@ -25,6 +25,15 @@ export type BuildAppOptions = {
   loggerInstance?: FastifyBaseLogger;
 };
 
+export function validationErrorMessage(error: ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return "The request was invalid";
+  const field = issue.path.length > 0 ? issue.path.join(".") : null;
+  return field
+    ? `Check ${field}: ${issue.message}`
+    : `The request was invalid: ${issue.message}`;
+}
+
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app: FastifyInstance = Fastify({
     ...(options.loggerInstance
@@ -126,7 +135,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       return reply.code(400).send({
         error: {
           code: "VALIDATION_ERROR",
-          message: "The request was invalid",
+          message: validationErrorMessage(error),
           details: error.flatten()
         }
       });

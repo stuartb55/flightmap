@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  Download,
+  Gauge,
   MapPinned,
   Plane,
   RadioTower,
@@ -73,6 +75,15 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
     (best, point) => (!best || point.reports > best.reports ? point : best),
     null,
   )
+  const availabilityPoints = overview.series.flatMap((point, index) =>
+    point.receiverAvailabilityPercent == null
+      ? []
+      : [{
+          x: index * barSpace + barSpace / 2,
+          y: chartBottom - (point.receiverAvailabilityPercent / 100) * (chartBottom - chartTop),
+          value: point.receiverAvailabilityPercent,
+        }],
+  )
 
   return (
     <>
@@ -108,6 +119,17 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
               </rect>
             )
           })}
+          {availabilityPoints.length > 1 ? (
+            <polyline
+              points={availabilityPoints.map((point) => `${point.x},${point.y}`).join(' ')}
+              className="receiver-availability-line"
+            />
+          ) : null}
+          {availabilityPoints.map((point) => (
+            <circle key={`${point.x}:${point.y}`} cx={point.x} cy={point.y} r="3" className="receiver-availability-point">
+              <title>{`Receiver availability: ${point.value.toFixed(1)}%`}</title>
+            </circle>
+          ))}
           {[0, Math.floor((overview.series.length - 1) / 2), overview.series.length - 1]
             .filter((index, position, indexes) => index >= 0 && indexes.indexOf(index) === position)
             .map((index) => (
@@ -123,6 +145,9 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
             ))}
         </svg>
       ) : null}
+      {availabilityPoints.length ? (
+        <p className="chart-legend"><i aria-hidden="true" /> Receiver availability</p>
+      ) : null}
       <details className="chart-data-table">
         <summary>View activity data table</summary>
         <div className="table-scroll">
@@ -137,6 +162,10 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
                 <th scope="col">Positioned</th>
                 <th scope="col">Maximum range</th>
                 <th scope="col">Maximum altitude</th>
+                <th scope="col">Message rate</th>
+                <th scope="col">Receiver availability</th>
+                <th scope="col">Rejected records</th>
+                <th scope="col">Data gaps</th>
               </tr>
             </thead>
             <tbody>
@@ -149,6 +178,10 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
                   <td>{point.positionedReports.toLocaleString('en-GB')}</td>
                   <td>{formatDistance(point.maximumRangeNm)}</td>
                   <td>{formatAltitude(point.maximumAltitudeFt)}</td>
+                  <td>{point.messageRatePerSecond == null ? '—' : `${point.messageRatePerSecond.toFixed(1)}/s`}</td>
+                  <td>{point.receiverAvailabilityPercent == null ? 'Not retained' : `${point.receiverAvailabilityPercent.toFixed(1)}%`}</td>
+                  <td>{point.rejectedRecords?.toLocaleString('en-GB') ?? '—'}</td>
+                  <td>{point.dataGapMinutes == null ? 'Not retained' : `${point.dataGapMinutes.toLocaleString('en-GB')} min`}</td>
                 </tr>
               ))}
             </tbody>
@@ -157,6 +190,64 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
       </details>
     </>
   )
+}
+
+function ReceiverContext({ series }: { series: InsightSeriesPoint[] }) {
+  const retained = series.filter((point) => point.receiverAvailabilityPercent != null)
+  if (!retained.length) {
+    return (
+      <div className="receiver-context-empty" role="status">
+        Receiver performance context follows detailed-history retention and is unavailable for this period.
+      </div>
+    )
+  }
+  const rates = retained.flatMap((point) => point.messageRatePerSecond == null ? [] : [point.messageRatePerSecond])
+  const averageAvailability = retained.reduce((total, point) => total + (point.receiverAvailabilityPercent ?? 0), 0) / retained.length
+  const averageRate = rates.length ? rates.reduce((total, value) => total + value, 0) / rates.length : null
+  const rejected = retained.reduce((total, point) => total + (point.rejectedRecords ?? 0), 0)
+  const gaps = retained.reduce((total, point) => total + (point.dataGapMinutes ?? 0), 0)
+  return (
+    <section className="receiver-context" aria-label="Receiver performance context">
+      <div><Gauge size={16} /><span><small>Average message rate</small><strong>{averageRate == null ? '—' : `${averageRate.toFixed(1)}/s`}</strong></span></div>
+      <div><RadioTower size={16} /><span><small>Receiver availability</small><strong>{averageAvailability.toFixed(1)}%</strong></span></div>
+      <div><AlertTriangle size={16} /><span><small>Rejected records</small><strong>{rejected.toLocaleString('en-GB')}</strong></span></div>
+      <div><Activity size={16} /><span><small>Data gaps</small><strong>{gaps.toLocaleString('en-GB')} min</strong></span></div>
+    </section>
+  )
+}
+
+function signedChange(value: number | null, unit = '', fractionDigits = 0) {
+  if (value == null) return 'Unavailable'
+  const formatted = value.toLocaleString('en-GB', { maximumFractionDigits: fractionDigits })
+  return `${value > 0 ? '+' : ''}${formatted}${unit}`
+}
+
+function ComparisonPanel({ overview }: { overview: InsightOverview }) {
+  const comparison = overview.comparison
+  if (!comparison) return null
+  const entries = [
+    ['Unique aircraft', 'uniqueAircraft', '', 0],
+    ['Sessions', 'sessions', '', 0],
+    ['Reports', 'reports', '', 0],
+    ['Positioned reports', 'positionedReports', '', 0],
+    ['Maximum range', 'maximumRangeNm', ' nm', 1],
+    ['Maximum altitude', 'maximumAltitudeFt', ' ft', 0],
+  ] as const
+  return (
+    <section className="comparison-panel" aria-label="Period comparison">
+      <header><div><span className="eyebrow">PERIOD COMPARISON</span><h2>Compared with the preceding period</h2></div><small>{formatDateTime(comparison.from)} — {formatDateTime(comparison.to)}</small></header>
+      <div>{entries.map(([label, key, unit, fractionDigits]) => {
+        const change = comparison.changes[key]
+        return <article key={key} className={(change?.absolute ?? 0) < 0 ? 'negative' : (change?.absolute ?? 0) > 0 ? 'positive' : ''}><small>{label}</small><strong>{signedChange(change?.absolute ?? null, unit, fractionDigits)}</strong><span>{change?.percent == null ? 'No percentage baseline' : `${signedChange(change.percent, '%', 1)} vs previous`}</span></article>
+      })}</div>
+    </section>
+  )
+}
+
+function exportHref(path: string, values: Record<string, string | boolean>) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(values)) params.set(key, String(value))
+  return `/api/v1/exports/${path}?${params.toString()}`
 }
 
 function LeaderList({ title, leaders }: { title: string; leaders: InsightLeader[] }) {
@@ -199,6 +290,7 @@ export function InsightsPage() {
   const [error, setError] = useState<string | null>(null)
   const [coverageError, setCoverageError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [compare, setCompare] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
 
@@ -208,7 +300,7 @@ export function InsightsPage() {
     setError(null)
     setCoverageError(null)
     void Promise.allSettled([
-      api.insightsOverview(range, controller.signal),
+      api.insightsOverview({ ...range, compare }, controller.signal),
       api.insightsCoverage(range, controller.signal),
     ]).then(([overviewResult, coverageResult]) => {
       if (controller.signal.aborted) return
@@ -233,7 +325,7 @@ export function InsightsPage() {
       setLoading(false)
     })
     return () => controller.abort()
-  }, [range, refreshKey])
+  }, [range, compare, refreshKey])
 
   const choosePreset = (value: Exclude<Preset, 'custom'>) => {
     const next = insightRangeForPreset(value)
@@ -272,6 +364,7 @@ export function InsightsPage() {
     setCustomFrom(formatDateTimeInput(new Date(configuration.from)))
     setCustomTo(formatDateTimeInput(new Date(configuration.to)))
     setMapLayers(configuration.mapLayers)
+    setCompare(configuration.compare)
     if (configuration.viewport) {
       const viewport = configuration.viewport
       window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
@@ -296,12 +389,14 @@ export function InsightsPage() {
               bucket: range.bucket,
               preset,
               sort: 'reports_desc',
-              compare: false,
+              compare,
               mapLayers,
               viewport: coverageMapRef.current?.getViewport() ?? null,
             })}
             onApply={applySavedView}
           />
+          <a className="secondary-button" download href={exportHref('insights', { ...range, compare })}><Download size={15} /> CSV</a>
+          <a className="secondary-button" download href={exportHref('coverage', { from: range.from, to: range.to })}><Download size={15} /> GeoJSON</a>
           <button
             type="button"
             className="secondary-button"
@@ -346,6 +441,7 @@ export function InsightsPage() {
             <CalendarDays size={14} /> Apply
           </button>
         </form>
+        <label className="compare-toggle"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /><span>Compare preceding period</span></label>
       </section>
 
       {!navigator.onLine ? (
@@ -392,6 +488,8 @@ export function InsightsPage() {
             <article className="metric-card"><BarChart3 size={18} /><span><small>Maximum altitude</small><strong>{formatAltitude(overview.metrics.maximumAltitudeFt)}</strong></span></article>
           </section>
 
+          <ComparisonPanel overview={overview} />
+
           {activityEmpty ? (
             <section className="insight-empty">
               <span><Plane size={25} /></span>
@@ -402,6 +500,7 @@ export function InsightsPage() {
             <>
               <section className="insight-panel activity-panel">
                 <header><div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div><small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small></header>
+                <ReceiverContext series={overview.series} />
                 <ActivityChart overview={overview} />
               </section>
 

@@ -6,6 +6,7 @@ import {
   insightQuerySchema,
   savedViewInputSchema,
   savedViewPatchSchema,
+  sessionExportQuerySchema,
   sessionQuerySchema,
   summaryQuerySchema,
   trackQuerySchema,
@@ -18,6 +19,13 @@ import type { ReceiverCollector } from "../ingestion/collector.js";
 import type { LiveHub } from "../realtime/live-hub.js";
 import type { StatusService } from "../services/status.js";
 import type { AppSettingsService } from "../settings.js";
+import {
+  coverageGeoJson,
+  exportDateToken,
+  insightSeriesCsv,
+  sessionTelemetryCsv,
+  sessionTrackGeoJson
+} from "../domain/exports.js";
 
 const uuidParamsSchema = z.object({ id: z.string().uuid() });
 const icaoParamsSchema = z.object({ icao: icaoSchema });
@@ -134,6 +142,58 @@ export async function registerApiRoutes(
   app.get("/api/v1/insights/coverage", async (request) => {
     const query = insightCoverageQuerySchema.parse(request.query);
     return repository.insightsCoverage(query);
+  });
+
+  app.get("/api/v1/exports/insights", async (request, reply) => {
+    const query = insightQuerySchema.parse(request.query);
+    const overview = await repository.insightsOverview(query);
+    return reply
+      .type("text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="flightmap-insights-${exportDateToken(overview.from)}.csv"`
+      )
+      .send(insightSeriesCsv(overview));
+  });
+
+  app.get("/api/v1/exports/sessions/:id", async (request, reply) => {
+    const { id } = uuidParamsSchema.parse(request.params);
+    const query = sessionExportQuerySchema.parse(request.query);
+    const track = await repository.track(id, query.resolution, {
+      ...(query.from ? { from: query.from } : {}),
+      tail: false,
+      limit: 20_000
+    });
+    if (!track) {
+      return reply.code(404).send({
+        error: {
+          code: "SESSION_NOT_FOUND",
+          message: `Session ${id} was not found`
+        }
+      });
+    }
+    reply
+      .header("X-Flightmap-Truncated", String(track.truncated))
+      .header(
+        "Content-Disposition",
+        `attachment; filename="flightmap-session-${track.session.id}.${query.format === "csv" ? "csv" : "geojson"}"`
+      );
+    return query.format === "csv"
+      ? reply.type("text/csv; charset=utf-8").send(sessionTelemetryCsv(track))
+      : reply.type("application/geo+json; charset=utf-8").send(sessionTrackGeoJson(track));
+  });
+
+  app.get("/api/v1/exports/coverage", async (request, reply) => {
+    const query = insightCoverageQuerySchema.parse(request.query);
+    const coverage = await repository.insightsCoverage(query);
+    return reply
+      .type("application/geo+json; charset=utf-8")
+      .header("X-Flightmap-Truncated", String(coverage.truncated))
+      .header(
+        "Content-Disposition",
+        `attachment; filename="flightmap-coverage-${exportDateToken(coverage.from)}.geojson"`
+      )
+      .send(coverageGeoJson(coverage));
   });
 
   app.get("/api/v1/alerts", async (request) => {

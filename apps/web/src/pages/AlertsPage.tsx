@@ -101,6 +101,7 @@ export function AlertsPage() {
   const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([])
   const [watchlistPending, setWatchlistPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
   const [watchDraft, setWatchDraft] = useState({ icao: '', label: '', notes: '' })
 
   useEffect(() => {
@@ -121,7 +122,7 @@ export function AlertsPage() {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [dispatch])
+  }, [dispatch, retryKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -134,7 +135,7 @@ export function AlertsPage() {
         }
       })
     return () => controller.abort()
-  }, [])
+  }, [retryKey])
 
   const filtered = useMemo(
     () =>
@@ -316,7 +317,7 @@ export function AlertsPage() {
         ) : null}
       </div>
 
-      {error ? <p className="form-error page-error" role="alert">{error}</p> : null}
+      {error ? <div className="form-error page-error retry-error" role="alert"><span>{error}</span><button type="button" onClick={() => setRetryKey((key) => key + 1)}>Retry</button></div> : null}
       <div className="alert-list" aria-live="polite">
         {loading && !alerts.length ? (
           Array.from({ length: 3 }, (_, index) => <div className="alert-card-skeleton" key={index} />)

@@ -33,7 +33,13 @@ import { savedViewSchema } from "@flightmap/shared";
 import type { Config } from "../config.js";
 import { z } from "zod";
 import { evaluateAlerts } from "../domain/alerts.js";
-import { coverageGridCell, utcDay, utcHour } from "../domain/insights.js";
+import {
+  coverageGridCell,
+  insightMetricChanges,
+  receiverPerformanceForBucket,
+  utcDay,
+  utcHour
+} from "../domain/insights.js";
 import { decideSession } from "../domain/session.js";
 import type { NormalisedSnapshot } from "../domain/normalise.js";
 import type { Database, Queryable } from "./database.js";
@@ -116,6 +122,14 @@ function iso(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
+function utcDate(value: Date | string): string {
+  return value instanceof Date
+    ? value.toISOString().slice(0, 10)
+    : /^\d{4}-\d{2}-\d{2}/.test(value)
+      ? value.slice(0, 10)
+      : new Date(value).toISOString().slice(0, 10);
+}
+
 function number(value: number | string): number {
   return typeof value === "number" ? value : Number(value);
 }
@@ -136,6 +150,14 @@ type InsightAggregateRow = {
 type InsightSeriesRow = InsightAggregateRow & {
   bucket_start: Date | string;
   bucket_end: Date | string;
+};
+
+type ReceiverInsightRow = {
+  bucket_start: Date | string;
+  samples: number | string;
+  available_samples: number | string;
+  message_rate_per_second: number | string | null;
+  rejected_records: number | string | null;
 };
 
 function insightMetricsFromRow(row: InsightAggregateRow | undefined): InsightMetrics {
@@ -1524,7 +1546,7 @@ export class FlightRepository {
       const date =
         row.summary_date instanceof Date
           ? row.summary_date.toISOString().slice(0, 10)
-          : String(row.summary_date).slice(0, 10);
+          : utcDate(row.summary_date);
       const positionedObservations = number(row.positioned_observations);
       return {
         icao: row.icao.trim().toLowerCase(),
@@ -1584,10 +1606,10 @@ export class FlightRepository {
     );
     cutoff.setUTCMinutes(0, 0, 0);
     const dailyFrom = row?.daily_from
-      ? String(row.daily_from).slice(0, 10)
+      ? utcDate(row.daily_from)
       : null;
     const coverageFrom = row?.coverage_from
-      ? String(row.coverage_from).slice(0, 10)
+      ? utcDate(row.coverage_from)
       : null;
     const notices: string[] = [];
     const requestedDay = requestedFrom?.toISOString().slice(0, 10) ?? null;
@@ -1615,7 +1637,7 @@ export class FlightRepository {
         status: row?.status ?? "pending",
         processedDays: row ? number(row.processed_days) : 0,
         totalDays: row ? number(row.total_days) : 0,
-        nextDate: row?.next_date ? String(row.next_date).slice(0, 10) : null,
+        nextDate: row?.next_date ? utcDate(row.next_date) : null,
         error: row?.last_error ?? null
       }
     };
@@ -1641,10 +1663,14 @@ export class FlightRepository {
       now.getTime() - this.config.historyRetentionDays * 86_400_000
     );
     cutoff.setUTCMinutes(0, 0, 0);
-    if (query.bucket === "hour" && from < cutoff) {
+    const comparisonFrom = new Date(from.getTime() - duration);
+    const earliestRequested = query.compare ? comparisonFrom : from;
+    if (query.bucket === "hour" && earliestRequested < cutoff) {
       throw new RepositoryInputError(
         "HOURLY_DETAIL_EXPIRED",
-        `Hourly insights are available from ${cutoff.toISOString()}`
+        query.compare
+          ? `The preceding hourly comparison is available from ${cutoff.toISOString()}`
+          : `Hourly insights are available from ${cutoff.toISOString()}`
       );
     }
 
@@ -1756,7 +1782,30 @@ export class FlightRepository {
        ) SELECT kind, key, label, secondary, reports, positioned_reports, sessions
          FROM ranked WHERE rank <= 10 ORDER BY kind, rank`;
 
-    const [seriesResult, metricsResult, leadersResult, availability] =
+    const receiverBucket = hourly
+      ? "date_trunc('hour', recorded_at)"
+      : "date_trunc('day', recorded_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
+    const receiverSql = `SELECT ${receiverBucket} AS bucket_start,
+                                count(*) AS samples,
+                                count(*) FILTER (
+                                  WHERE health IN ('online', 'degraded')
+                                ) AS available_samples,
+                                avg(message_rate_per_second) AS message_rate_per_second,
+                                sum(bad_messages) AS rejected_records
+                         FROM receiver_samples
+                         WHERE recorded_at >= greatest($1::timestamptz, $3::timestamptz)
+                           AND recorded_at < $2::timestamptz
+                         GROUP BY bucket_start
+                         ORDER BY bucket_start`;
+
+    const [
+      seriesResult,
+      metricsResult,
+      leadersResult,
+      receiverResult,
+      comparisonMetricsResult,
+      availability
+    ] =
       await Promise.all([
         this.database.query<InsightSeriesRow>(seriesSql, [from, to]),
         this.database.query<InsightAggregateRow>(metricsSql, [from, to]),
@@ -1769,7 +1818,14 @@ export class FlightRepository {
           positioned_reports: number | string;
           sessions: number | string;
         }>(leadersSql, [from, to]),
-        this.insightAvailability(from, now)
+        this.database.query<ReceiverInsightRow>(receiverSql, [from, to, cutoff]),
+        query.compare
+          ? this.database.query<InsightAggregateRow>(metricsSql, [
+              comparisonFrom,
+              from
+            ])
+          : Promise.resolve({ rows: [] as InsightAggregateRow[] }),
+        this.insightAvailability(earliestRequested, now)
       ]);
     const leaders: InsightOverview["leaders"] = {
       aircraft: [],
@@ -1787,18 +1843,59 @@ export class FlightRepository {
       };
       leaders[row.kind].push(leader);
     }
+    const metrics = insightMetricsFromRow(metricsResult.rows[0]);
+    const receiverByBucket = new Map(
+      receiverResult.rows.map((row) => [iso(row.bucket_start), row])
+    );
+    const series = seriesResult.rows.map((row) => {
+      const bucketStart = new Date(row.bucket_start);
+      const bucketEnd = new Date(row.bucket_end);
+      const receiver = receiverByBucket.get(bucketStart.toISOString());
+      return {
+        bucketStart: bucketStart.toISOString(),
+        bucketEnd: bucketEnd.toISOString(),
+        ...insightMetricsFromRow(row),
+        ...receiverPerformanceForBucket(
+          bucketStart,
+          bucketEnd,
+          from,
+          to,
+          cutoff,
+          // Receiver samples are compacted to one row per UTC minute when
+          // persisted, independently of the polling cadence.
+          60_000,
+          receiver
+            ? {
+                samples: number(receiver.samples),
+                availableSamples: number(receiver.available_samples),
+                messageRatePerSecond: nullableNumber(
+                  receiver.message_rate_per_second
+                ),
+                rejectedRecords: nullableNumber(receiver.rejected_records)
+              }
+            : undefined
+        )
+      };
+    });
+    const previousMetrics = insightMetricsFromRow(
+      comparisonMetricsResult.rows[0]
+    );
     return {
       from: from.toISOString(),
       to: to.toISOString(),
       bucket: query.bucket,
-      metrics: insightMetricsFromRow(metricsResult.rows[0]),
-      series: seriesResult.rows.map((row) => ({
-        bucketStart: iso(row.bucket_start),
-        bucketEnd: iso(row.bucket_end),
-        ...insightMetricsFromRow(row)
-      })),
+      metrics,
+      series,
       leaders,
-      availability
+      availability,
+      comparison: query.compare
+        ? {
+            from: comparisonFrom.toISOString(),
+            to: from.toISOString(),
+            metrics: previousMetrics,
+            changes: insightMetricChanges(metrics, previousMetrics)
+          }
+        : null
     };
   }
 

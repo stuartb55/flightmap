@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InsightsPage, insightRangeForPreset } from './InsightsPage'
@@ -58,6 +58,10 @@ function overview(overrides: Partial<InsightOverview> = {}): InsightOverview {
         positionedReports: 1_100,
         maximumRangeNm: 82.4,
         maximumAltitudeFt: 41_000,
+        messageRatePerSecond: 125.5,
+        receiverAvailabilityPercent: 98.5,
+        rejectedRecords: 2,
+        dataGapMinutes: 1,
       },
     ],
     leaders: {
@@ -103,6 +107,7 @@ describe('InsightsPage', () => {
     expect(await screen.findByText('1,250')).toBeInTheDocument()
     expect(screen.getByText(/Busiest hour:/)).toBeInTheDocument()
     expect(screen.getByText('View activity data table')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Receiver performance context' })).toHaveTextContent('98.5%')
     expect(screen.getByText('G-TEST')).toBeInTheDocument()
     expect(screen.getByTestId('coverage-map')).toHaveTextContent('1 cells')
     expect(screen.getByText('View busiest coverage cells')).toBeInTheDocument()
@@ -134,6 +139,35 @@ describe('InsightsPage', () => {
     render(<InsightsPage />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Overview unavailable')
     await waitFor(() => expect(screen.getByTestId('coverage-map')).toBeInTheDocument())
+  })
+
+  it('requests and renders the immediately preceding period comparison', async () => {
+    vi.mocked(api.insightsOverview).mockResolvedValue(
+      overview({
+        comparison: {
+          from: '2026-07-31T12:00:00.000Z',
+          to: '2026-08-01T00:00:00.000Z',
+          metrics: { uniqueAircraft: 10, sessions: 10, reports: 1000, positionedReports: 900, maximumRangeNm: 70, maximumAltitudeFt: 40000 },
+          changes: {
+            uniqueAircraft: { absolute: 2, percent: 20 },
+            sessions: { absolute: 5, percent: 50 },
+            reports: { absolute: 250, percent: 25 },
+            positionedReports: { absolute: 200, percent: 22.2 },
+            maximumRangeNm: { absolute: 12.4, percent: 17.7 },
+            maximumAltitudeFt: { absolute: 1000, percent: 2.5 },
+          },
+        },
+      }),
+    )
+    render(<InsightsPage />)
+    await screen.findByText('1,250')
+    fireEvent.click(screen.getByLabelText('Compare preceding period'))
+    await waitFor(() => expect(api.insightsOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ compare: true }),
+      expect.any(AbortSignal),
+    ))
+    expect(await screen.findByText('Compared with the preceding period')).toBeInTheDocument()
+    expect(screen.getByText('+20% vs previous')).toBeInTheDocument()
   })
 })
 

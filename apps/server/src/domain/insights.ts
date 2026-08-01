@@ -1,3 +1,5 @@
+import type { InsightMetrics, InsightSeriesPoint } from "@flightmap/shared";
+
 export const COVERAGE_GRID_DEGREES = 0.05;
 
 export type CoverageGridCell = {
@@ -48,4 +50,91 @@ export function utcHour(value: Date): string {
   const result = new Date(value);
   result.setUTCMinutes(0, 0, 0);
   return result.toISOString();
+}
+
+const insightMetricKeys = [
+  "uniqueAircraft",
+  "sessions",
+  "reports",
+  "positionedReports",
+  "maximumRangeNm",
+  "maximumAltitudeFt"
+] as const satisfies readonly (keyof InsightMetrics)[];
+
+export function insightMetricChanges(
+  current: InsightMetrics,
+  previous: InsightMetrics
+): Record<string, { absolute: number | null; percent: number | null }> {
+  return Object.fromEntries(
+    insightMetricKeys.map((key) => {
+      const currentValue = current[key];
+      const previousValue = previous[key];
+      if (currentValue === null || previousValue === null) {
+        return [key, { absolute: null, percent: null }];
+      }
+      const absolute = currentValue - previousValue;
+      return [
+        key,
+        {
+          absolute,
+          percent: previousValue === 0 ? null : (absolute / previousValue) * 100
+        }
+      ];
+    })
+  );
+}
+
+export type ReceiverBucketAggregate = {
+  samples: number;
+  availableSamples: number;
+  messageRatePerSecond: number | null;
+  rejectedRecords: number | null;
+};
+
+export function receiverPerformanceForBucket(
+  bucketStart: Date,
+  bucketEnd: Date,
+  rangeFrom: Date,
+  rangeTo: Date,
+  retainedFrom: Date,
+  intervalMs: number,
+  aggregate?: ReceiverBucketAggregate
+): Pick<
+  InsightSeriesPoint,
+  | "messageRatePerSecond"
+  | "receiverAvailabilityPercent"
+  | "rejectedRecords"
+  | "dataGapMinutes"
+> {
+  const eligibleStart = Math.max(
+    bucketStart.getTime(),
+    rangeFrom.getTime(),
+    retainedFrom.getTime()
+  );
+  const eligibleEnd = Math.min(bucketEnd.getTime(), rangeTo.getTime());
+  if (eligibleEnd <= eligibleStart) {
+    return {
+      messageRatePerSecond: null,
+      receiverAvailabilityPercent: null,
+      rejectedRecords: null,
+      dataGapMinutes: null
+    };
+  }
+  const expectedSamples = Math.max(
+    1,
+    Math.ceil((eligibleEnd - eligibleStart) / intervalMs)
+  );
+  const receivedSamples = Math.min(expectedSamples, aggregate?.samples ?? 0);
+  const availableSamples = Math.min(
+    expectedSamples,
+    aggregate?.availableSamples ?? 0
+  );
+  return {
+    messageRatePerSecond: aggregate?.messageRatePerSecond ?? null,
+    receiverAvailabilityPercent: (availableSamples / expectedSamples) * 100,
+    rejectedRecords: aggregate?.rejectedRecords ?? null,
+    dataGapMinutes: Math.ceil(
+      ((expectedSamples - receivedSamples) * intervalMs) / 60_000
+    )
+  };
 }
