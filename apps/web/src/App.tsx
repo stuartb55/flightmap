@@ -18,6 +18,9 @@ const HistoryPage = lazy(() =>
 const AlertsPage = lazy(() =>
   import('./pages/AlertsPage').then((module) => ({ default: module.AlertsPage })),
 )
+const InsightsPage = lazy(() =>
+  import('./pages/InsightsPage').then((module) => ({ default: module.InsightsPage })),
+)
 const SystemPage = lazy(() =>
   import('./pages/SystemPage').then((module) => ({ default: module.SystemPage })),
 )
@@ -36,7 +39,7 @@ function PageLoading() {
 
 function AppRoutes() {
   const { pathname, navigate } = useLocation()
-  const knownPath = ['/', '/history', '/alerts', '/system', '/settings'].includes(pathname)
+  const knownPath = ['/', '/history', '/insights', '/alerts', '/system', '/settings'].includes(pathname)
 
   useEffect(() => {
     if (!knownPath) navigate('/', true)
@@ -45,6 +48,8 @@ function AppRoutes() {
   const Page =
     pathname === '/history'
       ? HistoryPage
+      : pathname === '/insights'
+        ? InsightsPage
       : pathname === '/alerts'
         ? AlertsPage
         : pathname === '/system'

@@ -68,6 +68,8 @@ services:
       RECEIVER_LAT: ${FAKE_RECEIVER_LAT:-53.61}
       RECEIVER_LON: ${FAKE_RECEIVER_LON:--2.31}
       AIRCRAFT_COUNT: ${FAKE_RECEIVER_AIRCRAFT_COUNT:-3}
+    ports:
+      - "127.0.0.1:${FAKE_RECEIVER_HOST_PORT:-8081}:${FAKE_RECEIVER_PORT:-8081}"
     networks:
       - backend
     read_only: true

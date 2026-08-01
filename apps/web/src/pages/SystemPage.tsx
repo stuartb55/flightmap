@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { InsightAvailability } from '@flightmap/shared'
 import {
   Activity,
+  BarChart3,
   CheckCircle2,
   Clock3,
   Database,
@@ -56,13 +58,26 @@ export function SystemPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [insightBackfill, setInsightBackfill] = useState<InsightAvailability['backfill'] | null>(null)
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true)
     else setLoading(true)
     try {
-      const result = await api.status()
-      setStatus(result)
+      const now = new Date()
+      const [statusResult, insightResult] = await Promise.allSettled([
+        api.status(),
+        api.insightsOverview({
+          from: new Date(now.getTime() - 3_600_000).toISOString(),
+          to: now.toISOString(),
+          bucket: 'hour',
+        }),
+      ])
+      if (statusResult.status === 'rejected') throw statusResult.reason
+      setStatus(statusResult.value)
+      setInsightBackfill(
+        insightResult.status === 'fulfilled' ? insightResult.value.availability.backfill : null,
+      )
       setError(null)
       setLastChecked(new Date())
     } catch (requestError) {
@@ -102,6 +117,7 @@ export function SystemPage() {
         <div className="system-error" role="alert">
           <Wifi size={18} />
           <span><strong>Status endpoint unavailable</strong><small>{error}</small></span>
+          <button type="button" className="secondary-button small" onClick={() => void load(true)} disabled={refreshing}>Retry</button>
         </div>
       ) : null}
 
@@ -136,6 +152,45 @@ export function SystemPage() {
                 <DataRow label="Snapshot age" value={status.receiver.latencyMs == null ? '—' : `${Math.round(status.receiver.latencyMs)} ms`} />
                 <DataRow label="Receiver software" value={status.receiver.software ?? '—'} />
                 <DataRow label="Source URL" value={status.receiver.url ?? 'Configured privately'} />
+              </div>
+            </section>
+
+            <section className="system-card">
+              <header>
+                <span className="system-card-icon collector"><BarChart3 size={20} /></span>
+                <div><span className="eyebrow">ANALYTICS</span><h2>Insight aggregates</h2></div>
+                <StatusPill
+                  status={
+                    insightBackfill?.status === 'failed'
+                      ? 'error'
+                      : insightBackfill?.status === 'complete'
+                        ? 'ok'
+                        : 'degraded'
+                  }
+                  label={insightBackfill?.status ?? 'unavailable'}
+                />
+              </header>
+              <div className="system-card-body">
+                <DataRow label="Backfill status" value={insightBackfill?.status ?? 'Unavailable'} />
+                <DataRow
+                  label="Daily batches"
+                  value={
+                    insightBackfill
+                      ? `${insightBackfill.processedDays.toLocaleString('en-GB')} / ${insightBackfill.totalDays.toLocaleString('en-GB')}`
+                      : '—'
+                  }
+                />
+                <DataRow label="Next batch" value={insightBackfill?.nextDate ?? '—'} />
+                <DataRow label="Last error" value={insightBackfill?.error ?? 'None'} />
+                {insightBackfill && insightBackfill.status !== 'complete' ? (
+                  <progress
+                    className="system-progress"
+                    value={insightBackfill.processedDays}
+                    max={Math.max(1, insightBackfill.totalDays)}
+                    aria-label="Insight backfill progress"
+                  />
+                ) : null}
+                <div className="retention-note"><Info size={15} /><span>Coverage summaries remain after detailed tracks expire.</span></div>
               </div>
             </section>
 

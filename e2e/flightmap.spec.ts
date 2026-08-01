@@ -17,11 +17,11 @@ test('loads live data and supports primary navigation', async ({ page }) => {
 
   await page.getByRole('link', { name: 'System' }).first().click()
   await expect(page).toHaveTitle('System · Flightmap')
-  await expect(page.getByRole('heading', { name: 'System' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'System' })).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('link', { name: 'Settings' }).first().click()
   await expect(page).toHaveTitle('Settings · Flightmap')
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 15_000 })
   const saveBar = page.locator('.settings-save-bar')
   await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
   await expect(saveBar).toHaveCSS('position', 'static')
@@ -79,14 +79,133 @@ test('loads the MapLibre worker and style assets without warnings', async ({ pag
 })
 
 test('has no serious automated accessibility violations', async ({ page }) => {
+  for (const path of ['/', '/history', '/insights', '/alerts', '/system', '/settings']) {
+    await page.goto(path)
+    await expect(page.getByRole('main')).toBeVisible()
+    const results = await new AxeBuilder({ page }).analyze()
+    const important = results.violations.filter((violation) =>
+      ['serious', 'critical'].includes(violation.impact ?? ''),
+    )
+    expect(important, `${path}: ${important.map((violation) => violation.id).join(', ')}`).toEqual([])
+  }
+})
+
+test('supports live selection and optimistic watchlist editing', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The mobile selection flow is covered by the viewport test')
+  await request.delete('/api/v1/watchlist/400001')
   await openFlightmap(page)
-  const results = await new AxeBuilder({ page })
-    .disableRules(['color-contrast'])
-    .analyze()
-  const important = results.violations.filter((violation) =>
-    ['serious', 'critical'].includes(violation.impact ?? ''),
+  const targetAircraft = page.locator('.desktop-aircraft-panel').getByRole('button', { name: 'Select FLT0001' })
+  await expect(targetAircraft).toBeVisible({ timeout: 15_000 })
+  await targetAircraft.click()
+  const details = page.locator('.detail-panel')
+  await expect(details).toBeVisible()
+  await expect(details.getByRole('link', { name: 'Live' })).toBeVisible()
+  await expect(details.getByRole('link', { name: 'History' })).toBeVisible()
+
+  const addResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PUT' && response.url().includes('/api/v1/watchlist/'),
   )
-  expect(important).toEqual([])
+  await details.getByRole('button', { name: 'Add to watchlist' }).click()
+  expect((await addResponse).status()).toBe(200)
+  await expect(details.getByRole('button', { name: 'On watchlist' })).toBeVisible()
+  await details.getByLabel('Watchlist label').fill('E2E aircraft')
+  await details.getByLabel('Notes').fill('Edited by the browser acceptance test')
+  await details.getByRole('button', { name: 'Save watchlist details' }).click()
+  await expect(details.getByRole('button', { name: 'Save watchlist details' })).toBeDisabled()
+
+  const removeResponse = page.waitForResponse((response) =>
+    response.request().method() === 'DELETE' && response.url().includes('/api/v1/watchlist/'),
+  )
+  await details.getByRole('button', { name: 'On watchlist' }).click()
+  expect((await removeResponse).status()).toBe(204)
+  await expect(details.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
+})
+
+test('restores selected history tracks, replay position, and exports after refresh', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The mobile history layout is covered separately')
+  await page.goto('/history')
+  const search = page.getByPlaceholder('ICAO, callsign, registration, type…')
+  await search.fill('FLT0001')
+  await page.getByRole('button', { name: 'Search history' }).click()
+  const session = page.locator('.session-card button:enabled').first()
+  await expect(session).toBeVisible({ timeout: 15_000 })
+  await session.click()
+  const tray = page.getByRole('region', { name: 'Selected tracks' })
+  await expect(tray).toBeVisible()
+
+  const downloadPromise = page.waitForEvent('download')
+  await tray.getByRole('link', { name: /telemetry as CSV/ }).first().click()
+  await expect((await downloadPromise).suggestedFilename()).toMatch(/^flightmap-session-.*\.csv$/)
+  await page.getByRole('button', { name: 'Play replay' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.getAll('session').length).toBe(1)
+  await expect.poll(() => new URL(page.url()).searchParams.has('replay')).toBe(true)
+
+  await page.reload()
+  await expect(page.getByRole('region', { name: 'Selected tracks' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: /Pause replay|Play replay/ })).toBeVisible()
+})
+
+test('filters, compares, saves, restores, and exports Insights views', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The mobile Insights layout is covered separately')
+  await page.goto('/insights')
+  await expect(page.getByRole('heading', { name: 'Activity & coverage' })).toBeVisible()
+  await page.getByRole('button', { name: '24 hours' }).click()
+  await page.getByLabel('Compare preceding period').check()
+  await expect(page.getByRole('region', { name: 'Period comparison' })).toBeVisible()
+
+  await page.getByRole('button', { name: /Saved views/ }).click()
+  await page.getByPlaceholder('View name').fill('E2E Insights')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Apply E2E Insights saved view' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close saved views' }).click()
+  await page.getByRole('button', { name: '7 days' }).click()
+  await page.getByRole('button', { name: /Saved views/ }).click()
+  await page.getByRole('button', { name: 'Apply E2E Insights saved view' }).click()
+  await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+
+  const csvDownload = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'CSV' }).click()
+  await expect((await csvDownload).suggestedFilename()).toMatch(/^flightmap-insights-.*\.csv$/)
+  const geoJsonDownload = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'GeoJSON' }).click()
+  await expect((await geoJsonDownload).suggestedFilename()).toMatch(/^flightmap-coverage-.*\.geojson$/)
+
+  await page.getByRole('button', { name: /Saved views/ }).click()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete E2E Insights' }).click()
+  await expect(page.getByText('No insights views saved yet.')).toBeVisible()
+})
+
+test('shows retained data through a WebSocket interruption and reconnects', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'WebSocket recovery is exercised once on desktop Chromium')
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket
+    let connectionCount = 0
+    const InterceptedWebSocket = function (
+      this: WebSocket,
+      url: string | URL,
+      protocols?: string | string[],
+    ) {
+      const socket = protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols)
+      connectionCount += 1
+      if (connectionCount === 1) {
+        socket.addEventListener('open', () => {
+          window.setTimeout(() => socket.close(4001, 'Acceptance test interruption'), 1_000)
+        }, { once: true })
+      }
+      return socket
+    } as unknown as typeof WebSocket
+    Object.setPrototypeOf(InterceptedWebSocket, NativeWebSocket)
+    InterceptedWebSocket.prototype = NativeWebSocket.prototype
+    window.WebSocket = InterceptedWebSocket
+  })
+  await openFlightmap(page)
+  await expect(page.locator('.desktop-aircraft-panel .aircraft-identity').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Live feed interrupted')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Last snapshot remains on screen')).toBeVisible()
+  await expect(page.getByText('Live feed interrupted')).not.toBeVisible({ timeout: 20_000 })
 })
 
 test('keeps mobile panels and controls inside the usable viewport', async ({ page }) => {

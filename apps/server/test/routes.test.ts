@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
+import { ZodError, z } from "zod";
+import { buildApp, validationErrorMessage } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { FlightRepository } from "../src/db/repository.js";
+import {
+  FlightRepository,
+  RepositoryInputError
+} from "../src/db/repository.js";
 import { LiveHub } from "../src/realtime/live-hub.js";
 
 function dependencies() {
@@ -19,6 +23,13 @@ function dependencies() {
   return {
     repository: {
       sessions: vi.fn(),
+      insightsOverview: vi.fn().mockResolvedValue({}),
+      insightsCoverage: vi.fn().mockResolvedValue({}),
+      savedViews: vi.fn().mockResolvedValue([]),
+      createSavedView: vi.fn(),
+      updateSavedView: vi.fn(),
+      deleteSavedView: vi.fn(),
+      track: vi.fn(),
       liveAircraft: vi.fn().mockResolvedValue([]),
       databaseReady: vi.fn().mockResolvedValue(true)
     },
@@ -61,6 +72,17 @@ async function app(): Promise<FastifyInstance> {
 }
 
 describe("structured route errors", () => {
+  it("turns root and empty validation issues into readable messages", () => {
+    expect(validationErrorMessage(new ZodError([]))).toBe(
+      "The request was invalid"
+    );
+    const result = z.string().min(2).safeParse("");
+    if (result.success) throw new Error("Expected validation to fail");
+    expect(validationErrorMessage(result.error)).toContain(
+      "The request was invalid:"
+    );
+  });
+
   it("reads and updates persisted settings", async () => {
     const deps = dependencies();
     const server = await buildApp({
@@ -100,8 +122,204 @@ describe("structured route errors", () => {
     const response = await server.inject("/api/v1/sessions?limit=999");
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
-      error: { code: "VALIDATION_ERROR" }
+      error: { code: "VALIDATION_ERROR", message: expect.stringContaining("limit") }
     });
+    await server.close();
+  });
+
+  it("preserves safe repository input error codes", async () => {
+    const deps = dependencies();
+    deps.repository.sessions.mockRejectedValue(
+      new RepositoryInputError("INVALID_CURSOR", "The cursor is invalid")
+    );
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject("/api/v1/sessions");
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "INVALID_CURSOR", message: "The cursor is invalid" }
+    });
+    await server.close();
+  });
+
+  it("validates insight date ordering before querying aggregates", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject(
+      "/api/v1/insights/overview?from=2026-08-02T00%3A00%3A00Z&to=2026-08-01T00%3A00%3A00Z&bucket=day"
+    );
+    expect(response.statusCode).toBe(400);
+    expect(deps.repository.insightsOverview).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("validates saved views before persistence", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/saved-views",
+      payload: {
+        name: "Broken view",
+        configuration: { surface: "live", filters: {} }
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(deps.repository.createSavedView).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("returns bounded session exports with download and truncation headers", async () => {
+    const deps = dependencies();
+    deps.repository.track.mockResolvedValue({
+      session: {
+        id: "9b7dc991-58bf-4c42-b033-40c637d3f09a",
+        icao: "abc123",
+        callsigns: ["TEST1"],
+        startedAt: "2026-08-01T10:00:00.000Z",
+        endedAt: "2026-08-01T10:01:00.000Z",
+        metadata: null
+      },
+      resolution: "5s",
+      truncated: true,
+      points: [{
+        recordedAt: "2026-08-01T10:00:00.000Z",
+        latitude: 53.6,
+        longitude: -2.3,
+        altitudeBarometricFt: 1000,
+        groundSpeedKt: 100,
+        trackDeg: 90
+      }]
+    });
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const response = await server.inject(
+      "/api/v1/exports/sessions/9b7dc991-58bf-4c42-b033-40c637d3f09a?format=csv&resolution=5s"
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/csv");
+    expect(response.headers["content-disposition"]).toContain(
+      "flightmap-session-9b7dc991-58bf-4c42-b033-40c637d3f09a.csv"
+    );
+    expect(response.headers["x-flightmap-truncated"]).toBe("true");
+    expect(response.body).toContain("recorded_at_utc,icao,session_id");
+    expect(deps.repository.track).toHaveBeenCalledWith(
+      "9b7dc991-58bf-4c42-b033-40c637d3f09a",
+      "5s",
+      { tail: false, limit: 20_000 }
+    );
+    await server.close();
+  });
+
+  it("exports session tracks as GeoJSON and returns not found consistently", async () => {
+    const deps = dependencies();
+    deps.repository.track
+      .mockResolvedValueOnce({
+        session: {
+          id: "9b7dc991-58bf-4c42-b033-40c637d3f09a",
+          icao: "abc123",
+          callsigns: [],
+          startedAt: "2026-08-01T10:00:00.000Z",
+          endedAt: null,
+          metadata: null
+        },
+        resolution: "auto",
+        truncated: false,
+        points: []
+      })
+      .mockResolvedValueOnce(null);
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const id = "9b7dc991-58bf-4c42-b033-40c637d3f09a";
+    const exported = await server.inject(
+      `/api/v1/exports/sessions/${id}?format=geojson`
+    );
+    expect(exported.statusCode).toBe(200);
+    expect(exported.headers["content-type"]).toContain("application/geo+json");
+    expect(exported.json()).toMatchObject({
+      type: "FeatureCollection",
+      features: [{ geometry: null }]
+    });
+
+    const missing = await server.inject(`/api/v1/exports/sessions/${id}`);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({
+      error: { code: "SESSION_NOT_FOUND" }
+    });
+    await server.close();
+  });
+
+  it("exports insight series and coverage using the interactive query filters", async () => {
+    const deps = dependencies();
+    deps.repository.insightsOverview.mockResolvedValue({
+      from: "2026-08-01T00:00:00.000Z",
+      to: "2026-08-02T00:00:00.000Z",
+      bucket: "day",
+      metrics: {
+        uniqueAircraft: 1,
+        sessions: 1,
+        reports: 2,
+        positionedReports: 2,
+        maximumRangeNm: 30,
+        maximumAltitudeFt: 10_000
+      },
+      series: [],
+      aircraftLeaders: [],
+      typeLeaders: [],
+      operatorLeaders: [],
+      availability: {}
+    });
+    deps.repository.insightsCoverage.mockResolvedValue({
+      from: "2026-08-01T00:00:00.000Z",
+      to: "2026-08-02T00:00:00.000Z",
+      cells: [],
+      truncated: true,
+      availability: {}
+    });
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const range = "from=2026-08-01T00%3A00%3A00.000Z&to=2026-08-02T00%3A00%3A00.000Z";
+    const insights = await server.inject(
+      `/api/v1/exports/insights?${range}&bucket=day&compare=true`
+    );
+    expect(insights.statusCode).toBe(200);
+    expect(insights.headers["content-disposition"]).toContain(
+      "flightmap-insights-2026-08-01T00-00-00-000Z.csv"
+    );
+    expect(deps.repository.insightsOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: "day", compare: true })
+    );
+
+    const coverage = await server.inject(`/api/v1/exports/coverage?${range}`);
+    expect(coverage.statusCode).toBe(200);
+    expect(coverage.headers["x-flightmap-truncated"]).toBe("true");
+    expect(coverage.json()).toMatchObject({ type: "FeatureCollection" });
+    expect(deps.repository.insightsCoverage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-02T00:00:00.000Z"
+      })
+    );
     await server.close();
   });
 

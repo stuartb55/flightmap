@@ -4,7 +4,6 @@ import {
   HardDrive,
   MapPinned,
   RadioTower,
-  RefreshCw,
   Save,
   Server,
 } from 'lucide-react'
@@ -120,6 +119,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -149,7 +149,7 @@ export function SettingsPage() {
         if (!controller.signal.aborted) setStorageLoading(false)
       })
     return () => controller.abort()
-  }, [])
+  }, [retryKey])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -188,9 +188,8 @@ export function SettingsPage() {
       </header>
 
       {loading ? (
-        <div className="settings-loading" role="status">
-          <RefreshCw size={20} className="spin" />
-          Loading settings…
+        <div className="settings-form settings-skeletons" role="status" aria-label="Loading settings">
+          {Array.from({ length: 4 }, (_, index) => <div className="settings-card skeleton-card" key={index} />)}
         </div>
       ) : settings ? (
         <form
@@ -425,7 +424,8 @@ export function SettingsPage() {
         </form>
       ) : (
         <div className="settings-loading error" role="alert">
-          {error ?? 'Settings could not be loaded'}
+          <span>{error ?? 'Settings could not be loaded'}</span>
+          <button type="button" className="secondary-button small" onClick={() => setRetryKey((key) => key + 1)}>Retry</button>
         </div>
       )}
     </div>

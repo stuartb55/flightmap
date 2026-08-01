@@ -13,6 +13,7 @@ export type MaintenanceResult = {
   deletedSessions: number;
   deletedAlerts: number;
   deletedReceiverSamples: number;
+  deletedHourlyActivity: number;
 };
 
 export function retentionCutoff(
@@ -96,6 +97,10 @@ export class MaintenanceService {
         "DELETE FROM receiver_samples WHERE recorded_at < $1",
         [cutoff]
       );
+      const hourlyActivity = await client.query(
+        "DELETE FROM hourly_aircraft_activity WHERE bucket_hour < date_trunc('hour', $1::timestamptz)",
+        [cutoff]
+      );
       await client.query(
         `INSERT INTO maintenance_log (
            retention_days, dropped_partitions, deleted_sessions,
@@ -113,7 +118,8 @@ export class MaintenanceService {
         droppedPartitions,
         deletedSessions: sessions.rowCount ?? 0,
         deletedAlerts: alerts.rowCount ?? 0,
-        deletedReceiverSamples: receiverSamples.rowCount ?? 0
+        deletedReceiverSamples: receiverSamples.rowCount ?? 0,
+        deletedHourlyActivity: hourlyActivity.rowCount ?? 0
       };
     });
     const summary = {

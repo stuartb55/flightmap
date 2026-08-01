@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   icaoSchema,
   dismissAlertsInputSchema,
+  insightCoverageQuerySchema,
+  insightQuerySchema,
   receiverAircraftSchema,
+  alertQuerySchema,
+  savedViewInputSchema,
+  savedViewPatchSchema,
+  sessionExportQuerySchema,
   sessionQuerySchema,
+  summaryQuerySchema,
   trackQuerySchema
 } from "../src/index.js";
 
@@ -44,11 +51,122 @@ describe("shared contracts", () => {
     expect(() => trackQuerySchema.parse({ limit: "20001" })).toThrow();
   });
 
+  it("applies bounded export defaults and accepts explicit export options", () => {
+    expect(sessionExportQuerySchema.parse({})).toEqual({
+      format: "csv",
+      resolution: "auto"
+    });
+    expect(
+      sessionExportQuerySchema.parse({
+        format: "geojson",
+        resolution: "15s",
+        from: "2026-08-01T10:00:00.000Z"
+      })
+    ).toEqual({
+      format: "geojson",
+      resolution: "15s",
+      from: "2026-08-01T10:00:00.000Z"
+    });
+    expect(() => sessionExportQuerySchema.parse({ extra: true })).toThrow();
+  });
+
+  it("validates ordered summary ranges and tri-state alert dismissal filters", () => {
+    expect(() =>
+      summaryQuerySchema.parse({ from: "2026-08-02", to: "2026-08-01" })
+    ).toThrow();
+    expect(alertQuerySchema.parse({ dismissed: "true" }).dismissed).toBe(true);
+    expect(alertQuerySchema.parse({ dismissed: "false" }).dismissed).toBe(false);
+    expect(alertQuerySchema.parse({}).dismissed).toBeUndefined();
+  });
+
   it("bounds bulk alert dismissals", () => {
     const id = "9b7dc991-58bf-4c42-b033-40c637d3f09a";
     expect(dismissAlertsInputSchema.parse({ ids: [id] }).ids).toEqual([id]);
     expect(() =>
       dismissAlertsInputSchema.parse({ ids: Array(201).fill(id) })
+    ).toThrow();
+  });
+
+  it("requires ordered UTC insight ranges and an explicit bucket", () => {
+    expect(
+      insightQuerySchema.parse({
+        from: "2026-07-31T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+        bucket: "hour",
+        compare: "true"
+      })
+    ).toMatchObject({ bucket: "hour", compare: true });
+    expect(() =>
+      insightQuerySchema.parse({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-07-31T00:00:00.000Z",
+        bucket: "day"
+      })
+    ).toThrow();
+    expect(() =>
+      insightCoverageQuerySchema.parse({
+        from: "2026-08-01",
+        to: "2026-08-02"
+      })
+    ).toThrow();
+  });
+
+  it("strictly validates surface-specific saved views", () => {
+    const live = {
+      name: "Nearby aircraft",
+      configuration: {
+        surface: "live",
+        filters: {
+          query: "",
+          minimumAltitude: "",
+          maximumAltitude: "10000",
+          minimumSpeed: "",
+          maximumDistance: "30",
+          maximumFreshness: "15",
+          position: "positioned",
+          source: "adsb",
+          category: "",
+          watchedOnly: false,
+          alertsOnly: false
+        },
+        sort: { key: "distance", direction: "asc" },
+        mapLayers: {
+          coverage: false,
+          rangeRings: true,
+          aircraftLabels: true,
+          trails: true,
+          manchesterWaypoints: true
+        },
+        viewport: null
+      }
+    };
+    expect(savedViewInputSchema.parse(live)).toEqual(live);
+    expect(() =>
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: {
+          ...live.configuration,
+          surface: "history"
+        }
+      })
+    ).toThrow();
+    expect(() => savedViewInputSchema.parse({ ...live, unexpected: true })).toThrow();
+    expect(() => savedViewPatchSchema.parse({})).toThrow();
+    expect(() =>
+      savedViewInputSchema.parse({
+        name: "Reversed insights",
+        configuration: {
+          surface: "insights",
+          from: "2026-08-02T00:00:00.000Z",
+          to: "2026-08-01T00:00:00.000Z",
+          bucket: "day",
+          preset: "custom",
+          sort: "reports_desc",
+          compare: false,
+          mapLayers: live.configuration.mapLayers,
+          viewport: null
+        }
+      })
     ).toThrow();
   });
 });

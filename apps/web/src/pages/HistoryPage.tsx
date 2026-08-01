@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { SavedViewConfiguration } from '@flightmap/shared'
 import {
   CalendarClock,
   Check,
@@ -12,10 +13,15 @@ import {
   Play,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from 'lucide-react'
 import { RadarMap } from '../components/RadarMap'
+import type { RadarMapHandle } from '../components/RadarMap'
+import { SavedViewsControl } from '../components/SavedViewsControl'
+import { isFormTarget } from '../components/KeyboardShortcuts'
 import { api } from '../lib/api'
 import { useLocation } from '../lib/router'
+import { useCoverageCells, useMapLayers } from '../lib/map-preferences'
 import {
   dateTimeInputToIso,
   formatAltitude,
@@ -67,6 +73,38 @@ function filtersSearch(filters: HistoryFilters): string {
   if (filters.alert) params.set('alert', filters.alert)
   const query = params.toString()
   return query ? `?${query}` : ''
+}
+
+export function restoredTrackState(search: string) {
+  const params = new URLSearchParams(search)
+  const selectedSessionIds = [...new Set(params.getAll('session'))]
+    .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    .slice(0, 8)
+  const replay = params.get('replay')
+  const replayTime = replay ? Date.parse(replay) : Number.NaN
+  const candidateResolution = params.get('resolution')
+  const resolution: Resolution = ['auto', '1s', '5s', '15s', '60s'].includes(candidateResolution ?? '')
+    ? (candidateResolution as Resolution)
+    : 'auto'
+  return {
+    selectedSessionIds,
+    replayTime: Number.isFinite(replayTime) ? replayTime : null,
+    resolution,
+  }
+}
+
+export function historyUrl(
+  filters: HistoryFilters,
+  selectedSessionIds: string[],
+  replayTime: number | null,
+  resolution: Resolution,
+) {
+  const params = new URLSearchParams(filtersSearch(filters).replace(/^\?/, ''))
+  for (const id of selectedSessionIds.slice(0, 8)) params.append('session', id)
+  if (replayTime != null) params.set('replay', new Date(replayTime).toISOString())
+  if (resolution !== 'auto') params.set('resolution', resolution)
+  const query = params.toString()
+  return `/history${query ? `?${query}` : ''}`
 }
 
 export function shouldShowSummarySection(
@@ -175,9 +213,15 @@ export function HistoryPage() {
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
   const [follow, setFollow] = useState(false)
   const animationRef = useRef<number | null>(null)
+  const historyMapRef = useRef<RadarMapHandle>(null)
+  const historySearchRef = useRef<HTMLInputElement>(null)
+  const [mapLayers, setMapLayers] = useMapLayers()
+  const coverage = useCoverageCells(mapLayers.coverage)
   const lastFrameRef = useRef<number | null>(null)
   const searchGenerationRef = useRef(0)
   const searchAbortRef = useRef<AbortController | null>(null)
+  const restoreAbortRef = useRef<AbortController | null>(null)
+  const restoringUrlRef = useRef(false)
   const wideAppliedRange = useMemo(() => {
     try {
       return (
@@ -322,10 +366,39 @@ export function HistoryPage() {
 
   useEffect(() => {
     const next = filtersFromSearch(routeSearch)
+    const restored = restoredTrackState(routeSearch)
+    restoringUrlRef.current = restored.selectedSessionIds.length > 0
     setFilters(next)
     setAppliedFilters(next)
+    setResolution(restored.resolution)
     void search(next)
-    return () => searchAbortRef.current?.abort()
+    restoreAbortRef.current?.abort()
+    const controller = new AbortController()
+    restoreAbortRef.current = controller
+    if (restored.selectedSessionIds.length) {
+      setTrackLoading(new Set(restored.selectedSessionIds))
+      void Promise.allSettled(
+        restored.selectedSessionIds.map((id) => api.track(id, restored.resolution, controller.signal)),
+      ).then((results) => {
+        if (controller.signal.aborted) return
+        const restoredTracks = results.flatMap((result) =>
+          result.status === 'fulfilled' ? [[result.value.session.id, result.value] as const] : [],
+        )
+        setTracks(Object.fromEntries(restoredTracks))
+        setReplayTime(restored.replayTime)
+        if (restoredTracks.length !== restored.selectedSessionIds.length) {
+          setTrackError('One or more shared tracks have expired or are no longer available.')
+        }
+        setTrackLoading(new Set())
+        restoringUrlRef.current = false
+      })
+    } else {
+      restoringUrlRef.current = false
+    }
+    return () => {
+      searchAbortRef.current?.abort()
+      controller.abort()
+    }
   }, [routeSearch, search])
 
   const handleSubmit = (event: FormEvent) => {
@@ -346,6 +419,10 @@ export function HistoryPage() {
       return
     }
     if (!session.hasDetailedTrack) return
+    if (Object.keys(tracks).length >= 8) {
+      setTrackError('You can compare up to eight tracks at once. Remove a selected track to add another.')
+      return
+    }
     setTrackLoading((current) => new Set(current).add(session.id))
     setTrackError(null)
     try {
@@ -363,6 +440,31 @@ export function HistoryPage() {
   }
 
   const selectedTracks = useMemo(() => Object.values(tracks), [tracks])
+  const selectedMetrics = useMemo(() => {
+    const uniqueAircraft = new Set(selectedTracks.map((track) => track.session.icao)).size
+    const samples = selectedTracks.reduce((total, track) => total + track.points.length, 0)
+    const maximumAltitude = selectedTracks.reduce<number | null>((maximum, track) => {
+      const value = track.session.maximumAltitudeFt
+      return value == null ? maximum : maximum == null ? value : Math.max(maximum, value)
+    }, null)
+    let overlapping = false
+    for (let left = 0; left < selectedTracks.length; left += 1) {
+      const first = selectedTracks[left]!
+      const firstStart = Date.parse(first.session.startedAt)
+      const firstEnd = Date.parse(
+        first.session.endedAt ?? first.points[first.points.length - 1]?.recordedAt ?? first.session.startedAt,
+      )
+      for (let right = left + 1; right < selectedTracks.length; right += 1) {
+        const second = selectedTracks[right]!
+        const secondStart = Date.parse(second.session.startedAt)
+        const secondEnd = Date.parse(
+          second.session.endedAt ?? second.points[second.points.length - 1]?.recordedAt ?? second.session.startedAt,
+        )
+        if (firstStart <= secondEnd && secondStart <= firstEnd) overlapping = true
+      }
+    }
+    return { uniqueAircraft, samples, maximumAltitude, overlapping }
+  }, [selectedTracks])
   const replayBounds = useMemo(() => {
     const times = selectedTracks.flatMap((track) =>
       track.points.length
@@ -410,6 +512,63 @@ export function HistoryPage() {
     }
   }, [playing, speed, replayBounds])
 
+  useEffect(() => {
+    if (restoringUrlRef.current) return
+    const timer = window.setTimeout(() => {
+      window.history.replaceState(
+        null,
+        '',
+        historyUrl(appliedFilters, selectedTracks.map((track) => track.session.id), replayTime, resolution),
+      )
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [appliedFilters, replayTime, resolution, selectedTracks])
+
+  const clearTracks = () => {
+    setTracks({})
+    setReplayTime(null)
+    setPlaying(false)
+  }
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (isFormTarget(event.target)) return
+      if (event.key === '/') {
+        event.preventDefault()
+        historySearchRef.current?.focus()
+      } else if (event.code === 'Space' && replayBounds) {
+        event.preventDefault()
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setFollow(false)
+        setPlaying((current) => !current)
+      } else if (event.key.toLowerCase() === 'c' && selectedTracks.length) {
+        event.preventDefault()
+        clearTracks()
+      } else if (event.key === 'Escape') {
+        setPlaying(false)
+      }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => document.removeEventListener('keydown', keydown)
+  })
+
+  const applySavedView = (configuration: SavedViewConfiguration) => {
+    if (configuration.surface !== 'history') return
+    const nextFilters: HistoryFilters = {
+      query: configuration.filters.query,
+      from: formatDateTimeInput(new Date(configuration.filters.from)),
+      to: formatDateTimeInput(new Date(configuration.filters.to)),
+      alert: configuration.filters.alert,
+    }
+    setMapLayers(configuration.mapLayers)
+    navigate(
+      historyUrl(nextFilters, configuration.selectedSessionIds, configuration.replayTime, configuration.resolution),
+    )
+    if (configuration.viewport) {
+      const viewport = configuration.viewport
+      window.setTimeout(() => historyMapRef.current?.applyViewport(viewport), 0)
+    }
+  }
+
   const changeResolution = async (value: Resolution) => {
     setResolution(value)
     const selectedIds = Object.keys(tracks)
@@ -442,6 +601,7 @@ export function HistoryPage() {
             <span className="input-with-icon">
               <Search size={15} />
               <input
+                ref={historySearchRef}
                 value={filters.query}
                 onChange={(event) => setFilters({ ...filters, query: event.target.value })}
                 placeholder="ICAO, callsign, registration, type…"
@@ -578,18 +738,43 @@ export function HistoryPage() {
           </section>
         ) : null}
         {searchNotice ? <p className="history-notice" role="status">{searchNotice}</p> : null}
-        {sessionError ? <p className="form-error" role="alert">Sessions: {sessionError}</p> : null}
-        {summaryError ? <p className="form-error" role="alert">Summaries: {summaryError}</p> : null}
+        {sessionError ? <div className="form-error retry-error" role="alert"><span>Sessions: {sessionError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
+        {summaryError ? <div className="form-error retry-error" role="alert"><span>Summaries: {summaryError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
         {trackError ? <p className="form-error" role="alert">Track: {trackError}</p> : null}
       </aside>
 
       <section className="history-map-stage">
         <RadarMap
+          ref={historyMapRef}
           tracks={selectedTracks}
           replayTime={replayTime}
           followReplay={follow}
           className="history-map"
+          mapLayers={mapLayers}
+          onMapLayersChange={setMapLayers}
+          coverageCells={coverage.cells}
         />
+        <SavedViewsControl
+          surface="history"
+          className="map-saved-views"
+          configuration={() => ({
+            surface: 'history',
+            filters: {
+              query: appliedFilters.query,
+              from: dateTimeInputToIso(appliedFilters.from),
+              to: dateTimeInputToIso(appliedFilters.to),
+              alert: appliedFilters.alert,
+            },
+            sort: 'started_desc',
+            selectedSessionIds: selectedTracks.map((track) => track.session.id),
+            resolution,
+            replayTime,
+            mapLayers,
+            viewport: historyMapRef.current?.getViewport() ?? null,
+          })}
+          onApply={applySavedView}
+        />
+        {coverage.error ? <p className="map-data-warning" role="status">{coverage.error}</p> : null}
         {!selectedTracks.length ? (
           <div className="history-map-empty">
             <span><MapPinned size={22} /></span>
@@ -602,6 +787,34 @@ export function HistoryPage() {
             One or more tracks reached the 20,000-point display limit. Choose a coarser resolution
             to view the full route.
           </p>
+        ) : null}
+
+        {selectedTracks.length ? (
+          <section className="selected-track-tray" aria-label="Selected tracks">
+            <header>
+              <div><span className="eyebrow">SELECTED</span><strong>{selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}</strong></div>
+              <button type="button" className="text-button" onClick={clearTracks}><Trash2 size={14} /> Clear all</button>
+            </header>
+            <div className="selected-track-chips">
+              {selectedTracks.map((track) => (
+                <article key={track.session.id}>
+                  <button type="button" onClick={() => void loadTrack(track.session)} aria-label={`Remove ${track.session.callsigns[0] || track.session.icao} track`}>
+                    <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
+                  </button>
+                  <span className="track-export-links">
+                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=csv&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} telemetry as CSV`}>CSV</a>
+                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=geojson&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} track as GeoJSON`}>GeoJSON</a>
+                  </span>
+                </article>
+              ))}
+            </div>
+            <dl>
+              <div><dt>Aircraft</dt><dd>{selectedMetrics.uniqueAircraft}</dd></div>
+              <div><dt>Displayed points</dt><dd>{selectedMetrics.samples.toLocaleString('en-GB')}</dd></div>
+              <div><dt>Highest</dt><dd>{formatAltitude(selectedMetrics.maximumAltitude)}</dd></div>
+            </dl>
+            {selectedMetrics.overlapping ? <p>Tracks overlap in time and can be replayed together.</p> : null}
+          </section>
         ) : null}
 
         {replayBounds && replayTime != null ? (

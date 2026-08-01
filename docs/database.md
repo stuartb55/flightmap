@@ -16,6 +16,8 @@ lock make startup migrations serial and restart-safe.
 | `position_samples` | One positioned sample per ICAO and unique snapshot | UTC daily partitions, 30 days by default |
 | `track_sessions` | Five-minute-gap track sessions and extrema | 30 days after the session ends |
 | `receiver_samples` | Minute receiver health/statistics | 30 days |
+| `hourly_aircraft_activity` | Compact per-aircraft/hour report and session rollups | Detailed-history retention |
+| `daily_coverage_cells` | Positioned reports grouped into fixed 0.05-degree cells | Indefinite |
 | `alert_events` | Emergency, first-ever, and watchlist events | 30 days |
 | `current_aircraft` | Latest normalized state for restart/reconnect | Current state only |
 | `aircraft_summary` | First/last seen and lifetime counters | Indefinite |
@@ -23,6 +25,8 @@ lock make startup migrations serial and restart-safe.
 | `aircraft_metadata` | Active local ICAO enrichment | Until atomically replaced |
 | `aircraft_metadata_import` | Active import version/freshness | Current status |
 | `watchlist` | User watch configuration | Indefinite |
+| `saved_views` | Up to 20 strict Live/History/Insights configurations | Indefinite |
+| `insight_backfill_state` | Resumable daily aggregate-backfill checkpoint | Current state |
 | `receiver_state` | Receiver coordinates/version | Current state only |
 | `collector_checkpoint` | Duplicate/restart-safe snapshot cursor | Current state only |
 | `maintenance_log` | Recent maintenance audit | Operational record |
@@ -40,7 +44,9 @@ propagated to children:
 
 The primary key `(recorded_at, icao)` enforces at most one row for an aircraft in
 one receiver snapshot timestamp. Every snapshot is inserted in one transaction,
-along with current state, sessions, summaries, and alerts.
+along with current state, sessions, summaries, alerts, hourly activity, and
+coverage cells. Aircraft are grouped by geographic cell before transactional
+upserts, limiting write amplification at high aircraft counts.
 
 Track/session and summary indexes support time and ICAO lookup. GIN/trigram
 indexes support callsign and metadata search without sequentially scanning all
@@ -63,5 +69,9 @@ entire transaction back, preserving the previous successful import.
 - Position inserts calculate receiver-relative nautical miles and true bearing.
 - A malformed aircraft record is rejected individually; other rows in the
   snapshot may still commit.
+- Coverage aggregates are analytical summaries and never replace exact retained
+  track points.
+- Aggregate backfill advances in idempotent UTC-day batches after readiness and
+  resumes from `insight_backfill_state` after interruption.
 
 See [maintenance](maintenance.md) for partition inspection and manual recovery.

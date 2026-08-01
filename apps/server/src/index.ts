@@ -6,6 +6,7 @@ import { FlightRepository } from "./db/repository.js";
 import { ReceiverCollector } from "./ingestion/collector.js";
 import { LiveHub } from "./realtime/live-hub.js";
 import { MaintenanceService } from "./services/maintenance.js";
+import { InsightBackfillService } from "./services/insight-backfill.js";
 import { MetadataService } from "./services/metadata.js";
 import { StatusService } from "./services/status.js";
 import { AppSettingsService } from "./settings.js";
@@ -45,6 +46,7 @@ const maintenance = new MaintenanceService(
   config,
   logger
 );
+const insightBackfill = new InsightBackfillService(database, logger);
 const metadata = new MetadataService(database, config, logger);
 const status = new StatusService(config, repository, collector.state);
 const applyRuntimeSettings = async (): Promise<void> => {
@@ -81,6 +83,7 @@ async function shutdown(signal: string): Promise<void> {
   forcedExit.unref();
   await Promise.all([
     maintenance.stop(),
+    insightBackfill.stop(),
     metadata.stop(),
     collector.stop()
   ]);
@@ -95,6 +98,7 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 
 try {
   await app.listen({ host: config.host, port: config.port });
+  insightBackfill.start();
   await applyRuntimeSettings();
 } catch (error) {
   app.log.fatal({ error }, "Application startup failed");

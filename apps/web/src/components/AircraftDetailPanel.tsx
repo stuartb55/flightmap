@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -82,11 +82,57 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
     setWatchPending(true)
     dispatch({ type: 'watch-state', icao: aircraft.icao, watched })
     try {
-      if (watched) await api.addWatchlist(aircraft.icao)
+      if (watched) {
+        const entry = await api.addWatchlist(aircraft.icao, watchFields.label, watchFields.notes)
+        const next = { label: entry.label ?? '', notes: entry.notes ?? '' }
+        setWatchFields(next)
+        setSavedWatchFields(next)
+      }
       else await api.removeWatchlist(aircraft.icao)
+      // Re-apply the authoritative result in case a receiver delta that was
+      // already in flight briefly replaced the optimistic local state.
+      dispatch({ type: 'watch-state', icao: aircraft.icao, watched })
     } catch (requestError) {
       dispatch({ type: 'watch-state', icao: aircraft.icao, watched: !watched })
       setError(requestError instanceof Error ? requestError.message : 'Watchlist update failed')
+    } finally {
+      setWatchPending(false)
+    }
+  }
+
+  const [watchFields, setWatchFields] = useState({ label: '', notes: '' })
+  const [savedWatchFields, setSavedWatchFields] = useState({ label: '', notes: '' })
+
+  useEffect(() => {
+    if (!aircraft.watched) return
+    const controller = new AbortController()
+    void api.watchlist(controller.signal).then((entries) => {
+      const entry = entries.find((item) => item.icao === aircraft.icao)
+      if (!entry) return
+      const fields = { label: entry.label ?? '', notes: entry.notes ?? '' }
+      setWatchFields(fields)
+      setSavedWatchFields(fields)
+    }).catch(() => undefined)
+    return () => controller.abort()
+  }, [aircraft.icao, aircraft.watched])
+
+  const saveWatchDetails = async (event: FormEvent) => {
+    event.preventDefault()
+    const previous = savedWatchFields
+    const wasWatched = aircraft.watched
+    setWatchPending(true)
+    setSavedWatchFields(watchFields)
+    if (!wasWatched) dispatch({ type: 'watch-state', icao: aircraft.icao, watched: true })
+    try {
+      const entry = await api.addWatchlist(aircraft.icao, watchFields.label, watchFields.notes)
+      const fields = { label: entry.label ?? '', notes: entry.notes ?? '' }
+      setWatchFields(fields)
+      setSavedWatchFields(fields)
+    } catch (requestError) {
+      setWatchFields(previous)
+      setSavedWatchFields(previous)
+      if (!wasWatched) dispatch({ type: 'watch-state', icao: aircraft.icao, watched: false })
+      setError(requestError instanceof Error ? requestError.message : 'Watchlist details could not be saved')
     } finally {
       setWatchPending(false)
     }
@@ -126,6 +172,17 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
           <Star size={16} fill={aircraft.watched ? 'currentColor' : 'none'} />
           {aircraft.watched ? 'On watchlist' : 'Add to watchlist'}
         </button>
+        <div className="aircraft-workflow-links">
+          <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>Live</Link>
+          <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>History</Link>
+        </div>
+        {aircraft.watched ? (
+          <form className="watchlist-detail-editor" onSubmit={saveWatchDetails}>
+            <label><span>Watchlist label</span><input value={watchFields.label} maxLength={100} onChange={(event) => setWatchFields({ ...watchFields, label: event.target.value })} placeholder="Optional name" /></label>
+            <label><span>Notes</span><textarea value={watchFields.notes} maxLength={1000} rows={2} onChange={(event) => setWatchFields({ ...watchFields, notes: event.target.value })} placeholder="Optional context" /></label>
+            <button type="submit" className="secondary-button small" disabled={watchPending || (watchFields.label === savedWatchFields.label && watchFields.notes === savedWatchFields.notes)}>Save watchlist details</button>
+          </form>
+        ) : null}
       </div>
 
       {aircraft.hasActiveAlert ? (
@@ -227,7 +284,7 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
                   formatDateTimeInput(
                     new Date(session.endedAt ?? aircraft.lastSeenAt ?? session.startedAt),
                   ),
-                )}`}
+                )}&session=${encodeURIComponent(session.id)}`}
               >
                 <span>{formatDateTime(session.startedAt)}</span>
                 <small>{session.sampleCount.toLocaleString('en-GB')} samples</small>

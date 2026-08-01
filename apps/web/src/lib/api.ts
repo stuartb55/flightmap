@@ -4,12 +4,23 @@ import type {
   HistoryFilters,
   TrackResponse,
 } from '../types'
+import type {
+  InsightCoverageResponse,
+  InsightOverview,
+  SavedView,
+  SavedViewInput,
+  SavedViewPatch,
+} from '@flightmap/shared'
 import {
   aircraftDetailResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
   dismissAlertsResponseSchema,
   liveAircraftResponseSchema,
+  insightCoverageResponseSchema,
+  insightOverviewSchema,
+  savedViewSchema,
+  savedViewsResponseSchema,
   sessionsResponseSchema,
   statusResponseSchema,
   summariesResponseSchema,
@@ -89,7 +100,16 @@ async function request<T>(
 
   if (response.status === 204) return undefined as T
   const body: unknown = await response.json()
-  return schema ? schema.parse(body) : (body as T)
+  if (!schema) return body as T
+  try {
+    return schema.parse(body)
+  } catch {
+    throw new ApiError(
+      'The server returned data this version of Flightmap could not read. Retry after checking that the server and web app are the same version.',
+      'invalid_response',
+      502,
+    )
+  }
 }
 
 function queryString(values: Record<string, string | number | undefined | null>): string {
@@ -260,6 +280,56 @@ export const api = {
 
   status(signal?: AbortSignal) {
     return request<WireStatus>('/status', { signal }, statusResponseSchema).then(adaptStatus)
+  },
+
+  insightsOverview(
+    range: { from: string; to: string; bucket: 'hour' | 'day'; compare?: boolean },
+    signal?: AbortSignal,
+  ) {
+    return request<InsightOverview>(
+      `/insights/overview${queryString({
+        from: range.from,
+        to: range.to,
+        bucket: range.bucket,
+        compare: range.compare ? 'true' : undefined,
+      })}`,
+      { signal },
+      insightOverviewSchema,
+    )
+  },
+
+  insightsCoverage(range: { from: string; to: string }, signal?: AbortSignal) {
+    return request<InsightCoverageResponse>(
+      `/insights/coverage${queryString(range)}`,
+      { signal },
+      insightCoverageResponseSchema,
+    )
+  },
+
+  savedViews(signal?: AbortSignal) {
+    return request<{ items: SavedView[] }>('/saved-views', { signal }, savedViewsResponseSchema).then(
+      (response) => response.items,
+    )
+  },
+
+  createSavedView(input: SavedViewInput) {
+    return request<SavedView>(
+      '/saved-views',
+      { method: 'POST', body: JSON.stringify(input) },
+      savedViewSchema,
+    )
+  },
+
+  updateSavedView(id: string, patch: SavedViewPatch) {
+    return request<SavedView>(
+      `/saved-views/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+      savedViewSchema,
+    )
+  },
+
+  deleteSavedView(id: string) {
+    return request<void>(`/saved-views/${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   settings(signal?: AbortSignal) {

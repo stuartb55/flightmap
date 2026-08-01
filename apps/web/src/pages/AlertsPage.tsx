@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Eye,
   Plane,
+  Pencil,
   Plus,
   ShieldAlert,
   Star,
@@ -100,6 +101,8 @@ export function AlertsPage() {
   const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([])
   const [watchlistPending, setWatchlistPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
+  const [watchDraft, setWatchDraft] = useState({ icao: '', label: '', notes: '' })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -119,7 +122,7 @@ export function AlertsPage() {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [dispatch])
+  }, [dispatch, retryKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -132,7 +135,7 @@ export function AlertsPage() {
         }
       })
     return () => controller.abort()
-  }, [])
+  }, [retryKey])
 
   const filtered = useMemo(
     () =>
@@ -199,24 +202,34 @@ export function AlertsPage() {
 
   const saveWatchlist = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = event.currentTarget
-    const values = new FormData(form)
-    const icao = String(values.get('icao') ?? '').trim().toLowerCase()
+    const icao = watchDraft.icao.trim().toLowerCase()
     if (!/^[0-9a-f]{6}$/.test(icao)) {
       setError('ICAO must contain exactly six hexadecimal characters.')
       return
     }
     setWatchlistPending(true)
     setError(null)
+    const previous = watchlist
+    const optimistic: WatchlistEntry = {
+      icao,
+      label: watchDraft.label.trim() || null,
+      notes: watchDraft.notes.trim() || null,
+      createdAt: previous.find((entry) => entry.icao === icao)?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    setWatchlist((current) => [optimistic, ...current.filter((entry) => entry.icao !== icao)])
+    dispatch({ type: 'watch-state', icao, watched: true })
     try {
       const entry = await api.addWatchlist(
         icao,
-        String(values.get('label') ?? '').trim() || null,
-        String(values.get('notes') ?? '').trim() || null,
+        watchDraft.label.trim() || null,
+        watchDraft.notes.trim() || null,
       )
       setWatchlist((current) => [entry, ...current.filter((item) => item.icao !== entry.icao)])
-      form.reset()
+      setWatchDraft({ icao: '', label: '', notes: '' })
     } catch (requestError) {
+      setWatchlist(previous)
+      dispatch({ type: 'watch-state', icao, watched: previous.some((entry) => entry.icao === icao) })
       setError(requestError instanceof Error ? requestError.message : 'Watchlist entry could not be saved')
     } finally {
       setWatchlistPending(false)
@@ -226,10 +239,14 @@ export function AlertsPage() {
   const removeWatchlist = async (icao: string) => {
     setWatchlistPending(true)
     setError(null)
+    const previous = watchlist
+    setWatchlist((current) => current.filter((entry) => entry.icao !== icao))
+    dispatch({ type: 'watch-state', icao, watched: false })
     try {
       await api.removeWatchlist(icao)
-      setWatchlist((current) => current.filter((entry) => entry.icao !== icao))
     } catch (requestError) {
+      setWatchlist(previous)
+      dispatch({ type: 'watch-state', icao, watched: true })
       setError(requestError instanceof Error ? requestError.message : 'Watchlist entry could not be removed')
     } finally {
       setWatchlistPending(false)
@@ -300,7 +317,7 @@ export function AlertsPage() {
         ) : null}
       </div>
 
-      {error ? <p className="form-error page-error" role="alert">{error}</p> : null}
+      {error ? <div className="form-error page-error retry-error" role="alert"><span>{error}</span><button type="button" onClick={() => setRetryKey((key) => key + 1)}>Retry</button></div> : null}
       <div className="alert-list" aria-live="polite">
         {loading && !alerts.length ? (
           Array.from({ length: 3 }, (_, index) => <div className="alert-card-skeleton" key={index} />)
@@ -359,15 +376,15 @@ export function AlertsPage() {
           <form onSubmit={saveWatchlist}>
             <label>
               <span>ICAO hex</span>
-              <input name="icao" required maxLength={6} pattern="[0-9A-Fa-f]{6}" placeholder="40621f" />
+              <input name="icao" required maxLength={6} pattern="[0-9A-Fa-f]{6}" placeholder="40621f" value={watchDraft.icao} onChange={(event) => setWatchDraft({ ...watchDraft, icao: event.target.value })} />
             </label>
             <label>
               <span>Label</span>
-              <input name="label" maxLength={100} placeholder="Optional name" />
+              <input name="label" maxLength={100} placeholder="Optional name" value={watchDraft.label} onChange={(event) => setWatchDraft({ ...watchDraft, label: event.target.value })} />
             </label>
             <label>
               <span>Notes</span>
-              <textarea name="notes" maxLength={1000} rows={2} placeholder="Optional context" />
+              <textarea name="notes" maxLength={1000} rows={2} placeholder="Optional context" value={watchDraft.notes} onChange={(event) => setWatchDraft({ ...watchDraft, notes: event.target.value })} />
             </label>
             <button type="submit" className="secondary-button small" disabled={watchlistPending}>
               <Plus size={14} aria-hidden="true" /> Add or update
@@ -381,15 +398,20 @@ export function AlertsPage() {
                   <span className="mono">{entry.icao.toUpperCase()}</span>
                   {entry.notes ? <p>{entry.notes}</p> : null}
                 </div>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove ${entry.label || entry.icao} from watchlist`}
-                  disabled={watchlistPending}
-                  onClick={() => void removeWatchlist(entry.icao)}
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                </button>
+                <div className="watchlist-entry-actions">
+                  <Link to={`/?aircraft=${entry.icao}`}>Live</Link>
+                  <Link to={`/history?aircraft=${entry.icao}`}>History</Link>
+                  <button type="button" className="icon-button" aria-label={`Edit ${entry.label || entry.icao}`} disabled={watchlistPending} onClick={() => setWatchDraft({ icao: entry.icao, label: entry.label ?? '', notes: entry.notes ?? '' })}><Pencil size={14} /></button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Remove ${entry.label || entry.icao} from watchlist`}
+                    disabled={watchlistPending}
+                    onClick={() => void removeWatchlist(entry.icao)}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
+                </div>
               </article>
             )) : <p className="rules-note">No aircraft are currently watched.</p>}
           </div>

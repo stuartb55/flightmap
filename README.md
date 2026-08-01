@@ -13,7 +13,12 @@ history indefinitely.
 - Restart-safe collector with receiver health, malformed-record isolation,
   duplicate/out-of-order snapshot rejection, and outage recovery.
 - Five-minute-gap track sessions, historical search, adaptive track resolution,
-  multi-track display, and animated replay.
+  URL-restorable multi-track display, animated replay, and CSV/GeoJSON export.
+- Activity and coverage Insights with hourly/daily charts, receiver-performance
+  context, preceding-period comparison, indefinite 0.05-degree coverage cells,
+  and accessible chart data tables.
+- Browser-local map layer preferences plus installation-wide saved views for
+  Live, History, and Insights workflows.
 - In-app alerts for 7500/7600/7700 squawks, explicit emergencies, first-ever
   sightings, and watchlist matches.
 - Local registration/type/operator enrichment from the readsb-compatible
@@ -136,6 +141,12 @@ The primary routes are:
 - `GET /api/v1/sessions/:id/track` with bounded `resolution`, `from`, `tail`,
   and `limit` query options
 - `GET /api/v1/summaries`
+- `GET /api/v1/insights/overview?from&to&bucket=hour|day&compare=true|false`
+  and `GET /api/v1/insights/coverage?from&to`
+- `GET`/`POST /api/v1/saved-views` and `PATCH`/`DELETE
+  `/api/v1/saved-views/:id` (20 installation-wide views maximum)
+- `GET /api/v1/exports/insights`, `GET /api/v1/exports/coverage`, and
+  `GET /api/v1/exports/sessions/:id?format=csv|geojson`
 - `GET /api/v1/alerts`, `POST /api/v1/alerts/:id/dismiss`, and bulk
   `POST /api/v1/alerts/dismiss`
 - `GET /api/v1/watchlist`, `PUT /api/v1/watchlist/:icao`, and
@@ -146,6 +157,12 @@ The primary routes are:
 Clients take a complete REST snapshot before applying ordered WebSocket deltas
 and resnapshot after any sequence gap. API timestamps are ISO-8601 UTC and
 unavailable values are null.
+
+Insight and coverage requests are limited to 366 days. Hourly activity,
+receiver-performance context, session telemetry, and exact tracks follow the
+configured detailed-history retention. Daily aircraft and coverage aggregates
+remain available indefinitely. Interactive and export endpoints share the same
+retention checks and 10,000-cell/20,000-track-point bounds.
 
 ## Operations
 

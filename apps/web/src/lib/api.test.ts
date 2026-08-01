@@ -23,4 +23,19 @@ describe('alerts API pagination', () => {
     expect(requestUrl.searchParams.has('dismissed')).toBe(false)
     expect(page.nextCursor).toBe('next-page-token')
   })
+
+  it('turns incompatible server payloads into a human-readable error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: 'not-an-array', nextCursor: null }),
+    }))
+
+    await expect(api.alertsPage(true)).rejects.toEqual(
+      expect.objectContaining({
+        code: 'invalid_response',
+        message: expect.stringContaining('server returned data'),
+      }),
+    )
+  })
 })
