@@ -38,8 +38,10 @@ import {
   isActiveAircraftAlert
 } from "../domain/alerts.js";
 import { airlineOperatorRows } from "../domain/airline-operators.js";
+import { analyticalAltitudeFt } from "../domain/altitude.js";
 import {
   coverageGridCell,
+  coverageGridCellFromIndices,
   insightMetricChanges,
   receiverPerformanceForBucket,
   utcDay,
@@ -58,6 +60,8 @@ type CurrentContextRow = {
   icao: string;
   session_id: string | null;
   last_position_at: Date | string | null;
+  last_altitude_ft: number | null;
+  state: LiveAircraft;
 };
 
 type SummaryContextRow = {
@@ -401,7 +405,8 @@ export class FlightRepository {
 
       const icaos = uniqueAircraft.map((aircraft) => aircraft.icao);
       const currentResult = await client.query<CurrentContextRow>(
-        `SELECT c.icao, c.session_id, c.last_position_at
+        `SELECT c.icao, c.session_id, c.last_position_at, c.state,
+                s.last_altitude_ft
          FROM current_aircraft c
          LEFT JOIN track_sessions s ON s.id = c.session_id
          WHERE c.icao = ANY($1::text[])
@@ -506,19 +511,27 @@ export class FlightRepository {
         });
         aircraft.hasActiveAlert = activeAlerts.has(aircraft.icao);
 
+        const analyticalAltitude = analyticalAltitudeFt(
+          aircraft,
+          previous
+            ? {
+                ...previous.state,
+                analyticalAltitudeFt: previous.last_altitude_ft
+              }
+            : null
+        );
+
         if (
           sessionId &&
           aircraft.latitude !== null &&
           aircraft.longitude !== null
         ) {
-          const altitude =
-            aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt;
           sessionSamples.push({
             id: sessionId,
             icao: aircraft.icao,
             recorded_at: aircraft.recordedAt,
             callsigns: aircraft.callsign ? [aircraft.callsign] : [],
-            altitude,
+            altitude: analyticalAltitude,
             speed: aircraft.groundSpeedKt,
             distance: aircraft.distanceNm,
             latitude: aircraft.latitude,
@@ -526,7 +539,8 @@ export class FlightRepository {
           });
           positionSamples.push({
             ...aircraft,
-            sessionId
+            sessionId,
+            analyticalAltitudeFt: analyticalAltitude
           });
         } else if (sessionId && aircraft.callsign) {
           sessionIdentityUpdates.push({
@@ -551,14 +565,11 @@ export class FlightRepository {
           positioned:
             aircraft.latitude !== null && aircraft.longitude !== null ? 1 : 0,
           newSession: newSession ? 1 : 0,
-          altitude:
-            aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt,
+          altitude: analyticalAltitude,
           speed: aircraft.groundSpeedKt,
           distance: aircraft.distanceNm,
           callsigns: aircraft.callsign ? [aircraft.callsign] : []
         });
-        const altitude =
-          aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt;
         const positioned =
           aircraft.latitude !== null && aircraft.longitude !== null;
         hourlySamples.push({
@@ -570,7 +581,7 @@ export class FlightRepository {
           sessionIds: sessionId ? [sessionId] : [],
           callsigns: aircraft.callsign ? [aircraft.callsign] : [],
           maximumRangeNm: aircraft.distanceNm,
-          maximumAltitudeFt: altitude
+          maximumAltitudeFt: analyticalAltitude
         });
         if (positioned) {
           const cell = coverageGridCell(aircraft.latitude!, aircraft.longitude!);
@@ -580,11 +591,11 @@ export class FlightRepository {
             existing.reports += 1;
             existing.aircraftIcaos.add(aircraft.icao);
             if (
-              altitude !== null &&
+              analyticalAltitude !== null &&
               (existing.maximumAltitudeFt === null ||
-                altitude > existing.maximumAltitudeFt)
+                analyticalAltitude > existing.maximumAltitudeFt)
             ) {
-              existing.maximumAltitudeFt = altitude;
+              existing.maximumAltitudeFt = analyticalAltitude;
             }
           } else {
             coverageByCell.set(key, {
@@ -593,7 +604,7 @@ export class FlightRepository {
               longitudeIndex: cell.longitudeIndex,
               reports: 1,
               aircraftIcaos: new Set([aircraft.icao]),
-              maximumAltitudeFt: altitude
+              maximumAltitudeFt: analyticalAltitude
             });
           }
         }
@@ -746,7 +757,9 @@ export class FlightRepository {
          END,
          last_latitude = EXCLUDED.last_latitude,
          last_longitude = EXCLUDED.last_longitude,
-         last_altitude_ft = EXCLUDED.last_altitude_ft,
+         last_altitude_ft = COALESCE(
+           EXCLUDED.last_altitude_ft, track_sessions.last_altitude_ft
+         ),
          updated_at = now()`,
       [json(rows)]
     );
@@ -759,7 +772,8 @@ export class FlightRepository {
     await client.query(
       `INSERT INTO position_samples (
          recorded_at, icao, session_id, callsign, latitude, longitude,
-         altitude_barometric_ft, altitude_geometric_ft, on_ground,
+         altitude_barometric_ft, altitude_geometric_ft,
+         analytical_altitude_ft, on_ground,
          ground_speed_kt, indicated_air_speed_kt, true_air_speed_kt, mach,
          track_deg, track_rate_deg_per_sec, roll_deg, magnetic_heading_deg,
          true_heading_deg, barometric_rate_fpm, geometric_rate_fpm,
@@ -770,7 +784,8 @@ export class FlightRepository {
        )
        SELECT
          x.recorded_at, x.icao, x.session_id, x.callsign, x.latitude, x.longitude,
-         x.altitude_barometric_ft, x.altitude_geometric_ft, x.on_ground,
+         x.altitude_barometric_ft, x.altitude_geometric_ft,
+         x.analytical_altitude_ft, x.on_ground,
          x.ground_speed_kt, x.indicated_air_speed_kt, x.true_air_speed_kt, x.mach,
          x.track_deg, x.track_rate_deg_per_sec, x.roll_deg, x.magnetic_heading_deg,
          x.true_heading_deg, x.barometric_rate_fpm, x.geometric_rate_fpm,
@@ -782,7 +797,8 @@ export class FlightRepository {
          recorded_at timestamptz, icao text, session_id uuid, callsign text,
          latitude double precision, longitude double precision,
          altitude_barometric_ft double precision,
-         altitude_geometric_ft double precision, on_ground boolean,
+         altitude_geometric_ft double precision,
+         analytical_altitude_ft double precision, on_ground boolean,
          ground_speed_kt double precision, indicated_air_speed_kt double precision,
          true_air_speed_kt double precision, mach double precision,
          track_deg double precision, track_rate_deg_per_sec double precision,
@@ -810,6 +826,7 @@ export class FlightRepository {
               longitude: aircraft.longitude,
               altitude_barometric_ft: aircraft.altitudeBarometricFt,
               altitude_geometric_ft: aircraft.altitudeGeometricFt,
+              analytical_altitude_ft: row.analyticalAltitudeFt,
               on_ground: aircraft.onGround,
               ground_speed_kt: aircraft.groundSpeedKt,
               indicated_air_speed_kt: aircraft.indicatedAirSpeedKt,
@@ -2054,9 +2071,9 @@ export class FlightRepository {
       from: from.toISOString(),
       to: to.toISOString(),
       cells: result.rows.slice(0, limit).map((row) => {
-        const cell = coverageGridCell(
-          -90 + row.latitude_index * 0.05,
-          -180 + row.longitude_index * 0.05
+        const cell = coverageGridCellFromIndices(
+          row.latitude_index,
+          row.longitude_index
         );
         return {
           latitude: cell.latitude,
