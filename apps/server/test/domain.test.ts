@@ -174,18 +174,25 @@ describe("track sessions", () => {
 });
 
 describe("alert rules", () => {
-  it("does not treat an informational first sighting as an active aircraft alert", () => {
-    expect(isActiveAircraftAlert("first_seen")).toBe(false);
+  it("does not alert for an ordinary aircraft that is not watched", () => {
+    expect(
+      evaluateAlerts(aircraft(), {
+        watched: false,
+        encounterKey: "session-1"
+      })
+    ).toEqual([]);
+  });
+
+  it("treats emergency and watchlist events as active aircraft alerts", () => {
     expect(isActiveAircraftAlert("emergency_squawk")).toBe(true);
     expect(isActiveAircraftAlert("emergency_state")).toBe(true);
     expect(isActiveAircraftAlert("watchlist")).toBe(true);
   });
 
-  it("creates first-ever, watchlist, squawk, and state alerts with stable keys", () => {
+  it("creates watchlist, squawk, and state alerts with stable keys", () => {
     const alerts = evaluateAlerts(
       aircraft({ squawk: "7700", emergency: "general" }),
       {
-        firstEver: true,
         watched: true,
         encounterKey: "session-1"
       }
@@ -193,7 +200,6 @@ describe("alert rules", () => {
     expect(alerts.map((alert) => alert.rule)).toEqual([
       "emergency_squawk",
       "emergency_state",
-      "first_seen",
       "watchlist"
     ]);
     expect(alerts.map((alert) => alert.dedupeKey)).toContain(
@@ -203,12 +209,10 @@ describe("alert rules", () => {
 
   it("allows a changed emergency state but deduplicates the rule state", () => {
     const first = evaluateAlerts(aircraft({ emergency: "general" }), {
-      firstEver: false,
       watched: false,
       encounterKey: "session"
     });
     const changed = evaluateAlerts(aircraft({ emergency: "lifeguard" }), {
-      firstEver: false,
       watched: false,
       encounterKey: "session"
     });

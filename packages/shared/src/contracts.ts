@@ -120,7 +120,6 @@ export const aircraftSummarySchema = z.object({
 export const alertRuleSchema = z.enum([
   "emergency_squawk",
   "emergency_state",
-  "first_seen",
   "watchlist"
 ]);
 
@@ -344,7 +343,7 @@ export const historySavedViewConfigurationSchema = savedViewBaseSchema
         query: z.string().max(128),
         from: isoDateTimeSchema,
         to: isoDateTimeSchema,
-        alert: z.enum(["", "emergency_squawk", "emergency_state", "first_seen", "watchlist"])
+        alert: z.enum(["", "emergency_squawk", "emergency_state", "watchlist"])
       })
       .strict(),
     sort: z.enum(["started_desc", "started_asc"]),

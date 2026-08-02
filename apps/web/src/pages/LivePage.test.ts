@@ -5,12 +5,12 @@ import { emergencyBannerAlert } from './LivePage'
 function alert(overrides: Partial<AlertEvent> = {}): AlertEvent {
   return {
     id: 'alert-1',
-    type: 'first_seen',
+    type: 'watchlist',
     createdAt: '2026-08-01T09:00:00.000Z',
     icao: '406b90',
     callsign: 'EZY42KD',
-    title: 'First-ever receiver sighting',
-    message: 'Seen for the first time',
+    title: 'Watchlist aircraft detected',
+    message: 'Watchlisted aircraft is active',
     dismissedAt: null,
     severity: 'info',
     ...overrides,
@@ -18,11 +18,11 @@ function alert(overrides: Partial<AlertEvent> = {}): AlertEvent {
 }
 
 describe('emergencyBannerAlert', () => {
-  it('does not interrupt the map for first-sighting or watchlist alerts', () => {
+  it('does not interrupt the map for watchlist alerts', () => {
     expect(
       emergencyBannerAlert([
         alert(),
-        alert({ id: 'alert-2', type: 'watchlist', severity: 'warning' }),
+        alert({ id: 'alert-2' }),
       ]),
     ).toBeUndefined()
   })

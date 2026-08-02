@@ -59,7 +59,7 @@ function filtersFromSearch(search: string): HistoryFilters {
     query: params.get('q') ?? defaults.query,
     from: params.get('from') ?? defaults.from,
     to: params.get('to') ?? defaults.to,
-    alert: ['emergency_squawk', 'emergency_state', 'first_seen', 'watchlist'].includes(alert ?? '')
+    alert: ['emergency_squawk', 'emergency_state', 'watchlist'].includes(alert ?? '')
       ? (alert as HistoryFilters['alert'])
       : '',
   }
@@ -638,7 +638,6 @@ export function HistoryPage() {
               <option value="emergency_squawk">Emergency squawk</option>
               <option value="emergency_state">Emergency state</option>
               <option value="watchlist">Watchlist match</option>
-              <option value="first_seen">First seen</option>
             </select>
           </label>
           <button

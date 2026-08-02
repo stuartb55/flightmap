@@ -61,4 +61,12 @@ describe('AlertsPage watchlist editing', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Receiver database unavailable')
     expect(dispatch).toHaveBeenCalledWith({ type: 'watch-state', icao: '40621f', watched: true })
   })
+
+  it('keeps routine first sightings out of the alert rules', async () => {
+    render(<Router><AlertsPage /></Router>)
+
+    expect(await screen.findByText('Events that may need attention: emergency reports and watchlist matches.')).toBeInTheDocument()
+    expect(screen.getByText(/New aircraft are recorded in receiver history without creating an alert/)).toBeInTheDocument()
+    expect(screen.queryByText('First sighting')).not.toBeInTheDocument()
+  })
 })

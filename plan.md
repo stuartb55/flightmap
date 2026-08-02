@@ -9,7 +9,7 @@ Build a responsive, LAN-only web application that:
 - Retains one-second core telemetry for positioned aircraft for 30 days.
 - Preserves compact aircraft and daily sighting summaries indefinitely.
 - Provides aircraft search, historical tracks, and animated replay.
-- Generates in-app alerts for emergency squawks, first-ever sightings, and watchlist matches.
+- Generates focused in-app alerts for emergency squawks, explicit emergency states, and watchlist matches.
 - Runs as a Docker Compose stack on a desktop/server-class LAN host.
 
 The empty workspace will become a TypeScript monorepo using React, MapLibre, Fastify, and PostgreSQL.
@@ -95,11 +95,11 @@ The empty workspace will become a TypeScript monorepo using React, MapLibre, Fas
 
 ### Alerts
 
-- Create alerts for squawks 7500, 7600, and 7700, explicit non-`none` emergency states, first-ever aircraft sightings, and watchlist matches.
+- Create alerts for squawks 7500, 7600, and 7700, explicit non-`none` emergency states, and watchlist matches. Record first sightings in receiver history without creating alerts.
 - Deduplicate each rule per track session; emergency state changes may create a new alert.
 - Display a persistent alert badge/feed, map highlighting, and dismissible in-app banners.
 - No email, browser push, Discord, or other external notifications in v1.
-- “First-ever” is based on the indefinite aircraft summary, so it remains accurate after detailed tracks expire.
+- First and last sightings remain available from the indefinite aircraft summary after detailed tracks expire.
 
 ### API and real-time contract
 
@@ -135,7 +135,7 @@ The empty workspace will become a TypeScript monorepo using React, MapLibre, Fas
 ## Test and Acceptance Plan
 
 - Unit-test parsing of full, sparse, MLAT, stale, ground, malformed, missing-position, and unknown-field aircraft records.
-- Test duplicate snapshot rejection, UTC conversion, distance/bearing calculations, session boundaries, summary aggregation, first-ever detection, emergency/watchlist deduplication, and retention cutoffs.
+- Test duplicate snapshot rejection, UTC conversion, distance/bearing calculations, session boundaries, summary aggregation, first-sighting history, emergency/watchlist deduplication, and retention cutoffs.
 - Integration-test against a controllable fake receiver for normal polling, timeouts, invalid JSON, partial records, out-of-order timestamps, receiver restart, outage, and recovery.
 - Verify daily partition creation, 30-day pruning, indefinite summary preservation, metadata atomic replacement, and failed-import rollback.
 - Contract-test every REST schema and WebSocket snapshot/delta/reconnect flow.
