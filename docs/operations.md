@@ -50,7 +50,7 @@ installation may need up to a minute to build partitions and become ready.
 Open **Settings** and configure the receiver data URL. Receiver
 latitude/longitude normally come from `receiver.json`; set both overrides only
 when it does not advertise correct coordinates. The same page controls the
-receiver label, map, polling, retention, alerts, metadata, and storage capacity.
+receiver label, map, polling, retention, metadata, and storage capacity.
 Those settings are persisted in PostgreSQL.
 
 ## Health and logs

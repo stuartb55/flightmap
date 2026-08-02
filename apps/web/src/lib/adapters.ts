@@ -99,16 +99,13 @@ export function adaptReceiver(receiver: WireReceiver): Receiver {
 }
 
 export function adaptAlert(alert: WireAlert): AlertEvent {
-  const type =
-    alert.rule === 'watchlist' ? 'watchlist' : alert.rule === 'first_seen' ? 'first_seen' : 'emergency'
+  const type = alert.rule === 'watchlist' ? 'watchlist' : 'emergency'
   const title =
     alert.rule === 'watchlist'
       ? 'Watchlist aircraft detected'
-      : alert.rule === 'first_seen'
-        ? 'First-ever receiver sighting'
-        : alert.rule === 'emergency_squawk'
-          ? `Emergency squawk${alert.state ? ` ${alert.state}` : ''}`
-          : 'Emergency state reported'
+      : alert.rule === 'emergency_squawk'
+        ? `Emergency squawk${alert.state ? ` ${alert.state}` : ''}`
+        : 'Emergency state reported'
   return {
     id: alert.id,
     type,
@@ -141,7 +138,7 @@ export function adaptSession(session: WireSession): SessionSummary {
     alertKinds: [
       ...new Set(
         session.alertRules.map((rule) =>
-          rule === 'watchlist' ? 'watchlist' : rule === 'first_seen' ? 'first_seen' : 'emergency',
+          rule === 'watchlist' ? 'watchlist' : 'emergency',
         ),
       ),
     ],

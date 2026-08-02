@@ -1,5 +1,4 @@
 import {
-  Bell,
   Database,
   HardDrive,
   MapPinned,
@@ -43,8 +42,6 @@ function buildSettings(data: FormData): AppSettings {
     historyRetentionDays: requiredNumber(data, 'historyRetentionDays'),
     sessionGapSeconds: requiredNumber(data, 'sessionGapSeconds'),
     currentAircraftTtlSeconds: requiredNumber(data, 'currentAircraftTtlSeconds'),
-    firstSeenAlertsEnabled: data.get('firstSeenAlertsEnabled') === 'on',
-    firstSeenAlertBaselineHours: requiredNumber(data, 'firstSeenAlertBaselineHours'),
     metadataUrl: String(data.get('metadataUrl') ?? ''),
     metadataCheckIntervalMs: Math.round(
       requiredNumber(data, 'metadataCheckIntervalHours') * 3_600_000,
@@ -344,35 +341,6 @@ export function SettingsPage() {
                 />
               </Field>
             </div>
-          </SettingsCard>
-
-          <SettingsCard
-            icon={<Bell size={20} />}
-            eyebrow="ALERTING"
-            title="First-seen alerts"
-            description="Emergency and watchlist alerts remain enabled independently."
-          >
-            <label className="settings-toggle">
-              <span>
-                <strong>Alert on a receiver’s first sighting</strong>
-                <small>Creates an informational alert for a previously unseen ICAO address.</small>
-              </span>
-              <input
-                name="firstSeenAlertsEnabled"
-                type="checkbox"
-                defaultChecked={settings.firstSeenAlertsEnabled}
-              />
-            </label>
-            <Field label="New-install baseline" hint="Hours; avoids alerting for the initial population">
-              <input
-                name="firstSeenAlertBaselineHours"
-                type="number"
-                min={0}
-                max={720}
-                defaultValue={settings.firstSeenAlertBaselineHours}
-                required
-              />
-            </Field>
           </SettingsCard>
 
           <SettingsCard

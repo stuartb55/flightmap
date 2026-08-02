@@ -41,8 +41,6 @@ const settingsShape = {
   historyRetentionDays: z.number().int().min(1).max(365),
   sessionGapSeconds: z.number().int().min(60).max(3_600),
   currentAircraftTtlSeconds: z.number().int().min(15).max(3_600),
-  firstSeenAlertsEnabled: z.boolean(),
-  firstSeenAlertBaselineHours: z.number().int().min(0).max(720),
   metadataUrl: z.string().url().max(2_000),
   metadataCheckIntervalMs: z.number().int().min(60_000).max(2_592_000_000),
   metadataTimeoutMs: z.number().int().min(1_000).max(300_000),
@@ -112,8 +110,6 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,
-  firstSeenAlertsEnabled: true,
-  firstSeenAlertBaselineHours: 24,
   metadataUrl:
     "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz",
   metadataCheckIntervalMs: 7 * 24 * 60 * 60 * 1_000,

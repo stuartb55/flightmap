@@ -21,8 +21,9 @@ history indefinitely.
   Live, History, and Insights workflows.
 - Installable progressive web app with standalone display, app shortcuts,
   branded icons, automatic updates, and an offline application shell.
-- In-app alerts for 7500/7600/7700 squawks, explicit emergencies, first-ever
-  sightings, and watchlist matches.
+- Focused in-app alerts for 7500/7600/7700 squawks, explicit emergencies, and
+  watchlist matches. First sightings remain available in receiver history
+  without flooding the alert feed.
 - Local registration/type/operator enrichment from the readsb-compatible
   tar1090 aircraft database.
 - Offline airline inference from observed ICAO callsign designators in

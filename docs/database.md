@@ -18,7 +18,7 @@ lock make startup migrations serial and restart-safe.
 | `receiver_samples` | Minute receiver health/statistics | 30 days |
 | `hourly_aircraft_activity` | Compact per-aircraft/hour report and session rollups | Detailed-history retention |
 | `daily_coverage_cells` | Positioned reports grouped into fixed 0.05-degree cells | Indefinite |
-| `alert_events` | Emergency, first-ever, and watchlist events | 30 days |
+| `alert_events` | Emergency and watchlist events | 30 days |
 | `current_aircraft` | Latest normalized state for restart/reconnect | Current state only |
 | `aircraft_summary` | First/last seen and lifetime counters | Indefinite |
 | `daily_aircraft_summary` | Compact per-aircraft/day activity | Indefinite |
@@ -63,7 +63,7 @@ entire transaction back, preserving the previous successful import.
 
 - Detailed retention must never delete `aircraft_summary` or
   `daily_aircraft_summary`.
-- First-ever alerts are based on `aircraft_summary`, not retained alert rows.
+- First and last sightings are retained in `aircraft_summary` without creating alerts.
 - A callsign change updates a session and does not split it.
 - No positioned report for five minutes closes a session.
 - Position inserts calculate receiver-relative nautical miles and true bearing.

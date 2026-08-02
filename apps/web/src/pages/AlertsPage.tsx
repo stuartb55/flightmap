@@ -4,7 +4,6 @@ import {
   Bell,
   Check,
   ChevronRight,
-  Eye,
   Plane,
   Pencil,
   Plus,
@@ -25,17 +24,12 @@ const alertPresentation = {
   emergency: {
     icon: AlertOctagon,
     label: 'Emergency',
-    description: 'Emergency state or squawk code',
+    description: 'Emergency states and squawk codes 7500, 7600, or 7700',
   },
   watchlist: {
     icon: Star,
     label: 'Watchlist',
-    description: 'Aircraft on your watchlist',
-  },
-  first_seen: {
-    icon: Eye,
-    label: 'First sighting',
-    description: 'Never previously seen by this receiver',
+    description: 'Aircraft you have explicitly chosen to track',
   },
 } as const
 
@@ -259,7 +253,7 @@ export function AlertsPage() {
         <div className="page-heading">
           <span className="eyebrow">RECEIVER EVENTS</span>
           <h1>Alerts</h1>
-          <p>Emergency reports, first-ever sightings, and watchlist matches.</p>
+          <p>Events that may need attention: emergency reports and watchlist matches.</p>
         </div>
         <div className="alert-stats">
           <div className="stat-card">
@@ -301,7 +295,6 @@ export function AlertsPage() {
             <option value="all">All alert types</option>
             <option value="emergency">Emergency</option>
             <option value="watchlist">Watchlist</option>
-            <option value="first_seen">First sighting</option>
           </select>
         </label>
         {filtered.some((alert) => !alert.dismissedAt) ? (
@@ -335,7 +328,7 @@ export function AlertsPage() {
           <div className="empty-state large">
             <span className="empty-icon"><Bell size={27} /></span>
             <strong>No {statusFilter === 'all' ? '' : statusFilter} alerts</strong>
-            <p>New receiver events will appear here and on the live map.</p>
+            <p>Emergency reports and watchlist matches will appear here.</p>
           </div>
         )}
         {nextCursor ? (
@@ -367,7 +360,8 @@ export function AlertsPage() {
           )}
         </div>
         <p className="rules-note">
-          Each rule is deduplicated per track session. Alerts follow detailed-history retention.
+          New aircraft are recorded in receiver history without creating an alert. Alert rules are
+          deduplicated per track session and follow detailed-history retention.
         </p>
 
         <section className="watchlist-manager">

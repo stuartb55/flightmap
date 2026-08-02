@@ -38,6 +38,7 @@ describe("shared contracts", () => {
         to: "2026-01-01T00:00:00.000Z"
       })
     ).toThrow();
+    expect(() => sessionQuerySchema.parse({ alert: "first_seen" })).toThrow();
   });
 
   it("bounds track reads and parses incremental query options", () => {

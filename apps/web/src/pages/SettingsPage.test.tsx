@@ -28,8 +28,6 @@ const defaultSettings: AppSettings = {
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,
-  firstSeenAlertsEnabled: true,
-  firstSeenAlertBaselineHours: 24,
   metadataUrl: 'https://metadata.example/aircraft.csv.gz',
   metadataCheckIntervalMs: 604_800_000,
   metadataTimeoutMs: 30_000,

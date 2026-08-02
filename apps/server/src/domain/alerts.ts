@@ -8,7 +8,6 @@ export type AlertCandidate = {
 };
 
 export type AlertEvaluationContext = {
-  firstEver: boolean;
   watched: boolean;
   /**
    * A session UUID when positioned, otherwise a stable encounter identifier.
@@ -55,15 +54,6 @@ export function evaluateAlerts(
       state: aircraft.emergency,
       message: `${identity} reports emergency state ${aircraft.emergency}`,
       dedupeKey: `${context.encounterKey}:emergency_state:${aircraft.emergency}`
-    });
-  }
-
-  if (context.firstEver) {
-    candidates.push({
-      rule: "first_seen",
-      state: null,
-      message: `${identity} was seen for the first time`,
-      dedupeKey: `${aircraft.icao}:first_seen`
     });
   }
 

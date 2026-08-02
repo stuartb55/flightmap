@@ -64,11 +64,6 @@ type CurrentContextRow = {
   state: LiveAircraft;
 };
 
-type SummaryContextRow = {
-  icao: string;
-  first_seen_at: Date | string;
-};
-
 type MetadataRow = {
   icao: string;
   registration: string | null;
@@ -331,20 +326,12 @@ export function hasDetailedTrackAvailable(
 }
 
 export class FlightRepository {
-  private installedAt: Date | null = null;
-
   constructor(
     private readonly database: Database,
     private readonly config: Pick<
       Config,
       "sessionGapSeconds" | "currentAircraftTtlSeconds" | "historyRetentionDays"
-    > &
-      Partial<
-        Pick<
-          Config,
-          "firstSeenAlertsEnabled" | "firstSeenAlertBaselineHours"
-        >
-      >
+    >
   ) {}
 
   async databaseReady(): Promise<boolean> {
@@ -413,10 +400,6 @@ export class FlightRepository {
            AND (c.session_id IS NULL OR s.ended_at IS NULL)`,
         [icaos]
       );
-      const summaryResult = await client.query<SummaryContextRow>(
-        "SELECT icao, first_seen_at FROM aircraft_summary WHERE icao = ANY($1::text[])",
-        [icaos]
-      );
       const watchlistResult = await client.query<{ icao: string }>(
         "SELECT icao FROM watchlist WHERE icao = ANY($1::text[])",
         [icaos]
@@ -436,9 +419,6 @@ export class FlightRepository {
       const currentByIcao = new Map(
         currentResult.rows.map((row) => [row.icao.trim(), row])
       );
-      const previouslySeen = new Set(
-        summaryResult.rows.map((row) => row.icao.trim())
-      );
       const watched = new Set(
         watchlistResult.rows.map((row) => row.icao.trim())
       );
@@ -448,11 +428,6 @@ export class FlightRepository {
       const activeAlerts = new Set(
         activeAlertResult.rows.map((row) => row.icao.trim())
       );
-      const firstSeenAlertsActive = await this.firstSeenAlertsActive(
-        client,
-        snapshot.recordedAt
-      );
-
       const sessionSamples: Array<Record<string, unknown>> = [];
       const positionSamples: Array<Record<string, unknown>> = [];
       const sessionIdentityUpdates: Array<Record<string, unknown>> = [];
@@ -500,12 +475,9 @@ export class FlightRepository {
         aircraft.watched = watched.has(aircraft.icao);
         aircraft.metadata = metadata.get(aircraft.icao) ?? null;
 
-        const firstEver =
-          firstSeenAlertsActive && !previouslySeen.has(aircraft.icao);
         const encounterKey =
           sessionId ?? `unpositioned:${aircraft.icao}:${iso(snapshot.recordedAt).slice(0, 10)}`;
         const candidates = evaluateAlerts(aircraft, {
-          firstEver,
           watched: aircraft.watched,
           encounterKey
         });
@@ -683,23 +655,6 @@ export class FlightRepository {
         alerts: insertedAlerts.map(alertFromRow)
       };
     });
-  }
-
-  private async firstSeenAlertsActive(
-    client: Queryable,
-    at: Date
-  ): Promise<boolean> {
-    if (this.config.firstSeenAlertsEnabled !== true) return false;
-    if (this.installedAt === null) {
-      const result = await client.query<{ installed_at: Date | string }>(
-        "SELECT installed_at FROM application_state WHERE id = true"
-      );
-      const installedAt = result.rows[0]?.installed_at;
-      this.installedAt = installedAt ? new Date(installedAt) : new Date();
-    }
-    const baselineMs =
-      (this.config.firstSeenAlertBaselineHours ?? 24) * 60 * 60 * 1000;
-    return at.getTime() >= this.installedAt.getTime() + baselineMs;
   }
 
   private async upsertSessions(

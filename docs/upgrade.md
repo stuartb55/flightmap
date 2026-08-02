@@ -44,7 +44,7 @@ Check that:
 
 The release that introduces the Settings page creates an
 `application_settings` row with safe defaults. Before that first upgrade, note
-any receiver, display, polling, retention, first-seen alert, metadata, or
+any receiver, display, polling, retention, metadata, or
 database-capacity values customized in the old `.env`. After the app is ready,
 transfer those values to **Settings**, then remove the obsolete entries from
 `.env`. The new `.env.example` is the authoritative list of the four remaining
@@ -69,6 +69,13 @@ explicitly:
 
 Multiple app instances and manual migration are serialized by a PostgreSQL
 advisory lock. Do not edit `schema_migrations` by hand.
+
+## Upgrade to focused alerts
+
+First sightings remain available through each aircraft's receiver history, but
+no longer create alert events. The upgrade removes existing `first_seen` alert
+rows, resets saved History views that filtered on that retired rule, and removes
+the obsolete first-seen settings. Emergency and watchlist alerts are unchanged.
 
 ## PostgreSQL image upgrades
 

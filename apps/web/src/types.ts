@@ -89,7 +89,7 @@ export interface LiveSnapshot {
   aircraft: Aircraft[]
 }
 
-export type AlertKind = 'emergency' | 'watchlist' | 'first_seen'
+export type AlertKind = 'emergency' | 'watchlist'
 
 export interface AlertEvent {
   id: string
@@ -234,8 +234,6 @@ export interface AppSettings {
   historyRetentionDays: number
   sessionGapSeconds: number
   currentAircraftTtlSeconds: number
-  firstSeenAlertsEnabled: boolean
-  firstSeenAlertBaselineHours: number
   metadataUrl: string
   metadataCheckIntervalMs: number
   metadataTimeoutMs: number
@@ -257,7 +255,7 @@ export interface HistoryFilters {
   query: string
   from: string
   to: string
-  alert: '' | 'emergency_squawk' | 'emergency_state' | 'first_seen' | 'watchlist'
+  alert: '' | 'emergency_squawk' | 'emergency_state' | 'watchlist'
 }
 
 export type LiveMessage =
