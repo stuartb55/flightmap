@@ -153,6 +153,15 @@ type SessionRow = {
   country?: string | null;
 };
 
+/**
+ * The one place ICAO addresses are canonicalised. Values reaching this from
+ * position_samples are still `char(6)`, so the trim stays; every other table
+ * stores `text` (migration 013).
+ */
+export function normaliseIcao(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function iso(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
@@ -219,7 +228,7 @@ function metadataFromRow(row: MetadataRow | SessionRow): AircraftMetadata | null
     "metadata_icao" in row ? row.metadata_icao : (row as MetadataRow).icao;
   if (!icao) return null;
   return {
-    icao: icao.trim().toLowerCase(),
+    icao: normaliseIcao(icao),
     registration: row.registration ?? null,
     typeCode: row.type_code ?? null,
     description: row.description ?? null,
@@ -232,7 +241,7 @@ function metadataFromRow(row: MetadataRow | SessionRow): AircraftMetadata | null
 function alertFromRow(row: AlertRow): AlertEvent {
   return {
     id: row.id,
-    icao: row.icao.trim().toLowerCase(),
+    icao: normaliseIcao(row.icao),
     sessionId: row.session_id,
     rule: row.rule,
     state: row.state,
@@ -251,7 +260,7 @@ function customAlertRuleFromRow(row: CustomAlertRuleRow): CustomAlertRule {
     enabled: row.enabled,
     severity: row.severity,
     callsignPrefix: row.callsign_prefix,
-    icao: row.icao?.trim().toLowerCase() ?? null,
+    icao: row.icao ? normaliseIcao(row.icao) : null,
     operator: row.operator,
     typeCode: row.type_code,
     minimumAltitudeFt: row.minimum_altitude_ft,
@@ -296,7 +305,7 @@ function savedViewFromRow(row: SavedViewRow): SavedView {
 function sessionFromRow(row: SessionRow): TrackSession {
   const session: TrackSession = {
     id: row.id,
-    icao: row.icao.trim().toLowerCase(),
+    icao: normaliseIcao(row.icao),
     startedAt: iso(row.started_at),
     endedAt: row.ended_at ? iso(row.ended_at) : null,
     lastPositionAt: iso(row.last_position_at),
@@ -509,20 +518,20 @@ export class FlightRepository {
       );
 
       const currentByIcao = new Map(
-        currentResult.rows.map((row) => [row.icao.trim(), row])
+        currentResult.rows.map((row) => [normaliseIcao(row.icao), row])
       );
       const watched = new Set(
-        watchlistResult.rows.map((row) => row.icao.trim())
+        watchlistResult.rows.map((row) => normaliseIcao(row.icao))
       );
       const metadata = new Map(
-        metadataResult.rows.map((row) => [row.icao.trim(), metadataFromRow(row)])
+        metadataResult.rows.map((row) => [normaliseIcao(row.icao), metadataFromRow(row)])
       );
       const activeAlerts = new Set(
-        activeAlertResult.rows.map((row) => row.icao.trim())
+        activeAlertResult.rows.map((row) => normaliseIcao(row.icao))
       );
       const customRules = customRuleResult.rows.map(customAlertRuleFromRow);
       const customAlertCooldowns = new Map(customAlertCooldownResult.rows.map((row) => [
-        `${row.state}:${row.icao.trim()}`,
+        `${row.state}:${normaliseIcao(row.icao)}`,
         new Date(row.last_occurred_at)
       ]));
       const sessionSamples: Array<Record<string, unknown>> = [];
@@ -786,7 +795,7 @@ export class FlightRepository {
       const newlyAlertedIcaos = new Set(
         insertedAlerts
           .filter((alert) => isActiveAircraftAlert(alert.rule))
-          .map((alert) => alert.icao.trim().toLowerCase())
+          .map((alert) => normaliseIcao(alert.icao))
       );
       for (const aircraft of uniqueAircraft) {
         aircraft.hasActiveAlert =
@@ -1345,7 +1354,7 @@ export class FlightRepository {
       "DELETE FROM current_aircraft WHERE updated_at < $1 RETURNING icao",
       [cutoff]
     );
-    return result.rows.map((row) => row.icao.trim().toLowerCase());
+    return result.rows.map((row) => normaliseIcao(row.icao));
   }
 
   async closeInactiveSessions(now = new Date()): Promise<number> {
@@ -1414,12 +1423,12 @@ export class FlightRepository {
       [
         cutoff,
         [...activeAircraftAlertRules],
-        icaos ? icaos.map((icao) => icao.trim().toLowerCase()) : null
+        icaos ? icaos.map(normaliseIcao) : null
       ]
     );
     return result.rows.map((row) => ({
       ...row.state,
-      icao: row.state.icao.trim().toLowerCase(),
+      icao: normaliseIcao(row.state.icao),
       stale:
         now.getTime() - Date.parse(row.state.recordedAt) > 15_000 ||
         row.state.stale,
@@ -1483,7 +1492,7 @@ export class FlightRepository {
     const summaryRow = summaryResult.rows[0];
     const summary: AircraftSummary | null = summaryRow
       ? {
-          icao: summaryRow.icao.trim().toLowerCase(),
+          icao: normaliseIcao(summaryRow.icao),
           firstSeenAt: iso(summaryRow.first_seen_at),
           lastSeenAt: iso(summaryRow.last_seen_at),
           totalObservations: number(summaryRow.total_observations),
@@ -1920,7 +1929,7 @@ export class FlightRepository {
           : utcDate(row.summary_date);
       const positionedObservations = number(row.positioned_observations);
       return {
-        icao: row.icao.trim().toLowerCase(),
+        icao: normaliseIcao(row.icao),
         date,
         firstSeenAt: iso(row.first_seen_at),
         lastSeenAt: iso(row.last_seen_at),
@@ -2809,7 +2818,7 @@ export class FlightRepository {
       updated_at: Date | string;
     }>("SELECT * FROM watchlist ORDER BY updated_at DESC, icao");
     return result.rows.map((row) => ({
-      icao: row.icao.trim().toLowerCase(),
+      icao: normaliseIcao(row.icao),
       label: row.label,
       notes: row.notes,
       createdAt: iso(row.created_at),
@@ -2903,7 +2912,7 @@ export class FlightRepository {
     );
     const row = result.rows[0]!;
     return {
-      icao: row.icao.trim().toLowerCase(),
+      icao: normaliseIcao(row.icao),
       label: row.label,
       notes: row.notes,
       createdAt: iso(row.created_at),

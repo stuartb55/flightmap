@@ -174,7 +174,7 @@ items assume the documented trusted-LAN model.
 
 - [ ] **22. `styles.css` is 5,714 lines** in a single file.
 
-- [ ] **23. `icao char(6)` forces `.trim()` at roughly 20 call sites**; one
+- [x] **23. `icao char(6)` forces `.trim()` at roughly 20 call sites**; one
       missed trim is a silent mismatch bug. Migrate the column to `text`.
 
 - [x] **24. Runtime settings need a page reload.** `apps/web/src/config.ts`
