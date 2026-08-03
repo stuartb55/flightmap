@@ -580,10 +580,15 @@
   background: var(--accent);
 }
 
+/* A fixed column keeps every meter in a list the same length: sized to the
+   value it holds, each row started and ended somewhere different. */
 .leader-value {
+  min-width: 58px;
   color: var(--muted-bright);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .coverage-map-wrap {

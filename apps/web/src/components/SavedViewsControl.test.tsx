@@ -73,6 +73,20 @@ describe('SavedViewsControl', () => {
     expect(await screen.findByText('Monthly coverage')).toBeInTheDocument()
   })
 
+  // On a phone this panel and the map layer panel are both full width, so the
+  // one that is open has to close when the other button is pressed.
+  it('closes when a press lands outside the control', async () => {
+    render(
+      <SavedViewsControl surface="insights" configuration={() => configuration} onApply={vi.fn()} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Saved views/ }))
+    expect(await screen.findByRole('region', { name: 'insights saved views' })).toBeInTheDocument()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'insights saved views' })).not.toBeInTheDocument(),
+    )
+  })
+
   it('renames, replaces, and deletes a saved view', async () => {
     const renamed = { ...view, name: 'Summer coverage' }
     vi.mocked(api.updateSavedView)

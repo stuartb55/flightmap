@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -10,7 +11,7 @@ import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewp
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { Focus, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
+import { Focus, Info, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { defaultReceiver, useRuntimeConfig } from '../config'
 import {
   aircraftShape,
@@ -543,6 +544,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [mapError, setMapError] = useState<string | null>(null)
   const [followSelected, setFollowSelected] = useState(false)
   const [hoveredIcao, setHoveredIcao] = useState<string | null>(null)
+  const [legendOpen, setLegendOpen] = useState(false)
+  const legendBodyId = useId()
 
   aircraftRef.current = aircraft
   receiverRef.current = receiver
@@ -643,13 +646,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
     mapRef.current = map
     map.setMissingStyleImageResolver((id) => resolveStyleImageAlias(map, id))
-    map.addControl(
-      new maplibregl.AttributionControl({
-        compact: true,
-        customAttribution: '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap',
-      }),
-      'bottom-left',
-    )
+    // The style credits OpenFreeMap, OpenMapTiles and OpenStreetMap itself, so
+    // a custom line repeated all three and doubled the height of the control.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
     const scale = new maplibregl.ScaleControl({ unit: scaleUnit(unitsRef.current.distance) })
     scaleControlRef.current = scale
     map.addControl(scale, 'bottom-left')
@@ -1120,31 +1119,45 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         const hovered = aircraft.find((item) => item.icao === hoveredIcao)
         return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : formatAltitude(hovered.altitudeBaro, units)} · {hovered.groundSpeed == null ? 'Speed —' : formatSpeed(hovered.groundSpeed, units)}</small></div> : null
       })() : null}
-      <div className="map-legend" aria-label="Map legend">
-        <div
-          className="map-altitude-scale"
-          aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
+      {/* The narrow layout collapses the legend to its toggle so the key never
+          covers the map; wider viewports keep it permanently expanded. */}
+      <div className={`map-legend ${legendOpen ? 'open' : ''}`} aria-label="Map legend">
+        <button
+          type="button"
+          className="map-legend-toggle"
+          aria-expanded={legendOpen}
+          aria-controls={legendBodyId}
+          onClick={() => setLegendOpen((value) => !value)}
         >
-          <span>GND</span>
-          <i />
-          <span>{scaleLabel(10_000, units)}</span>
-          <span>{scaleLabel(20_000, units)}</span>
-          <span>{scaleLabel(30_000, units)}</span>
-          <span>{scaleLabel(40_000, units)}+ {unitLabels.altitude[units.altitude]}</span>
-        </div>
-        <ul className="map-shape-key">
-          {aircraftShapes.map((shape) => (
-            <li key={shape}>
-              <svg viewBox="0 0 34 34" aria-hidden="true" focusable="false">
-                <polygon points={shapePoints(shape)} />
-              </svg>
-              {shapeLabels[shape]}
-            </li>
-          ))}
-        </ul>
-        <div className="map-waypoint-key">
-          <span><i className="arrival" />Arrival fix</span>
-          <span><i className="departure" />Departure fix</span>
+          <Info size={14} aria-hidden="true" />
+          Map key
+        </button>
+        <div className="map-legend-body" id={legendBodyId}>
+          <div
+            className="map-altitude-scale"
+            aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
+          >
+            <span>GND</span>
+            <i />
+            <span>{scaleLabel(10_000, units)}</span>
+            <span>{scaleLabel(20_000, units)}</span>
+            <span>{scaleLabel(30_000, units)}</span>
+            <span>{scaleLabel(40_000, units)}+ {unitLabels.altitude[units.altitude]}</span>
+          </div>
+          <ul className="map-shape-key">
+            {aircraftShapes.map((shape) => (
+              <li key={shape}>
+                <svg viewBox="0 0 34 34" aria-hidden="true" focusable="false">
+                  <polygon points={shapePoints(shape)} />
+                </svg>
+                {shapeLabels[shape]}
+              </li>
+            ))}
+          </ul>
+          <div className="map-waypoint-key">
+            <span><i className="arrival" />Arrival fix</span>
+            <span><i className="departure" />Departure fix</span>
+          </div>
         </div>
       </div>
       {mapError ? (

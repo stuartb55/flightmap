@@ -2,11 +2,7 @@
 
 /* Flight analysis and aircraft profiles */
 .flight-profile {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 300px;
-  z-index: 6;
+  position: relative;
   max-height: min(38vh, 360px);
   overflow: auto;
   padding: 16px;
@@ -145,8 +141,9 @@
 .map-hover-card span, .map-hover-card small { color: var(--muted-bright); }
 
 @media (max-width: 800px) {
-  .selected-track-tray:has(~ .flight-profile) { display: none; }
-  .flight-profile { left: 8px; right: 8px; bottom: 148px; max-height: 36vh; padding: 11px; }
+  /* The tray carries the toggle that closes the profile, so it stays in the
+     column beside it rather than being hidden while the profile is open. */
+  .flight-profile { padding: 11px; }
   .flight-profile > header { align-items: flex-start; flex-direction: column; }
   .profile-readout { grid-template-columns: repeat(2, 1fr); }
   .profile-readout span:last-child { display: none; }
