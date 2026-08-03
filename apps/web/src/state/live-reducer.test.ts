@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { aircraft, snapshot } from '../test/fixtures'
-import type { AlertEvent } from '../types'
-import { initialLiveState, isSequenceGap, liveReducer } from './live-reducer'
+import type { Aircraft, AlertEvent } from '../types'
+import {
+  appendTrailPoint,
+  initialLiveState,
+  isSequenceGap,
+  liveReducer,
+  TRAIL_MAX_POINTS,
+  TRAIL_MIN_INTERVAL_MS,
+} from './live-reducer'
 
 describe('live state reducer', () => {
   it('replaces state with an authoritative snapshot', () => {
@@ -129,5 +136,91 @@ describe('live connection and alert state', () => {
     })
     expect(next.aircraft['4ca123']).toBe(start.aircraft['4ca123'])
     expect(next.aircraft['406b90']).not.toBe(start.aircraft['406b90'])
+  })
+})
+
+describe('aircraft trails', () => {
+  const positioned = (overrides: Partial<Aircraft> = {}) =>
+    aircraft({ latitude: 53, longitude: -2, ...overrides })
+
+  it('seeds a trail point for every positioned aircraft in a snapshot', () => {
+    const state = liveReducer(initialLiveState, {
+      type: 'snapshot',
+      snapshot: snapshot([positioned()]),
+    })
+    expect(state.trails[positioned().icao]?.length).toBe(1)
+  })
+
+  it('ignores aircraft that report no position', () => {
+    const state = liveReducer(initialLiveState, {
+      type: 'snapshot',
+      snapshot: snapshot([positioned({ latitude: null, longitude: null })]),
+    })
+    expect(Object.keys(state.trails)).toHaveLength(0)
+  })
+
+  it('extends a trail once the sampling interval has passed', () => {
+    const start = Date.parse('2026-08-03T12:00:00.000Z')
+    const first = appendTrailPoint(undefined, positioned(), start)
+    const second = appendTrailPoint(first, positioned({ latitude: 53.2 }), start + TRAIL_MIN_INTERVAL_MS)
+    expect(second).toHaveLength(2)
+  })
+
+  it('skips points that arrive faster than the sampling interval', () => {
+    const start = Date.parse('2026-08-03T12:00:00.000Z')
+    const first = appendTrailPoint(undefined, positioned(), start)
+    const second = appendTrailPoint(first, positioned({ latitude: 53.2 }), start + 500)
+    // The same array is returned so React can skip aircraft that did not move.
+    expect(second).toBe(first)
+  })
+
+  it('does not accumulate repeated points for a stationary aircraft', () => {
+    const start = Date.parse('2026-08-03T12:00:00.000Z')
+    const first = appendTrailPoint(undefined, positioned(), start)
+    const second = appendTrailPoint(first, positioned(), start + TRAIL_MIN_INTERVAL_MS * 4)
+    expect(second).toBe(first)
+  })
+
+  it('bounds the buffer so memory stays flat over a long session', () => {
+    const start = Date.parse('2026-08-03T12:00:00.000Z')
+    let points = appendTrailPoint(undefined, positioned(), start)
+    for (let index = 1; index < TRAIL_MAX_POINTS * 3; index += 1) {
+      points = appendTrailPoint(
+        points,
+        positioned({ latitude: 53 + index / 1_000 }),
+        start + index * TRAIL_MIN_INTERVAL_MS,
+      )
+    }
+    expect(points).toHaveLength(TRAIL_MAX_POINTS)
+    // The oldest points are the ones dropped.
+    expect(points!.at(-1)!.recordedAt).toBeGreaterThan(points![0]!.recordedAt)
+  })
+
+  it('drops the trail when an aircraft leaves the live set', () => {
+    const seeded = liveReducer(initialLiveState, {
+      type: 'snapshot',
+      snapshot: snapshot([positioned()]),
+    })
+    const removed = liveReducer(seeded, {
+      type: 'delta',
+      sequence: seeded.sequence + 1,
+      generatedAt: '2026-08-03T12:00:10.000Z',
+      upserts: [],
+      removals: [positioned().icao],
+      alerts: [],
+    })
+    expect(removed.trails[positioned().icao]).toBeUndefined()
+  })
+
+  it('restarts trails from a resnapshot so no line is drawn across the gap', () => {
+    const seeded = liveReducer(initialLiveState, {
+      type: 'snapshot',
+      snapshot: snapshot([positioned()]),
+    })
+    const resnapshot = liveReducer(seeded, {
+      type: 'snapshot',
+      snapshot: snapshot([positioned({ latitude: 55 })]),
+    })
+    expect(resnapshot.trails[positioned().icao]).toHaveLength(1)
   })
 })

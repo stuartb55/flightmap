@@ -391,6 +391,10 @@ export const mapLayerPreferencesSchema = z
     rangeRings: z.boolean(),
     aircraftLabels: z.boolean(),
     trails: z.boolean(),
+    // Added after the original five. It carries a default so saved views and
+    // stored preferences written before it still parse, rather than every one
+    // of them failing this strict object for a missing key.
+    allTrails: z.boolean().default(false),
     // Named for the reference deployment; the waypoints themselves are
     // configuration. Renaming would invalidate every persisted saved view.
     manchesterWaypoints: z.boolean()

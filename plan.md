@@ -69,7 +69,7 @@ new `apps/web/src/lib/aircraft-category.ts` (mapping + human labels),
 
 ### 2. Short trails for every aircraft — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Trails only render for the selected aircraft
 (`LivePage.tsx:228`, the `trail` memo). Users coming from tar1090/PiAware expect

@@ -1,13 +1,35 @@
 import type {
   Aircraft,
   AlertEvent,
+  Altitude,
   ConnectionState,
   LiveSnapshot,
   Receiver,
 } from '../types'
 
+/**
+ * A position an aircraft has been seen at, accumulated from the deltas the
+ * client already receives. This is display state only: the server remains the
+ * source of truth for the selected aircraft's trail and for all history.
+ */
+export interface TrailPoint {
+  latitude: number
+  longitude: number
+  altitudeBaro: Altitude
+  recordedAt: number
+}
+
+/**
+ * Bounds chosen so a thousand simultaneous aircraft stay well inside a few
+ * megabytes. Four seconds between points is far finer than a trail needs to
+ * look continuous at any usable zoom, and ninety points covers six minutes.
+ */
+export const TRAIL_MAX_POINTS = 90
+export const TRAIL_MIN_INTERVAL_MS = 4_000
+
 export interface LiveState {
   aircraft: Record<string, Aircraft>
+  trails: Record<string, TrailPoint[]>
   alerts: AlertEvent[]
   receiver: Receiver | null
   sequence: number
@@ -38,6 +60,7 @@ export type LiveAction =
 
 export const initialLiveState: LiveState = {
   aircraft: {},
+  trails: {},
   alerts: [],
   receiver: null,
   sequence: 0,
@@ -55,6 +78,44 @@ function byIcao(aircraft: Aircraft[]): Record<string, Aircraft> {
   return Object.fromEntries(aircraft.map((item) => [item.icao.toLowerCase(), item]))
 }
 
+/**
+ * Extends one aircraft's trail, returning the original array when the point
+ * adds nothing so React can skip the aircraft that have not moved.
+ */
+export function appendTrailPoint(
+  existing: TrailPoint[] | undefined,
+  aircraft: Aircraft,
+  at: number,
+): TrailPoint[] | undefined {
+  if (aircraft.latitude == null || aircraft.longitude == null) return existing
+  if (!Number.isFinite(at)) return existing
+  const last = existing?.[existing.length - 1]
+  if (last) {
+    if (at - last.recordedAt < TRAIL_MIN_INTERVAL_MS) return existing
+    // A stationary aircraft should not fill its buffer with the same position.
+    if (last.latitude === aircraft.latitude && last.longitude === aircraft.longitude) {
+      return existing
+    }
+  }
+  const point: TrailPoint = {
+    latitude: aircraft.latitude,
+    longitude: aircraft.longitude,
+    altitudeBaro: aircraft.altitudeBaro,
+    recordedAt: at,
+  }
+  const next = existing ? [...existing, point] : [point]
+  return next.length > TRAIL_MAX_POINTS ? next.slice(next.length - TRAIL_MAX_POINTS) : next
+}
+
+function seedTrails(aircraft: Aircraft[], at: number): Record<string, TrailPoint[]> {
+  const trails: Record<string, TrailPoint[]> = {}
+  for (const item of aircraft) {
+    const seeded = appendTrailPoint(undefined, item, at)
+    if (seeded) trails[item.icao.toLowerCase()] = seeded
+  }
+  return trails
+}
+
 function mergeAlerts(current: AlertEvent[], incoming: AlertEvent[]): AlertEvent[] {
   if (!incoming.length) return current
   const next = new Map(current.map((alert) => [alert.id, alert]))
@@ -68,9 +129,15 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
     case 'loading':
       return { ...state, connection: 'connecting', error: null }
     case 'snapshot':
+      // A snapshot follows a gap or a reconnect, so any trail held from before
+      // it would draw a straight line across whatever was missed.
       return {
         ...state,
         aircraft: byIcao(action.snapshot.aircraft),
+        trails: seedTrails(
+          action.snapshot.aircraft,
+          Date.parse(action.snapshot.generatedAt),
+        ),
         receiver: action.snapshot.receiver,
         sequence: action.snapshot.sequence,
         generatedAt: action.snapshot.generatedAt,
@@ -90,11 +157,23 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
     case 'delta': {
       if (action.sequence <= state.sequence) return state
       const aircraft = { ...state.aircraft }
-      for (const item of action.upserts) aircraft[item.icao.toLowerCase()] = item
-      for (const icao of action.removals) delete aircraft[icao.toLowerCase()]
+      const trails = { ...state.trails }
+      const at = Date.parse(action.generatedAt)
+      for (const item of action.upserts) {
+        const key = item.icao.toLowerCase()
+        aircraft[key] = item
+        const extended = appendTrailPoint(trails[key], item, at)
+        if (extended) trails[key] = extended
+      }
+      for (const icao of action.removals) {
+        const key = icao.toLowerCase()
+        delete aircraft[key]
+        delete trails[key]
+      }
       return {
         ...state,
         aircraft,
+        trails,
         receiver: action.receiver ?? state.receiver,
         alerts: mergeAlerts(state.alerts, action.alerts),
         sequence: action.sequence,

@@ -116,7 +116,7 @@ function useModalFocus(
 }
 
 export function LivePage() {
-  const { aircraftList } = useLiveAircraft()
+  const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
   const dispatch = useLiveDispatch()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -508,6 +508,7 @@ export function LivePage() {
           mapDisplay={mapDisplay}
           onMapDisplayChange={setMapDisplay}
           coverageCells={coverage.cells}
+          trails={mapLayers.allTrails ? trails : undefined}
         />
         <SavedViewsControl
           surface="live"
