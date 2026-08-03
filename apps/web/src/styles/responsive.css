@@ -10,12 +10,10 @@
     grid-template-columns: 0 minmax(320px, 1fr) 320px;
   }
 
-  .live-page:not(.has-detail) .aircraft-table th:nth-child(3),
-  .live-page:not(.has-detail) .aircraft-table td:nth-child(3),
-  .live-page.has-detail .aircraft-table th:nth-child(3),
-  .live-page.has-detail .aircraft-table td:nth-child(3),
-  .live-page.has-detail .aircraft-table th:nth-child(5),
-  .live-page.has-detail .aircraft-table td:nth-child(5) {
+  /* Columns are chosen by the user, so the narrow layout drops the one that
+     carries the least at a glance by name rather than by position. Anything
+     else the user has added scrolls instead of being silently removed. */
+  .aircraft-table:not(.wide-columns) .col-speed {
     display: none;
   }
 
@@ -389,10 +387,9 @@
     padding-top: 10px;
   }
 
-  .aircraft-table th:nth-child(3),
-  .aircraft-table td:nth-child(3),
-  .aircraft-table th:nth-child(5),
-  .aircraft-table td:nth-child(5) {
+  /* The mobile sheet already passes its own reduced column set; this keeps the
+     desktop table equally narrow if it is ever shown at this width. */
+  .aircraft-table:not(.wide-columns) .col-speed {
     display: none;
   }
 

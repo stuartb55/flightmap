@@ -104,7 +104,7 @@ control for length.
 
 ### 3. Live table: vertical trend, more columns, and column choice — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The table exposes four columns — Aircraft, Altitude, Speed, Range
 (`AircraftTable.tsx:18`). Vertical rate is the single most useful missing field

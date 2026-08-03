@@ -22,6 +22,7 @@ import type { SavedViewConfiguration } from '@flightmap/shared'
 import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
+import { ColumnChooser } from '../components/ColumnChooser'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { isFormTarget } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
@@ -36,6 +37,7 @@ import {
 } from '../lib/aircraft-filter'
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
+import { mobileColumns, useAircraftColumns } from '../lib/table-columns'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
 import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
 import type { AlertEvent, TrackResponse } from '../types'
@@ -118,6 +120,7 @@ export function LivePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [filters, setFilters] = useState<AircraftFilterState>(storedFilters)
   const [sort, setSort] = useState<AircraftSort>({ key: 'distance', direction: 'asc' })
+  const [columns, setColumns] = useAircraftColumns()
   const [listCollapsed, setListCollapsed] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
@@ -401,6 +404,7 @@ export function LivePage() {
             Filters
             {filterCount ? <span>{filterCount}</span> : null}
           </button>
+          <ColumnChooser columns={columns} onChange={setColumns} />
         </div>
         <AircraftTable
           aircraft={filtered}
@@ -408,6 +412,7 @@ export function LivePage() {
           sort={sort}
           onSort={setSort}
           onSelect={selectAircraft}
+          columns={columns}
           loading={!hasSnapshot}
           emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
           emptyDescription={
@@ -570,6 +575,7 @@ export function LivePage() {
           sort={sort}
           onSort={setSort}
           onSelect={selectAircraft}
+          columns={mobileColumns}
           loading={!hasSnapshot}
           emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
           emptyDescription={
