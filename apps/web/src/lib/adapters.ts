@@ -1,4 +1,4 @@
-import { DEFAULT_RECEIVER } from '../config'
+import { defaultReceiver } from '../config'
 import type {
   Aircraft,
   AircraftDetail,
@@ -87,9 +87,9 @@ export function adaptAircraft(item: WireAircraft): Aircraft {
 export function adaptReceiver(receiver: WireReceiver): Receiver {
   return {
     status: receiver.health === 'unknown' ? 'connecting' : receiver.health,
-    latitude: receiver.latitude ?? DEFAULT_RECEIVER.latitude,
-    longitude: receiver.longitude ?? DEFAULT_RECEIVER.longitude,
-    name: DEFAULT_RECEIVER.name,
+    latitude: receiver.latitude ?? defaultReceiver().latitude,
+    longitude: receiver.longitude ?? defaultReceiver().longitude,
+    name: defaultReceiver().name,
     version: receiver.version,
     lastSnapshotAt: receiver.lastSnapshotAt,
     latencyMs:

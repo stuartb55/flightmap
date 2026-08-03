@@ -1,7 +1,8 @@
 import { mapWaypointSchema } from '@flightmap/shared'
 import type { MapWaypoint } from '@flightmap/shared'
+import { useSyncExternalStore } from 'react'
 
-type RuntimeConfig = {
+type RuntimeConfigInput = {
   mapStyleUrl?: string
   receiverName?: string
   receiverLatitude?: number | null
@@ -11,45 +12,105 @@ type RuntimeConfig = {
   mapWaypoints?: unknown
 }
 
-function runtimeConfig(): RuntimeConfig {
-  const content = document
-    .querySelector<HTMLMetaElement>('meta[name="flightmap-config"]')
-    ?.getAttribute('content')
-  if (!content) return {}
-  try {
-    const parsed = JSON.parse(decodeURIComponent(content)) as unknown
-    return parsed !== null && typeof parsed === 'object' ? (parsed as RuntimeConfig) : {}
-  } catch {
-    return {}
-  }
+export interface RuntimeConfig {
+  mapStyleUrl: string
+  displayTimeZone: string
+  rangeRingsNm: readonly number[]
+  mapWaypoints: readonly MapWaypoint[]
+  receiver: { latitude: number; longitude: number; name: string }
 }
-
-const runtime = runtimeConfig()
 
 // Only used until the receiver reports its own position, and only when none is
 // configured. Zero/zero would put an unconfigured install in the Atlantic.
 const FALLBACK_MAP_CENTRE = { latitude: 53.61, longitude: -2.31 }
 
-export const DEFAULT_RECEIVER = {
-  latitude: runtime.receiverLatitude ?? FALLBACK_MAP_CENTRE.latitude,
-  longitude: runtime.receiverLongitude ?? FALLBACK_MAP_CENTRE.longitude,
-  name: runtime.receiverName ?? 'Home receiver',
+function injectedConfig(): RuntimeConfigInput {
+  const content =
+    typeof document === 'undefined'
+      ? null
+      : document
+          .querySelector<HTMLMetaElement>('meta[name="flightmap-config"]')
+          ?.getAttribute('content')
+  if (!content) return {}
+  try {
+    const parsed = JSON.parse(decodeURIComponent(content)) as unknown
+    return parsed !== null && typeof parsed === 'object' ? (parsed as RuntimeConfigInput) : {}
+  } catch {
+    return {}
+  }
 }
 
-export const MAP_STYLE_URL =
-  runtime.mapStyleUrl ?? import.meta.env.VITE_MAP_STYLE_URL ?? 'https://tiles.openfreemap.org/styles/dark'
-
-export const DISPLAY_TIME_ZONE =
-  runtime.displayTimeZone ?? import.meta.env.VITE_DISPLAY_TIME_ZONE ?? 'Europe/London'
-
-export const RANGE_RINGS_NM =
-  runtime.rangeRingsNm?.filter(
+function resolve(input: RuntimeConfigInput, previous?: RuntimeConfig): RuntimeConfig {
+  const rings = input.rangeRingsNm?.filter(
     (distance) => Number.isFinite(distance) && distance > 0,
-  ) ?? [10, 20, 40, 80]
+  )
+  return {
+    mapStyleUrl:
+      input.mapStyleUrl ??
+      previous?.mapStyleUrl ??
+      import.meta.env.VITE_MAP_STYLE_URL ??
+      'https://tiles.openfreemap.org/styles/dark',
+    displayTimeZone:
+      input.displayTimeZone ??
+      previous?.displayTimeZone ??
+      import.meta.env.VITE_DISPLAY_TIME_ZONE ??
+      'Europe/London',
+    rangeRingsNm: rings?.length ? rings : previous?.rangeRingsNm ?? [10, 20, 40, 80],
+    mapWaypoints: Array.isArray(input.mapWaypoints)
+      ? input.mapWaypoints.flatMap((waypoint) => {
+          const parsed = mapWaypointSchema.safeParse(waypoint)
+          return parsed.success ? [parsed.data] : []
+        })
+      : previous?.mapWaypoints ?? [],
+    receiver: {
+      latitude:
+        input.receiverLatitude ?? previous?.receiver.latitude ?? FALLBACK_MAP_CENTRE.latitude,
+      longitude:
+        input.receiverLongitude ?? previous?.receiver.longitude ?? FALLBACK_MAP_CENTRE.longitude,
+      name: input.receiverName ?? previous?.receiver.name ?? 'Home receiver',
+    },
+  }
+}
 
-export const MAP_WAYPOINTS: readonly MapWaypoint[] = Array.isArray(runtime.mapWaypoints)
-  ? runtime.mapWaypoints.flatMap((waypoint) => {
-      const parsed = mapWaypointSchema.safeParse(waypoint)
-      return parsed.success ? [parsed.data] : []
-    })
-  : []
+let current = resolve(injectedConfig())
+const listeners = new Set<() => void>()
+
+export function runtimeConfig(): RuntimeConfig {
+  return current
+}
+
+/**
+ * Applies settings saved in the running app, so a changed map style, time
+ * zone, range ring or waypoint set takes effect without a page reload.
+ */
+export function applyRuntimeConfig(input: RuntimeConfigInput): void {
+  current = resolve(input, current)
+  for (const listener of listeners) listener()
+}
+
+export function subscribeRuntimeConfig(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+export function useRuntimeConfig(): RuntimeConfig {
+  return useSyncExternalStore(subscribeRuntimeConfig, runtimeConfig, runtimeConfig)
+}
+
+export function defaultReceiver(): RuntimeConfig['receiver'] {
+  return current.receiver
+}
+
+export function displayTimeZone(): string {
+  return current.displayTimeZone
+}
+
+export function rangeRingsNm(): readonly number[] {
+  return current.rangeRingsNm
+}
+
+export function mapWaypoints(): readonly MapWaypoint[] {
+  return current.mapWaypoints
+}

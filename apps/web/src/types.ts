@@ -1,3 +1,4 @@
+import type { MapWaypoint } from '@flightmap/shared'
 export type ReceiverHealth = 'online' | 'degraded' | 'offline' | 'connecting'
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 export type Altitude = number | 'ground' | null
@@ -243,6 +244,8 @@ export interface AppSettings {
   displayTimeZone: string
   mapStyleUrl: string
   rangeRingsNm: number[]
+  /** Configured on the server; the Settings form does not edit these. */
+  mapWaypoints?: MapWaypoint[]
   historyRetentionDays: number
   sessionGapSeconds: number
   currentAircraftTtlSeconds: number

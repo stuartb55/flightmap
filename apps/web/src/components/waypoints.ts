@@ -1,5 +1,5 @@
 import type { FeatureCollection, Point } from 'geojson'
-import { MAP_WAYPOINTS } from '../config'
+import { mapWaypoints } from '../config'
 
 export type WaypointKind = 'arrival' | 'departure'
 
@@ -16,7 +16,7 @@ export interface Waypoint {
  * fixes. They are not intended for navigation.
  */
 export function waypoints(): readonly Waypoint[] {
-  return MAP_WAYPOINTS
+  return mapWaypoints()
 }
 
 export function waypointData(

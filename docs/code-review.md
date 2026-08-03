@@ -177,7 +177,7 @@ items assume the documented trusted-LAN model.
 - [ ] **23. `icao char(6)` forces `.trim()` at roughly 20 call sites**; one
       missed trim is a silent mismatch bug. Migrate the column to `text`.
 
-- [ ] **24. Runtime settings need a page reload.** `apps/web/src/config.ts`
+- [x] **24. Runtime settings need a page reload.** `apps/web/src/config.ts`
       reads the injected meta tag once at module load, so changing map style,
       time zone, or range rings in Settings does not take effect until refresh.
 

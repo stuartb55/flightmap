@@ -7,6 +7,7 @@ import {
   Server,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { applyRuntimeConfig } from '../config'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
@@ -156,6 +157,9 @@ export function SettingsPage() {
     try {
       const result = await api.updateSettings(buildSettings(new FormData(event.currentTarget)))
       setResponse(result)
+      // Map style, time zone, range rings and waypoints apply immediately
+      // rather than waiting for the next page load.
+      applyRuntimeConfig(result.settings)
       setSaved(true)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Settings could not be saved')

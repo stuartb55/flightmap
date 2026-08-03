@@ -1,26 +1,39 @@
 import type { Altitude } from '../types'
-import { DISPLAY_TIME_ZONE } from '../config'
+import { displayTimeZone } from '../config'
+
+// Formatters are cached per time zone rather than per module load, so a time
+// zone changed in Settings applies without a page reload.
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
 
 function dateFormatter(options: Intl.DateTimeFormatOptions) {
+  const zone = displayTimeZone()
+  const key = `${zone}:${JSON.stringify(options)}`
+  const cached = formatterCache.get(key)
+  if (cached) return cached
+  let formatter: Intl.DateTimeFormat
   try {
-    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: DISPLAY_TIME_ZONE })
+    formatter = new Intl.DateTimeFormat('en-GB', { ...options, timeZone: zone })
   } catch {
-    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'Europe/London' })
+    formatter = new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'Europe/London' })
   }
+  formatterCache.set(key, formatter)
+  return formatter
 }
 
-const displayDate = dateFormatter({
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
+const displayDate = () =>
+  dateFormatter({
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
 
-const displayTime = dateFormatter({
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-})
+const displayTime = () =>
+  dateFormatter({
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 
 export function formatAltitude(value: Altitude | undefined): string {
   if (value === 'ground') return 'GND'
@@ -49,13 +62,13 @@ export function formatBearing(value: number | null | undefined): string {
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : displayDate.format(date)
+  return Number.isNaN(date.getTime()) ? '—' : displayDate().format(date)
 }
 
 export function formatTime(value: string | null | undefined): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : displayTime.format(date)
+  return Number.isNaN(date.getTime()) ? '—' : displayTime().format(date)
 }
 
 export function formatDateTime(value: string | null | undefined): string {
@@ -123,7 +136,7 @@ export function dateTimeInputToIso(value: string): string {
   }
   const result = new Date(instant)
   if (!Number.isFinite(result.getTime()) || formatDateTimeInput(result) !== value) {
-    throw new Error(`That time does not exist in ${DISPLAY_TIME_ZONE}.`)
+    throw new Error(`That time does not exist in ${displayTimeZone()}.`)
   }
   return result.toISOString()
 }

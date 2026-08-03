@@ -87,8 +87,9 @@ The app remains available while the receiver is offline.
 
 ## Configuration changes
 
-Changes saved on the Settings page take effect in the running server. Reload
-open browser tabs after changing map or display settings.
+Changes saved on the Settings page take effect in the running server, and the
+saving tab applies map style, time zone, range ring and waypoint changes
+immediately. Other open tabs pick them up on their next load.
 
 The map's arrival and departure fixes are the `mapWaypoints` setting. It ships
 with the reference deployment's Manchester fixes and can be replaced — or

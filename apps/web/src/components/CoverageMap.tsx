@@ -4,7 +4,7 @@ import type { CoverageCell, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { DEFAULT_RECEIVER, MAP_STYLE_URL } from '../config'
+import { runtimeConfig } from '../config'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
@@ -85,8 +85,8 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
     if (!containerRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
-      center: [DEFAULT_RECEIVER.longitude, DEFAULT_RECEIVER.latitude],
+      style: runtimeConfig().mapStyleUrl,
+      center: [runtimeConfig().receiver.longitude, runtimeConfig().receiver.latitude],
       zoom: 6,
       attributionControl: false,
     })

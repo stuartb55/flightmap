@@ -38,7 +38,7 @@ import {
   formatDistance,
 } from '../lib/format'
 import { useMapLayers } from '../lib/map-preferences'
-import { DISPLAY_TIME_ZONE } from '../config'
+import { displayTimeZone } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
 type InsightRange = { from: string; to: string; bucket: 'hour' | 'day' }
@@ -320,7 +320,7 @@ export function InsightsPage() {
     void Promise.allSettled([
       api.insightsOverview({ ...range, compare }, controller.signal),
       api.insightsCoverage(range, controller.signal),
-      api.insightPatterns({ from: range.from, to: range.to, timeZone: DISPLAY_TIME_ZONE, compare }, controller.signal),
+      api.insightPatterns({ from: range.from, to: range.to, timeZone: displayTimeZone(), compare }, controller.signal),
       api.rangeProfile({ from: range.from, to: range.to, altitudeBand, compare }, controller.signal),
     ]).then(([overviewResult, coverageResult, patternsResult, rangeProfileResult]) => {
       if (controller.signal.aborted) return

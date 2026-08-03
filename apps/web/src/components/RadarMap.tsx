@@ -11,7 +11,7 @@ import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Focus, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
-import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
+import { defaultReceiver, useRuntimeConfig } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import { waypointData } from './waypoints'
@@ -207,12 +207,15 @@ function destinationPoint(
   return [(lon2 * 180) / Math.PI, (lat2 * 180) / Math.PI]
 }
 
-function ringData(receiver: Receiver | null | undefined): FeatureCollection<Polygon> {
-  const latitude = receiver?.latitude ?? DEFAULT_RECEIVER.latitude
-  const longitude = receiver?.longitude ?? DEFAULT_RECEIVER.longitude
+function ringData(
+  receiver: Receiver | null | undefined,
+  rings: readonly number[],
+): FeatureCollection<Polygon> {
+  const latitude = receiver?.latitude ?? defaultReceiver().latitude
+  const longitude = receiver?.longitude ?? defaultReceiver().longitude
   return {
     type: 'FeatureCollection',
-    features: RANGE_RINGS_NM.map((distance) => {
+    features: rings.map((distance) => {
       const points = Array.from({ length: 97 }, (_, index) =>
         destinationPoint(latitude, longitude, (index / 96) * 360, distance),
       )
@@ -261,12 +264,12 @@ function receiverData(receiver?: Receiver | null): FeatureCollection<Point> {
     features: [
       {
         type: 'Feature',
-        properties: { name: receiver?.name ?? DEFAULT_RECEIVER.name },
+        properties: { name: receiver?.name ?? defaultReceiver().name },
         geometry: {
           type: 'Point',
           coordinates: [
-            receiver?.longitude ?? DEFAULT_RECEIVER.longitude,
-            receiver?.latitude ?? DEFAULT_RECEIVER.latitude,
+            receiver?.longitude ?? defaultReceiver().longitude,
+            receiver?.latitude ?? defaultReceiver().latitude,
           ],
         },
       },
@@ -401,6 +404,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   },
   forwardedRef,
 ) {
+  const runtime = useRuntimeConfig()
+  const runtimeRef = useRef(runtime)
+  runtimeRef.current = runtime
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const aircraftRef = useRef(aircraft)
@@ -434,8 +440,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       const currentReceiver = receiverRef.current
       mapRef.current?.easeTo({
         center: [
-          currentReceiver?.longitude ?? DEFAULT_RECEIVER.longitude,
-          currentReceiver?.latitude ?? DEFAULT_RECEIVER.latitude,
+          currentReceiver?.longitude ?? defaultReceiver().longitude,
+          currentReceiver?.latitude ?? defaultReceiver().latitude,
         ],
         zoom: 7.7,
         duration: motionDuration(500),
@@ -460,8 +466,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     const currentReceiver = receiverRef.current
     mapRef.current?.easeTo({
       center: [
-        currentReceiver?.longitude ?? DEFAULT_RECEIVER.longitude,
-        currentReceiver?.latitude ?? DEFAULT_RECEIVER.latitude,
+        currentReceiver?.longitude ?? defaultReceiver().longitude,
+        currentReceiver?.latitude ?? defaultReceiver().latitude,
       ],
       zoom: 8.5,
       duration: motionDuration(600),
@@ -498,10 +504,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: MAP_STYLE_URL,
+        style: runtime.mapStyleUrl,
         center: [
-          receiverRef.current?.longitude ?? DEFAULT_RECEIVER.longitude,
-          receiverRef.current?.latitude ?? DEFAULT_RECEIVER.latitude,
+          receiverRef.current?.longitude ?? defaultReceiver().longitude,
+          receiverRef.current?.latitude ?? defaultReceiver().latitude,
         ],
         zoom: 7.7,
         attributionControl: false,
@@ -554,7 +560,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
-      map.addSource(RINGS_SOURCE, { type: 'geojson', data: ringData(receiverRef.current) })
+      map.addSource(RINGS_SOURCE, {
+        type: 'geojson',
+        data: ringData(receiverRef.current, runtimeRef.current.rangeRingsNm)
+      })
       map.addLayer({
         id: 'range-ring-fill',
         type: 'fill',
@@ -575,7 +584,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(WAYPOINT_SOURCE, {
         type: 'geojson',
-        data: waypointData(),
+        data: waypointData(runtimeRef.current.mapWaypoints),
       })
       map.addLayer({
         id: 'route-waypoint-markers',
@@ -816,8 +825,11 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     return () => {
       map.remove()
       mapRef.current = null
+      setMapReady(false)
     }
-  }, [])
+    // A style change replaces every layer, so the map is rebuilt rather than
+    // patched; every other runtime setting is applied by the effects below.
+  }, [runtime.mapStyleUrl])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -827,8 +839,13 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     setSourceData(mapRef.current, RECEIVER_SOURCE, receiverData(receiver))
-    setSourceData(mapRef.current, RINGS_SOURCE, ringData(receiver))
-  }, [receiver, mapReady])
+    setSourceData(mapRef.current, RINGS_SOURCE, ringData(receiver, runtime.rangeRingsNm))
+  }, [receiver, runtime.rangeRingsNm, mapReady])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    setSourceData(mapRef.current, WAYPOINT_SOURCE, waypointData(runtime.mapWaypoints))
+  }, [runtime.mapWaypoints, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
