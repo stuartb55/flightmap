@@ -204,6 +204,34 @@ describeDatabase("ingestion against PostgreSQL", () => {
     expect(positions.rows[0]?.count).toBe("1");
   });
 
+  it("previews a custom alert rule with the altitude ingestion uses", async () => {
+    // Barometric and geometric altitudes disagree by more than the analytical
+    // tolerance, so no altitude may be trusted for rule matching.
+    await flights.ingestSnapshot(
+      snapshot(new Date(), [
+        { hex: "400001", alt_baro: 12_000, alt_geom: 30_000 }
+      ])
+    );
+
+    const preview = await flights.previewCustomAlertRule({
+      name: "Above 10,000 ft",
+      severity: "warning",
+      enabled: true,
+      cooldownMinutes: 0,
+      minimumAltitudeFt: 10_000
+    } as never);
+    expect(preview.matches).toEqual([]);
+
+    const nearby = await flights.previewCustomAlertRule({
+      name: "Anything nearby",
+      severity: "info",
+      enabled: true,
+      cooldownMinutes: 0,
+      maximumDistanceNm: 500
+    } as never);
+    expect(nearby.matches.map((match) => match.icao)).toEqual(["400001"]);
+  });
+
   it("creates a partition per UTC day as snapshots roll over midnight", async () => {
     await flights.ingestSnapshot(
       snapshot(new Date("2026-08-01T23:59:59.000Z"), [{}])

@@ -158,11 +158,11 @@ items assume the documented trusted-LAN model.
       history, insights, alerts, saved views, and status. Split by domain
       (`ingest/`, `history/`, `insights/`, `alerts/`).
 
-- [ ] **19. Duplicated CSV column mapping in `services/metadata.ts`.**
+- [x] **19. Duplicated CSV column mapping in `services/metadata.ts`.**
       `parseMetadataCsv` (`:63-137`) and `columnsFor`/`recordFromRow`
       (`:154-212`) implement the same logic twice and are free to drift.
 
-- [ ] **20. Alert rule preview does not match ingestion.**
+- [x] **20. Alert rule preview does not match ingestion.**
       `db/repository.ts:2702` uses `onGround ? 0 : baro ?? geom`, while
       ingestion (`:591`) uses `analyticalAltitudeFt(...)` with hysteresis.
       Previews disagree with real alerts on altitude predicates.
@@ -181,7 +181,7 @@ items assume the documented trusted-LAN model.
       reads the injected meta tag once at module load, so changing map style,
       time zone, or range rings in Settings does not take effect until refresh.
 
-- [ ] **25. `.idea/` is committed to the repository.**
+- [x] **25. `.idea/` is committed to the repository.**
 
 ---
 

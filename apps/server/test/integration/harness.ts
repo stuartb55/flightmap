@@ -75,6 +75,7 @@ type AircraftOverrides = {
   lat?: number | null;
   lon?: number | null;
   alt_baro?: number | "ground";
+  alt_geom?: number;
   gs?: number;
   squawk?: string;
   seen?: number;
@@ -96,7 +97,7 @@ export function snapshot(
         lat: item.lat === undefined ? 53.4 : item.lat,
         lon: item.lon === undefined ? -2.3 : item.lon,
         alt_baro: item.alt_baro ?? 12_000,
-        alt_geom: 12_200,
+        alt_geom: item.alt_geom ?? 12_200,
         gs: item.gs ?? 350,
         track: 90,
         baro_rate: 0,

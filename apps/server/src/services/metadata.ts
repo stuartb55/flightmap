@@ -59,6 +59,9 @@ function field(
 /**
  * Supports tar1090's headered extended CSV and the compact readsb five-column
  * form. A strict ICAO check prevents a bad download from replacing good data.
+ *
+ * Shares `columnsFor` and `recordFromRow` with the streaming import so the two
+ * readers cannot drift apart.
  */
 export function parseMetadataCsv(input: string): MetadataRecord[] {
   const firstLine =
@@ -79,59 +82,11 @@ export function parseMetadataCsv(input: string): MetadataRecord[] {
   }) as string[][];
   if (rows.length === 0) throw new Error("Metadata CSV is empty");
 
-  const first = rows[0]!.map(canonicalColumn);
-  const hasHeader = first.some((value) =>
-    ["icao", "icao24", "hex"].includes(value)
-  );
-  const columns = new Map<string, number>();
-  if (hasHeader) {
-    first.forEach((name, index) => columns.set(name, index));
-  } else {
-    columns.set("icao", 0);
-    columns.set("registration", 1);
-    columns.set("typecode", 2);
-    columns.set("description", 4);
-    // Compact tar1090-db: hex;reg;type;flags;description;year;owner/operator;
-    // Country is not present and must remain unavailable rather than being
-    // inferred from an unrelated trailing field.
-    columns.set("operator", 6);
-    columns.set("owner", 6);
-  }
-
+  const { columns, hasHeader } = columnsFor(rows[0]!);
   const records = new Map<string, MetadataRecord>();
   for (const row of rows.slice(hasHeader ? 1 : 0)) {
-    const rawIcao = field(row, columns, ["icao", "icao24", "hex"]);
-    const icao = rawIcao?.toLowerCase();
-    if (!icao || !/^[0-9a-f]{6}$/.test(icao)) continue;
-    records.set(icao, {
-      icao,
-      registration: field(row, columns, [
-        "registration",
-        "reg",
-        "tailnumber"
-      ]),
-      typeCode: field(row, columns, [
-        "typecode",
-        "icaotype",
-        "icaoaircrafttype"
-      ]),
-      description: field(row, columns, [
-        "description",
-        "model",
-        "aircrafttype"
-      ]),
-      operator: field(row, columns, [
-        "operator",
-        "operatorname",
-        "airline"
-      ]),
-      owner: field(row, columns, ["owner", "registeredowners"]),
-      country: field(row, columns, [
-        "country",
-        "registrationcountry",
-        "countrycode"
-      ])
-    });
+    const record = recordFromRow(row, columns);
+    if (record) records.set(record.icao, record);
   }
   return [...records.values()];
 }
@@ -163,6 +118,9 @@ function columnsFor(firstRow: string[]): {
   if (hasHeader) {
     first.forEach((name, index) => columns.set(name, index));
   } else {
+    // Compact tar1090-db: hex;reg;type;flags;description;year;owner/operator;
+    // Country is not present and must remain unavailable rather than being
+    // inferred from an unrelated trailing field.
     columns.set("icao", 0);
     columns.set("registration", 1);
     columns.set("typecode", 2);

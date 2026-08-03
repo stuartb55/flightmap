@@ -2764,8 +2764,11 @@ export class FlightRepository {
   async previewCustomAlertRule(input: CustomAlertRuleInput) {
     const now = new Date().toISOString();
     const rule: CustomAlertRule = { ...input, id: randomUUID(), createdAt: now, updatedAt: now };
+    // The same altitude ingestion evaluates rules against. No previous report
+    // is available here, so the current one is judged on its own — which is
+    // what ingestion does for the first sample of a session.
     const matches = (await this.liveAircraft()).filter((aircraft) =>
-      customRuleMatches(rule, aircraft, aircraft.onGround ? 0 : aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt)
+      customRuleMatches(rule, aircraft, analyticalAltitudeFt(aircraft, null))
     );
     return { matches: matches.slice(0, 100).map((aircraft) => ({
       icao: aircraft.icao,
