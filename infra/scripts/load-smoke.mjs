@@ -17,6 +17,7 @@ const latencies = [];
 let failures = 0;
 let next = 0;
 const ingestionScenarios = [];
+let clientRenderBudget = null;
 
 async function worker() {
   while (next < total) {
@@ -100,11 +101,94 @@ async function exerciseIngestion(target) {
     collectedInMs: Math.round(collectedInMs),
     insight30DayMs: Math.round(insightMs)
   });
+  return snapshot;
+}
+
+/** The subset of the client aircraft shape that filtering and sorting read. */
+function toClientAircraft(item) {
+  return {
+    icao: item.icao.toLowerCase(),
+    callsign: item.callsign,
+    registration: item.metadata?.registration ?? null,
+    typeCode: item.metadata?.typeCode ?? null,
+    operator: item.metadata?.operator ?? null,
+    latitude: item.latitude,
+    longitude: item.longitude,
+    altitudeBaro: item.onGround ? "ground" : item.altitudeBarometricFt,
+    groundSpeed: item.groundSpeedKt,
+    verticalRate: item.barometricRateFpm,
+    track: item.trackDeg,
+    trueHeading: item.trueHeadingDeg,
+    squawk: item.squawk,
+    category: item.category,
+    source: item.source,
+    seenSeconds: item.seenSeconds,
+    distanceNm: item.distanceNm,
+    watched: item.watched,
+    hasActiveAlert: item.hasActiveAlert
+  };
+}
+
+function medianPassMs(passes, run) {
+  const samples = [];
+  for (let pass = 0; pass < passes; pass += 1) {
+    const started = performance.now();
+    run(pass);
+    samples.push(performance.now() - started);
+  }
+  samples.sort((left, right) => left - right);
+  return samples[Math.floor(samples.length / 2)];
+}
+
+/**
+ * What the live table costs the browser for a snapshot this size: the ordering
+ * pass that runs on every filter change, the cheaper one that runs at 1 Hz, and
+ * the number of rows windowing actually puts in the DOM. Measured with the same
+ * modules the web workspace ships, imported directly by Node's type stripping.
+ */
+async function measureClientRenderBudget(snapshot) {
+  const { defaultAircraftFilters, orderAircraft } = await import(
+    "../../apps/web/src/lib/aircraft-filter.ts"
+  );
+  const { windowRange } = await import("../../apps/web/src/lib/use-window-list.ts");
+  const aircraft = snapshot.aircraft.map(toClientAircraft);
+  const filters = { ...defaultAircraftFilters };
+  const sort = { key: "distance", direction: "asc" };
+
+  // A change of filters: nothing can be reused, so this is filter plus sort.
+  const coldMs = medianPassMs(25, () => orderAircraft(aircraft, filters, sort, null, 0));
+  // A snapshot with the same aircraft in it, which is the once-a-second case.
+  const warm = orderAircraft(aircraft, filters, sort, null, 0);
+  const warmMs = medianPassMs(25, () => orderAircraft(aircraft, filters, sort, warm, 0));
+
+  // A tall desktop panel, against the 70px row height the stylesheet fixes.
+  const window = windowRange({
+    count: warm.list.length,
+    rowHeight: 70,
+    scrollTop: 0,
+    viewportHeight: 1_200
+  });
+  const renderedRows = window.end - window.start;
+
+  clientRenderBudget = {
+    aircraft: aircraft.length,
+    orderedAircraft: warm.list.length,
+    coldOrderMs: Number(coldMs.toFixed(2)),
+    warmOrderMs: Number(warmMs.toFixed(2)),
+    renderedRows
+  };
+  if (coldMs > 25) throw new Error(`Ordering ${aircraft.length} aircraft took ${coldMs.toFixed(1)}ms`);
+  if (warmMs > 10) {
+    throw new Error(`Reapplying the order to ${aircraft.length} aircraft took ${warmMs.toFixed(1)}ms`);
+  }
+  if (renderedRows > 32) {
+    throw new Error(`Windowing left ${renderedRows} of ${warm.list.length} rows in the table`);
+  }
 }
 
 if (fakeReceiverUrl) {
   await exerciseIngestion(250);
-  await exerciseIngestion(1_000);
+  await measureClientRenderBudget(await exerciseIngestion(1_000));
 }
 
 latencies.sort((left, right) => left - right);
@@ -120,7 +204,8 @@ process.stdout.write(
     failures,
     p50Ms: Math.round(percentile(0.5)),
     p95Ms: Math.round(p95),
-    ingestionScenarios
+    ingestionScenarios,
+    clientRenderBudget
   }) + "\n"
 );
 if (failures > maximumFailures || p95 > 2_000) process.exitCode = 1;

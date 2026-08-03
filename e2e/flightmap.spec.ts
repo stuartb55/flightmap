@@ -7,6 +7,19 @@ async function openFlightmap(page: Page) {
   await expect(appReady).toBeVisible()
 }
 
+/**
+ * The list is windowed, so a given aircraft is only in the DOM when it is near
+ * the viewport. Search for it first, which is what a user does anyway.
+ */
+async function selectLiveAircraft(page: Page, panel: string, callsign: string) {
+  const list = page.locator(panel)
+  await expect(list.locator('.aircraft-identity').first()).toBeVisible({ timeout: 15_000 })
+  await list.getByLabel('Search aircraft').fill(callsign)
+  const row = list.getByRole('button', { name: `Select ${callsign}` })
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await row.click()
+}
+
 async function expectSavedViewsClearOfSelectedAircraft(page: Page) {
   const layout = await page.locator('.map-stage').evaluate((element) => {
     const savedViews = element.querySelector('.map-saved-views .saved-view-button')!.getBoundingClientRect()
@@ -106,9 +119,7 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   test.skip(testInfo.project.name !== 'chromium', 'The mobile selection flow is covered by the viewport test')
   await request.delete('/api/v1/watchlist/400001')
   await openFlightmap(page)
-  const targetAircraft = page.locator('.desktop-aircraft-panel').getByRole('button', { name: 'Select FLT0001' })
-  await expect(targetAircraft).toBeVisible({ timeout: 15_000 })
-  await targetAircraft.click()
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
   const details = page.locator('.detail-panel')
   await expect(details).toBeVisible()
   await expect(page.locator('.selected-map-card')).toBeVisible()
@@ -135,10 +146,33 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   await expect(details.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
 })
 
+test('windows the live list instead of rendering every aircraft', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Row windowing is a desktop-panel concern')
+  await openFlightmap(page)
+  const table = page.locator('.desktop-aircraft-panel .aircraft-table')
+  const rows = table.locator('tr[data-aircraft-row]')
+  await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+
+  // The receiver reports hundreds of aircraft; the table reports all of them to
+  // assistive technology while keeping a small fraction in the tree.
+  const total = Number(await table.getAttribute('aria-rowcount'))
+  expect(total).toBeGreaterThan(100)
+  expect(await rows.count()).toBeLessThan(40)
+  await expect(rows.first()).toHaveAttribute('aria-rowindex', '2')
+
+  await page.locator('.desktop-aircraft-panel .aircraft-table-wrap').evaluate((element) => {
+    element.scrollTo({ top: 4_000 })
+  })
+  await expect
+    .poll(async () => Number(await rows.first().getAttribute('aria-rowindex')))
+    .toBeGreaterThan(20)
+  expect(await rows.count()).toBeLessThan(40)
+})
+
 test('opens aircraft profiles and synchronised flight analysis', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The analysis workflow is exercised once on desktop Chromium')
   await openFlightmap(page)
-  await page.locator('.desktop-aircraft-panel').getByRole('button', { name: 'Select FLT0001' }).click()
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
   await page.locator('.detail-panel').getByRole('link', { name: 'Profile' }).click()
   await expect(page.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Lifetime aircraft statistics' })).toBeVisible()
@@ -298,9 +332,7 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(liveLayout.legendLeft).toBeGreaterThanOrEqual(0)
   expect(liveLayout.legendRight).toBeLessThanOrEqual(320)
 
-  const targetAircraft = listSheet.getByRole('button', { name: 'Select FLT0001' })
-  await expect(targetAircraft).toBeVisible({ timeout: 15_000 })
-  await targetAircraft.click()
+  await selectLiveAircraft(page, '.mobile-list-sheet', 'FLT0001')
   await expect(page.locator('.selected-map-card')).toBeVisible()
   await expectSavedViewsClearOfSelectedAircraft(page)
 

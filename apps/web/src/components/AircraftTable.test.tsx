@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { aircraft } from '../test/fixtures'
@@ -18,7 +18,32 @@ function renderTable(props: Partial<Parameters<typeof AircraftTable>[0]> = {}) {
   )
 }
 
+/**
+ * jsdom has no layout, so the table cannot measure itself. Stand in for the
+ * stylesheet's fixed row height and a panel tall enough to show five of them.
+ */
+function withLayout({ rowHeight = 70, viewportHeight = 350 } = {}) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const height = this.hasAttribute('data-aircraft-row') ? rowHeight : 0
+    return { ...new DOMRect(0, 0, 320, height), height, toJSON: () => ({}) } as DOMRect
+  })
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function (
+    this: Element,
+  ) {
+    return this.classList.contains('aircraft-table-wrap') ? viewportHeight : 0
+  })
+}
+
+function fleet(size: number) {
+  return Array.from({ length: size }, (_, index) =>
+    aircraft({ icao: (0x400000 + index).toString(16), callsign: `FLT${index}` }),
+  )
+}
+
 afterEach(() => {
+  vi.restoreAllMocks()
   setUnitPreferences(aviationUnits)
 })
 
@@ -75,6 +100,44 @@ describe('AircraftTable', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /squawk/i }))
     expect(onSort).toHaveBeenCalledWith({ key: 'squawk', direction: 'asc' })
+  })
+
+  it('renders only the rows near the viewport', async () => {
+    withLayout()
+    renderTable({ aircraft: fleet(300) })
+
+    // Five rows fit the viewport, plus six of overscan below it.
+    await waitFor(() =>
+      expect(document.querySelectorAll('tr[data-aircraft-row]')).toHaveLength(11),
+    )
+    expect(screen.getByRole('button', { name: 'Select FLT0' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select FLT200' })).not.toBeInTheDocument()
+  })
+
+  it('reports the whole list to assistive technology while windowed', async () => {
+    withLayout()
+    renderTable({ aircraft: fleet(300) })
+
+    const table = screen.getByRole('table')
+    await waitFor(() =>
+      expect(document.querySelectorAll('tr[data-aircraft-row]').length).toBeLessThan(300),
+    )
+    // The header is row one, so the 300 aircraft take rows two to 301.
+    expect(table).toHaveAttribute('aria-rowcount', '301')
+    const rows = [...document.querySelectorAll('tr[data-aircraft-row]')]
+    expect(rows.at(0)).toHaveAttribute('aria-rowindex', '2')
+    expect(rows.at(-1)?.getAttribute('aria-rowindex')).toBe(String(rows.length + 1))
+  })
+
+  it('keeps the scroll height of the rows it leaves out', async () => {
+    withLayout()
+    renderTable({ aircraft: fleet(300) })
+
+    await waitFor(() => expect(document.querySelector('.row-spacer')).toBeInTheDocument())
+    const rendered = document.querySelectorAll('tr[data-aircraft-row]').length
+    const spacer = document.querySelector<HTMLTableCellElement>('.row-spacer td')!
+    expect(spacer.style.height).toBe(`${(300 - rendered) * 70}px`)
+    expect(spacer.closest('tr')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('marks the sorted column for assistive technology', () => {

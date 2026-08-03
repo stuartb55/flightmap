@@ -29,13 +29,12 @@ import { api } from '../lib/api'
 import {
   activeFilterCount,
   defaultAircraftFilters,
-  filterAircraft,
   nextSelectionIndex,
-  sortAircraft,
   type AircraftFilters as AircraftFilterState,
   type AircraftSort,
   type SelectionMove,
 } from '../lib/aircraft-filter'
+import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
 import { aircraftLabel, formatAltitude } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useSearchParams } from '../lib/router'
@@ -118,10 +117,7 @@ export function LivePage() {
 
   const selectedIcao = searchParams.get('aircraft')?.toLowerCase() ?? null
   const selected = selectedIcao ? aircraftList.find((item) => item.icao === selectedIcao) ?? null : null
-  const filtered = useMemo(
-    () => sortAircraft(filterAircraft(aircraftList, filters), sort),
-    [aircraftList, filters, sort],
-  )
+  const filtered = useOrderedAircraft(aircraftList, filters, sort)
   const sources = useMemo(
     () =>
       [...new Set(aircraftList.map((aircraft) => aircraft.source).filter((source): source is string => Boolean(source)))].sort(),

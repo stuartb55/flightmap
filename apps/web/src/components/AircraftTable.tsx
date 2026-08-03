@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronUp, MapPinOff, Star } from 'lucide-react'
-import { memo, useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   aircraftLabel,
   formatAltitude,
@@ -12,6 +12,7 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import type { AircraftSort, AircraftSortKey } from '../lib/aircraft-filter'
 import { columnDefinitions, defaultColumns, type ColumnKey } from '../lib/table-columns'
+import { useWindowList } from '../lib/use-window-list'
 import type { Aircraft } from '../types'
 
 interface Props {
@@ -24,6 +25,26 @@ interface Props {
   loading?: boolean
   emptyTitle?: string
   emptyDescription?: string
+}
+
+/**
+ * `.aircraft-table td { height: 70px }` and `th { height: 44px }`, used until
+ * the table can measure itself.
+ */
+const estimatedMetrics = { rowHeight: 70, headerHeight: 44 }
+
+/**
+ * Stands in for the rows the window leaves out, so the scrollbar reflects the
+ * whole list. Hidden from assistive technology, which reads the real total from
+ * `aria-rowcount` instead.
+ */
+function Spacer({ height, columns }: { height: number; columns: number }) {
+  if (height <= 0) return null
+  return (
+    <tr aria-hidden="true" className="row-spacer">
+      <td colSpan={columns} style={{ height, padding: 0, border: 0 }} />
+    </tr>
+  )
 }
 
 const trendGlyph = { climb: '↑', descent: '↓', level: '→' } as const
@@ -118,13 +139,13 @@ const AircraftRow = memo(function AircraftRow({
   item,
   isSelected,
   columns,
-  rowRef,
+  rowIndex,
   onSelect,
 }: {
   item: Aircraft
   isSelected: boolean
   columns: readonly ColumnKey[]
-  rowRef?: RefObject<HTMLTableRowElement | null>
+  rowIndex: number
   onSelect: (icao: string) => void
 }) {
   // Subscribing here rather than in the table means a unit change repaints the
@@ -133,7 +154,11 @@ const AircraftRow = memo(function AircraftRow({
   const isStale = (item.seenSeconds ?? 0) > 15
   return (
     <tr
-      ref={rowRef}
+      data-aircraft-row=""
+      // The header is row one, so data rows start at two. Windowing removes
+      // rows from the tree, and this is what keeps the position each row
+      // reports true to the whole list rather than to the rendered slice.
+      aria-rowindex={rowIndex + 2}
       className={`${isSelected ? 'selected' : ''} ${isStale ? 'stale' : ''}`}
       onClick={() => onSelect(item.icao)}
     >
@@ -158,19 +183,51 @@ export function AircraftTable({
   emptyDescription = 'Try widening the current filters.',
 }: Props) {
   const visible = columnDefinitions.filter((column) => columns.includes(column.key))
-  const selectedRowRef = useRef<HTMLTableRowElement>(null)
+  const headRef = useRef<HTMLTableSectionElement>(null)
+  const bodyRef = useRef<HTMLTableSectionElement>(null)
+  const hasRows = aircraft.length > 0
+  const [metrics, setMetrics] = useState(estimatedMetrics)
+  const { ref: scrollRef, range, scrollToIndex } = useWindowList<HTMLDivElement>({
+    count: aircraft.length,
+    ...metrics,
+  })
+  const scrolledTo = useRef<string | null>(null)
 
-  // Keyboard navigation is useless if the row it moves to is off screen. Only
-  // the nearest edge is scrolled, so a row already in view does not jump.
+  // Rows are a fixed height set in CSS, but which fixed height depends on the
+  // stylesheet in force — the mobile sheet is tighter than the desktop panel.
+  // Measure rather than assume, and only when the shape of a row can have
+  // changed, since reading layout back forces one.
+  useLayoutEffect(() => {
+    const rowHeight =
+      bodyRef.current?.querySelector<HTMLTableRowElement>('tr[data-aircraft-row]')?.getBoundingClientRect()
+        .height ?? 0
+    const headerHeight = headRef.current?.getBoundingClientRect().height ?? 0
+    if (!rowHeight) return
+    setMetrics((current) =>
+      Math.abs(current.rowHeight - rowHeight) < 0.5 &&
+      Math.abs(current.headerHeight - headerHeight) < 0.5
+        ? current
+        : { rowHeight, headerHeight },
+    )
+  }, [columns, hasRows])
+
+  // Keyboard navigation is useless if the row it moves to is off screen, and a
+  // windowed row may not be in the tree at all. Scroll on a change of
+  // selection only: re-sorting the list should not drag the view around.
   useEffect(() => {
-    if (!selectedIcao) return
-    selectedRowRef.current?.scrollIntoView({
-      block: 'nearest',
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'auto'
-        : 'smooth',
-    })
-  }, [selectedIcao])
+    if (!selectedIcao) {
+      scrolledTo.current = null
+      return
+    }
+    if (scrolledTo.current === selectedIcao) return
+    const index = aircraft.findIndex((item) => item.icao === selectedIcao)
+    if (index < 0) return
+    scrolledTo.current = selectedIcao
+    scrollToIndex(
+      index,
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    )
+  }, [aircraft, scrollToIndex, selectedIcao])
 
   const changeSort = (key: AircraftSortKey) =>
     onSort({
@@ -179,10 +236,15 @@ export function AircraftTable({
     })
 
   return (
-    <div className="aircraft-table-wrap">
-      <table className={`aircraft-table ${visible.length > 4 ? 'wide-columns' : ''}`}>
-        <thead>
-          <tr>
+    <div className="aircraft-table-wrap" ref={scrollRef}>
+      <table
+        className={`aircraft-table ${visible.length > 4 ? 'wide-columns' : ''}`}
+        // Windowing renders a slice, so the true total comes from here and from
+        // each row's `aria-rowindex`; the header itself is row one.
+        aria-rowcount={aircraft.length + 1}
+      >
+        <thead ref={headRef}>
+          <tr aria-rowindex={1}>
             {visible.map((column) => (
               <th
                 key={column.key}
@@ -209,17 +271,19 @@ export function AircraftTable({
             ))}
           </tr>
         </thead>
-        <tbody>
-          {aircraft.map((item) => (
+        <tbody ref={bodyRef}>
+          <Spacer height={range.paddingTop} columns={visible.length} />
+          {aircraft.slice(range.start, range.end).map((item, offset) => (
             <AircraftRow
               key={item.icao}
               item={item}
               isSelected={selectedIcao === item.icao}
               columns={columns}
-              rowRef={selectedIcao === item.icao ? selectedRowRef : undefined}
+              rowIndex={range.start + offset}
               onSelect={onSelect}
             />
           ))}
+          <Spacer height={range.paddingBottom} columns={visible.length} />
         </tbody>
       </table>
       {!aircraft.length && loading ? (

@@ -238,7 +238,7 @@ shortcut list.
 
 ### 7. Live list virtualisation and render budget — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `AircraftTable` renders every filtered row into the DOM. Rows are
 memoised (`AircraftTable.tsx:30`) so updates are cheap, but with the 250+
