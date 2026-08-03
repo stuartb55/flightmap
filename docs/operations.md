@@ -153,6 +153,14 @@ reached directly — a trusted proxy header from an untrusted client would
 defeat rate limiting. Concurrent live WebSocket connections are capped at 64
 in total and 8 per client address.
 
+The budgets themselves are `API_RATE_LIMIT` (300), `MUTATION_RATE_LIMIT` (90),
+and `WEBSOCKET_RATE_LIMIT` (30) requests per client address per
+`RATE_LIMIT_WINDOW_MS` (60,000). The defaults suit interactive browser use and
+should be left alone in normal deployments. Raise them only for automated
+suites that drive the API hard from one address — the CI end-to-end and load
+jobs share a bucket and do exactly that — and remember that a higher limit is a
+weaker safeguard.
+
 The Content-Security-Policy allows the origin of the configured map style URL
 and nothing else remote. A style that loads its tiles, sprites or glyphs from a
 different origin needs that origin adding to `contentSecurityPolicy` in

@@ -13,6 +13,32 @@ describe("environment configuration", () => {
     expect(config.historyRetentionDays).toBe(30);
   });
 
+  it("defaults the rate-limit budgets to the interactive values", () => {
+    const config = loadConfig({});
+    expect(config.apiRateLimit).toBe(300);
+    expect(config.mutationRateLimit).toBe(90);
+    expect(config.websocketRateLimit).toBe(30);
+    expect(config.rateLimitWindowMs).toBe(60_000);
+  });
+
+  it("allows automated suites to raise the rate-limit budgets", () => {
+    const config = loadConfig({
+      API_RATE_LIMIT: "100000",
+      MUTATION_RATE_LIMIT: "5000",
+      WEBSOCKET_RATE_LIMIT: "1000",
+      RATE_LIMIT_WINDOW_MS: "30000"
+    });
+    expect(config.apiRateLimit).toBe(100_000);
+    expect(config.mutationRateLimit).toBe(5_000);
+    expect(config.websocketRateLimit).toBe(1_000);
+    expect(config.rateLimitWindowMs).toBe(30_000);
+  });
+
+  it("rejects a rate-limit budget that would disable the safeguard", () => {
+    expect(() => loadConfig({ API_RATE_LIMIT: "0" })).toThrow();
+    expect(() => loadConfig({ RATE_LIMIT_WINDOW_MS: "10" })).toThrow();
+  });
+
   it("normalises host and origin allowlists", () => {
     const config = loadConfig({
       APP_ALLOWED_HOSTS: "flightmap.local, flightmap.local,127.0.0.1",
