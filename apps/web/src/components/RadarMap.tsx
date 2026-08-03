@@ -22,11 +22,15 @@ import {
 } from '../lib/aircraft-category'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
+import type { TrailPoint } from '../state/live-reducer'
 import { waypointData } from './waypoints'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
+
+// Stable identity so the default prop never re-triggers a dependent effect.
+const emptyTrails: Record<string, TrailPoint[]> = {}
 
 export interface RadarMapHandle {
   fitAircraft: () => void
@@ -49,6 +53,7 @@ interface Props {
   mapDisplay?: MapDisplayPreferences
   onMapDisplayChange?: (display: MapDisplayPreferences) => void
   coverageCells?: CoverageCell[]
+  trails?: Record<string, TrailPoint[]>
 }
 
 const AIRCRAFT_SOURCE = 'live-aircraft'
@@ -56,6 +61,7 @@ const RECEIVER_SOURCE = 'receiver'
 const RINGS_SOURCE = 'range-rings'
 const WAYPOINT_SOURCE = 'route-waypoints'
 const TRACK_SOURCE = 'history-tracks'
+const ALL_TRAILS_SOURCE = 'all-aircraft-trails'
 const REPLAY_SOURCE = 'replay-aircraft'
 const COVERAGE_SOURCE = 'map-coverage'
 
@@ -64,8 +70,33 @@ const layerIds = {
   rangeRings: ['range-ring-fill', 'range-ring-line'],
   aircraftLabels: ['aircraft-labels', 'replay-label'],
   trails: ['history-track-shadow', 'history-track'],
+  allTrails: ['all-aircraft-trails'],
   manchesterWaypoints: ['route-waypoint-markers', 'route-waypoint-labels'],
 } satisfies Record<keyof MapLayerPreferences, string[]>
+
+/**
+ * One line per aircraft, coloured by its current altitude. Per-segment colouring
+ * would multiply the feature count by the buffer length for a difference nobody
+ * can see on a trail this short.
+ */
+export function allTrailsData(trails: Record<string, TrailPoint[]>): FeatureCollection<LineString> {
+  const features: Feature<LineString>[] = []
+  for (const [icao, points] of Object.entries(trails)) {
+    if (points.length < 2) continue
+    features.push({
+      type: 'Feature',
+      properties: {
+        icao,
+        colour: altitudeColour(points[points.length - 1]!.altitudeBaro),
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: points.map((point) => [point.longitude, point.latitude]),
+      },
+    })
+  }
+  return { type: 'FeatureCollection', features }
+}
 
 function coverageData(cells: CoverageCell[]): FeatureCollection<Point> {
   return {
@@ -460,6 +491,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     mapDisplay = defaultMapDisplay,
     onMapDisplayChange,
     coverageCells = [],
+    trails = emptyTrails,
   },
   forwardedRef,
 ) {
@@ -476,6 +508,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const selectedIcaoRef = useRef(selectedIcao)
   const mapLayersRef = useRef(mapLayers)
   const coverageCellsRef = useRef(coverageCells)
+  const trailsRef = useRef(trails)
   const lastFollowAtRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
@@ -490,6 +523,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   selectedIcaoRef.current = selectedIcao
   mapLayersRef.current = mapLayers
   coverageCellsRef.current = coverageCells
+  trailsRef.current = trails
 
   const fitAircraft = () => {
     const positioned = aircraftRef.current.filter(
@@ -699,6 +733,23 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           'text-halo-color': '#071014',
           'text-halo-width': 1.2,
           'text-opacity': 0.88,
+        },
+      })
+
+      map.addSource(ALL_TRAILS_SOURCE, {
+        type: 'geojson',
+        data: allTrailsData(trailsRef.current),
+      })
+      map.addLayer({
+        id: 'all-aircraft-trails',
+        type: 'line',
+        source: ALL_TRAILS_SOURCE,
+        minzoom: 6,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['get', 'colour'],
+          'line-width': 1.4,
+          'line-opacity': 0.42,
         },
       })
 
@@ -917,6 +968,21 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     if (!mapReady || !mapRef.current) return
     setSourceData(mapRef.current, COVERAGE_SOURCE, coverageData(coverageCells))
   }, [coverageCells, mapReady])
+
+  // Rebuilding a thousand line features every second is wasted work for a trail
+  // that only grows a point every four, so this runs on its own slower timer
+  // and stops entirely while the layer is switched off.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !mapLayers.allTrails) return
+    const publish = () => {
+      if (mapRef.current) {
+        setSourceData(mapRef.current, ALL_TRAILS_SOURCE, allTrailsData(trailsRef.current))
+      }
+    }
+    publish()
+    const timer = window.setInterval(publish, 2_000)
+    return () => window.clearInterval(timer)
+  }, [mapLayers.allTrails, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return

@@ -32,10 +32,13 @@ import {
 interface LiveAircraftValue {
   aircraft: LiveState['aircraft']
   aircraftList: Aircraft[]
+  // Grouped with the aircraft rather than the status so that a receiver or
+  // alert change does not re-render every trail consumer.
+  trails: LiveState['trails']
 }
 
 interface LiveStatusValue
-  extends Omit<LiveState, 'aircraft'> {
+  extends Omit<LiveState, 'aircraft' | 'trails'> {
   refresh: () => Promise<void>
 }
 
@@ -233,8 +236,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     [state.aircraft],
   )
   const aircraftValue = useMemo(
-    () => ({ aircraft: state.aircraft, aircraftList }),
-    [state.aircraft, aircraftList],
+    () => ({ aircraft: state.aircraft, aircraftList, trails: state.trails }),
+    [state.aircraft, aircraftList, state.trails],
   )
   const statusValue = useMemo(
     () => ({

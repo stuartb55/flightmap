@@ -191,12 +191,23 @@ describe("shared contracts", () => {
           rangeRings: true,
           aircraftLabels: true,
           trails: true,
+          allTrails: false,
           manchesterWaypoints: true
         },
         viewport: null
       }
     };
     expect(savedViewInputSchema.parse(live)).toEqual(live);
+    // A view stored before allTrails existed must still load, taking the
+    // default rather than failing this strict object for a missing key.
+    const { allTrails, ...legacyLayers } = live.configuration.mapLayers;
+    expect(allTrails).toBe(false);
+    expect(
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: { ...live.configuration, mapLayers: legacyLayers }
+      })
+    ).toEqual(live);
     // Every column the live table can sort by must round-trip, or saving a view
     // fails for a sort the interface happily offers.
     for (const key of [

@@ -12,6 +12,7 @@ export const defaultMapLayers: MapLayerPreferences = {
   rangeRings: true,
   aircraftLabels: true,
   trails: true,
+  allTrails: false,
   manchesterWaypoints: true,
 }
 

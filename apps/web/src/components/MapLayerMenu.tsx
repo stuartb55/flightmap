@@ -7,6 +7,7 @@ const options: Array<{ key: keyof MapLayerPreferences; label: string; hint: stri
   { key: 'rangeRings', label: 'Range rings', hint: 'Receiver-relative nautical miles' },
   { key: 'aircraftLabels', label: 'Aircraft labels', hint: 'Identity and altitude on the map' },
   { key: 'trails', label: 'Trails', hint: 'Live and historical track lines' },
+  { key: 'allTrails', label: 'All trails', hint: 'Recent path of every aircraft on the map' },
   { key: 'manchesterWaypoints', label: 'Route waypoints', hint: 'Configured arrival and departure fixes' },
 ]
 
