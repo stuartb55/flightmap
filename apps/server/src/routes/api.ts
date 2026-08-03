@@ -43,6 +43,9 @@ export type ApiDependencies = {
   status: StatusService;
   settings: AppSettingsService;
   applyRuntimeSettings: () => Promise<void>;
+  /** False until boot-time settings have loaded; `/health/ready` reports
+   *  `not_ready` rather than the process exiting on a database blip. */
+  bootstrapped?: () => boolean;
 };
 
 export async function registerApiRoutes(
@@ -55,7 +58,8 @@ export async function registerApiRoutes(
     hub,
     status,
     settings,
-    applyRuntimeSettings
+    applyRuntimeSettings,
+    bootstrapped = () => true
   } = dependencies;
 
   app.get("/health/live", async () => ({
@@ -64,7 +68,7 @@ export async function registerApiRoutes(
   }));
 
   app.get("/health/ready", async (_request, reply) => {
-    const ready = await repository.databaseReady();
+    const ready = bootstrapped() && (await repository.databaseReady());
     if (!ready) reply.code(503);
     return {
       status: ready ? "ready" : "not_ready",

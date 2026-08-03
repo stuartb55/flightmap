@@ -14,7 +14,9 @@ import { AppSettingsService } from "./settings.js";
 const bootConfig = loadConfig();
 const database = new Database(bootConfig);
 const settings = new AppSettingsService(database);
-await settings.load();
+// Persisted settings are loaded after the HTTP server binds, so a database
+// blip at boot surfaces as /health/ready reporting not_ready rather than as a
+// process that never answers at all. Runtime configs are updated in place.
 const config = settings.runtimeConfig(bootConfig);
 const repository = new FlightRepository(database, config);
 const hub = new LiveHub();
@@ -66,7 +68,8 @@ const app = await buildApp({
     hub,
     status,
     settings,
-    applyRuntimeSettings
+    applyRuntimeSettings,
+    bootstrapped: () => settings.isLoaded()
   },
   loggerInstance: logger
 });
@@ -96,10 +99,35 @@ async function shutdown(signal: string): Promise<void> {
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));
 
+/**
+ * Loads persisted settings and starts the background services, retrying with
+ * backoff. Both steps need the database, and neither is worth killing an
+ * already-listening process over.
+ */
+async function bootstrap(): Promise<void> {
+  for (let attempt = 1; !shuttingDown; attempt += 1) {
+    try {
+      await settings.load();
+      insightBackfill.start();
+      await applyRuntimeSettings();
+      app.log.info({ attempt }, "Application settings loaded");
+      return;
+    } catch (error) {
+      const delay = Math.min(30_000, 500 * 2 ** Math.min(attempt, 6));
+      app.log.error(
+        { error, attempt, retryInMs: delay },
+        "Could not complete startup; serving defaults and retrying"
+      );
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delay).unref();
+      });
+    }
+  }
+}
+
 try {
   await app.listen({ host: config.host, port: config.port });
-  insightBackfill.start();
-  await applyRuntimeSettings();
+  void bootstrap();
 } catch (error) {
   app.log.fatal({ error }, "Application startup failed");
   await shutdown("startup_error");

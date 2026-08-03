@@ -129,6 +129,19 @@ describe("structured route errors", () => {
     await server.close();
   });
 
+  it("reports not_ready until boot-time settings have loaded", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: { ...deps, bootstrapped: () => false } as never,
+      logger: false
+    });
+    const response = await server.inject("/health/ready");
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ status: "not_ready" });
+    await server.close();
+  });
+
   it("returns a stable validation error for an invalid query", async () => {
     const server = await app();
     const response = await server.inject("/api/v1/sessions?limit=999");

@@ -48,7 +48,7 @@ items assume the documented trusted-LAN model.
       *Fix:* a normalised `(coverage_date, cell, icao)` unique table or an
       approximate distinct counter; keep the aggregate row to counters only.
 
-- [ ] **4. The server exits at boot if PostgreSQL is briefly unreachable.**
+- [x] **4. The server exits at boot if PostgreSQL is briefly unreachable.**
       `index.ts:14-18` awaits `settings.load()` at module top level with no
       guard, before `app.listen()`. The process dies, so `/health/live` and
       `/health/ready` never answer and a database blip is indistinguishable from

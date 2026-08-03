@@ -131,9 +131,15 @@ export type SettingsResponse = {
 export class AppSettingsService {
   private current: AppSettings = defaultAppSettings;
   private updatedAt: string | null = null;
+  private loaded = false;
   private readonly runtimeConfigs = new Set<Record<string, unknown>>();
 
   constructor(private readonly database: Database) {}
+
+  /** False until persisted settings have been read; boot serves defaults. */
+  isLoaded(): boolean {
+    return this.loaded;
+  }
 
   async load(): Promise<SettingsResponse> {
     const result = await this.database.query<{
@@ -147,15 +153,18 @@ export class AppSettingsService {
       [JSON.stringify(defaultAppSettings)]
     );
     const row = result.rows[0];
-    this.current = appSettingsSchema.parse({
-      ...defaultAppSettings,
-      ...(row?.settings && typeof row.settings === "object"
-        ? row.settings
-        : {})
-    });
+    this.apply(
+      appSettingsSchema.parse({
+        ...defaultAppSettings,
+        ...(row?.settings && typeof row.settings === "object"
+          ? row.settings
+          : {})
+      })
+    );
     this.updatedAt = row
       ? new Date(row.updated_at).toISOString()
       : null;
+    this.loaded = true;
     return this.get();
   }
 
@@ -189,15 +198,20 @@ export class AppSettingsService {
        RETURNING updated_at`,
       [JSON.stringify(settings)]
     );
-    this.current = settings;
+    this.apply(settings);
     this.updatedAt = result.rows[0]
       ? new Date(result.rows[0].updated_at).toISOString()
       : new Date().toISOString();
+    return this.get();
+  }
+
+  /** Runtime configs are handed out as live objects and updated in place. */
+  private apply(settings: AppSettings): void {
+    this.current = settings;
     for (const config of this.runtimeConfigs) {
       Object.assign(config, settings, {
         rangeRingsNm: [...settings.rangeRingsNm]
       });
     }
-    return this.get();
   }
 }
