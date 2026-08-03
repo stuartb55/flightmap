@@ -28,6 +28,18 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     vi.clearAllMocks();
   });
 
+  /** Partition names carry their UTC day: position_samples_YYYYMMDD. */
+  async function partitionDays(): Promise<string[]> {
+    const result = await database.query<{ relname: string }>(
+      `SELECT child.relname
+       FROM pg_inherits
+       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+       JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+       WHERE parent.oid = 'position_samples'::regclass`
+    );
+    return result.rows.map((row) => row.relname.replace("position_samples_", ""));
+  }
+
   it("drops expired partitions and keeps the retained ones", async () => {
     const now = new Date();
     const flights = repository(database);
@@ -37,6 +49,15 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     await database.query("SELECT ensure_position_partition($1)", [stale]);
     await flights.ingestSnapshot(snapshot(now, [{}]));
 
+    // 001_initial seeds partitions from 31 days ago, and earlier tests leave
+    // their own behind, so the expectation is the retention rule rather than
+    // a fixed count.
+    const day = (at: Date) => at.toISOString().slice(0, 10).replaceAll("-", "");
+    const cutoffDay = day(new Date(now.getTime() - 30 * 86_400_000));
+    const before = await partitionDays();
+    const expectedDrops = before.filter((value) => value < cutoffDay);
+    expect(expectedDrops).toContain(day(stale));
+
     const service = new MaintenanceService(
       database,
       { historyRetentionDays: 30, sessionGapSeconds: 300 },
@@ -45,17 +66,11 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     const result = await service.run(now);
 
     expect(result.failedSteps).toEqual([]);
-    expect(result.droppedPartitions).toBe(1);
-    const partitions = await database.query<{ relname: string }>(
-      `SELECT child.relname
-       FROM pg_inherits
-       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-       JOIN pg_class child ON pg_inherits.inhrelid = child.oid
-       WHERE parent.oid = 'position_samples'::regclass`
-    );
-    const dropped = `position_samples_${stale.toISOString().slice(0, 10).replaceAll("-", "")}`;
-    expect(partitions.rows.map((row) => row.relname)).not.toContain(dropped);
-    expect(partitions.rows.length).toBeGreaterThan(0);
+    expect(result.droppedPartitions).toBe(expectedDrops.length);
+    const after = await partitionDays();
+    expect(after).not.toContain(day(stale));
+    expect(after.filter((value) => value < cutoffDay)).toEqual([]);
+    expect(after).toContain(day(now));
   });
 
   it("deletes expired rows in batches and records the run", async () => {
