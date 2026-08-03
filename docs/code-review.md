@@ -167,7 +167,7 @@ items assume the documented trusted-LAN model.
       ingestion (`:591`) uses `analyticalAltitudeFt(...)` with hysteresis.
       Previews disagree with real alerts on altitude predicates.
 
-- [ ] **21. Manchester is hardcoded.** `components/RadarMap.tsx:576` (waypoint
+- [x] **21. Manchester is hardcoded.** `components/RadarMap.tsx:576` (waypoint
       layer) and `config.ts` (default receiver coordinates 53.61 / -2.31) in an
       otherwise receiver-agnostic application. Make waypoints a config or data
       concern.

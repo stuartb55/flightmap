@@ -1,8 +1,14 @@
+import { mapWaypointSchema } from '@flightmap/shared'
+import type { MapWaypoint } from '@flightmap/shared'
+
 type RuntimeConfig = {
   mapStyleUrl?: string
   receiverName?: string
+  receiverLatitude?: number | null
+  receiverLongitude?: number | null
   displayTimeZone?: string
   rangeRingsNm?: number[]
+  mapWaypoints?: unknown
 }
 
 function runtimeConfig(): RuntimeConfig {
@@ -20,9 +26,13 @@ function runtimeConfig(): RuntimeConfig {
 
 const runtime = runtimeConfig()
 
+// Only used until the receiver reports its own position, and only when none is
+// configured. Zero/zero would put an unconfigured install in the Atlantic.
+const FALLBACK_MAP_CENTRE = { latitude: 53.61, longitude: -2.31 }
+
 export const DEFAULT_RECEIVER = {
-  latitude: 53.61,
-  longitude: -2.31,
+  latitude: runtime.receiverLatitude ?? FALLBACK_MAP_CENTRE.latitude,
+  longitude: runtime.receiverLongitude ?? FALLBACK_MAP_CENTRE.longitude,
   name: runtime.receiverName ?? 'Home receiver',
 }
 
@@ -36,3 +46,10 @@ export const RANGE_RINGS_NM =
   runtime.rangeRingsNm?.filter(
     (distance) => Number.isFinite(distance) && distance > 0,
   ) ?? [10, 20, 40, 80]
+
+export const MAP_WAYPOINTS: readonly MapWaypoint[] = Array.isArray(runtime.mapWaypoints)
+  ? runtime.mapWaypoints.flatMap((waypoint) => {
+      const parsed = mapWaypointSchema.safeParse(waypoint)
+      return parsed.success ? [parsed.data] : []
+    })
+  : []

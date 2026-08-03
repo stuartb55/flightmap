@@ -14,7 +14,7 @@ import { Focus, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
-import { manchesterWaypointData } from './manchester-waypoints'
+import { waypointData } from './waypoints'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
 
@@ -46,7 +46,7 @@ interface Props {
 const AIRCRAFT_SOURCE = 'live-aircraft'
 const RECEIVER_SOURCE = 'receiver'
 const RINGS_SOURCE = 'range-rings'
-const MANCHESTER_WAYPOINT_SOURCE = 'manchester-waypoints'
+const WAYPOINT_SOURCE = 'route-waypoints'
 const TRACK_SOURCE = 'history-tracks'
 const REPLAY_SOURCE = 'replay-aircraft'
 const COVERAGE_SOURCE = 'map-coverage'
@@ -56,7 +56,7 @@ const layerIds = {
   rangeRings: ['range-ring-fill', 'range-ring-line'],
   aircraftLabels: ['aircraft-labels', 'replay-label'],
   trails: ['history-track-shadow', 'history-track'],
-  manchesterWaypoints: ['manchester-waypoint-markers', 'manchester-waypoint-labels'],
+  manchesterWaypoints: ['route-waypoint-markers', 'route-waypoint-labels'],
 } satisfies Record<keyof MapLayerPreferences, string[]>
 
 function coverageData(cells: CoverageCell[]): FeatureCollection<Point> {
@@ -573,14 +573,14 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
-      map.addSource(MANCHESTER_WAYPOINT_SOURCE, {
+      map.addSource(WAYPOINT_SOURCE, {
         type: 'geojson',
-        data: manchesterWaypointData(),
+        data: waypointData(),
       })
       map.addLayer({
-        id: 'manchester-waypoint-markers',
+        id: 'route-waypoint-markers',
         type: 'circle',
-        source: MANCHESTER_WAYPOINT_SOURCE,
+        source: WAYPOINT_SOURCE,
         minzoom: 6,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3.2, 10, 4.5],
@@ -604,9 +604,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
       map.addLayer({
-        id: 'manchester-waypoint-labels',
+        id: 'route-waypoint-labels',
         type: 'symbol',
-        source: MANCHESTER_WAYPOINT_SOURCE,
+        source: WAYPOINT_SOURCE,
         minzoom: 6.4,
         layout: {
           'text-field': ['get', 'name'],
@@ -904,7 +904,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         ref={containerRef}
         className="radar-map-canvas"
         role="region"
-        aria-label="Interactive aircraft radar map with Manchester arrival and departure fixes. Use the adjacent controls to zoom and centre the view."
+        aria-label="Interactive aircraft radar map with configured arrival and departure fixes. Use the adjacent controls to zoom and centre the view."
       />
       <div className="map-controls" aria-label="Map controls">
         <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>

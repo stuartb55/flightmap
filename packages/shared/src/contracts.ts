@@ -391,7 +391,19 @@ export const mapLayerPreferencesSchema = z
     rangeRings: z.boolean(),
     aircraftLabels: z.boolean(),
     trails: z.boolean(),
+    // Named for the reference deployment; the waypoints themselves are
+    // configuration. Renaming would invalidate every persisted saved view.
     manchesterWaypoints: z.boolean()
+  })
+  .strict();
+
+/** A display-only reference point, configured per receiver. */
+export const mapWaypointSchema = z
+  .object({
+    name: z.string().trim().min(1).max(12),
+    kind: z.enum(["arrival", "departure"]),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180)
   })
   .strict();
 
@@ -972,6 +984,7 @@ export type InsightAvailability = z.infer<typeof insightAvailabilitySchema>;
 export type InsightSeriesPoint = z.infer<typeof insightSeriesPointSchema>;
 export type InsightLeader = z.infer<typeof insightLeaderSchema>;
 export type InsightMetrics = z.infer<typeof insightMetricsSchema>;
+export type MapWaypoint = z.infer<typeof mapWaypointSchema>;
 export type InsightOverview = z.infer<typeof insightOverviewSchema>;
 export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<

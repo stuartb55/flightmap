@@ -147,6 +147,9 @@ export function loadConfig(
     serveWeb: config.SERVE_WEB,
     trustProxy: config.APP_TRUST_PROXY,
     ...defaultAppSettings,
-    rangeRingsNm: [...defaultAppSettings.rangeRingsNm]
+    rangeRingsNm: [...defaultAppSettings.rangeRingsNm],
+    mapWaypoints: defaultAppSettings.mapWaypoints.map((waypoint) => ({
+      ...waypoint
+    }))
   };
 }

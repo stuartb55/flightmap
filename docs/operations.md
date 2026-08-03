@@ -90,6 +90,17 @@ The app remains available while the receiver is offline.
 Changes saved on the Settings page take effect in the running server. Reload
 open browser tabs after changing map or display settings.
 
+The map's arrival and departure fixes are the `mapWaypoints` setting. It ships
+with the reference deployment's Manchester fixes and can be replaced — or
+emptied — for any receiver:
+
+```sh
+curl --fail --request PATCH http://127.0.0.1:8080/api/v1/settings \
+  --header 'content-type: application/json' \
+  --header 'origin: http://127.0.0.1:8080' \
+  --data '{"mapWaypoints":[{"name":"ROSUN","kind":"arrival","latitude":53.67,"longitude":-2.35}]}'
+```
+
 The small `.env` file is reserved for container binding, host/origin validation,
 and the database password. After changing one of those boot-time values,
 recreate the app:

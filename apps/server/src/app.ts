@@ -220,8 +220,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
           JSON.stringify({
             mapStyleUrl: options.config.mapStyleUrl,
             receiverName: options.config.receiverName,
+            receiverLatitude: options.config.receiverLatitude,
+            receiverLongitude: options.config.receiverLongitude,
             displayTimeZone: options.config.displayTimeZone,
-            rangeRingsNm: options.config.rangeRingsNm
+            rangeRingsNm: options.config.rangeRingsNm,
+            mapWaypoints: options.config.mapWaypoints
           })
         )}"></head>`
       ) ?? null;

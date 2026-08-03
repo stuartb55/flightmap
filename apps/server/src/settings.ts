@@ -1,4 +1,6 @@
+import { mapWaypointSchema } from "@flightmap/shared";
 import { z } from "zod";
+import { defaultMapWaypoints } from "./default-waypoints.js";
 import type { Config } from "./config.js";
 import type { Database } from "./db/database.js";
 
@@ -49,6 +51,7 @@ const settingsShape = {
     .transform((values) =>
       [...new Set(values)].sort((left, right) => left - right)
     ),
+  mapWaypoints: z.array(mapWaypointSchema).max(200),
   historyRetentionDays: z.number().int().min(1).max(365),
   sessionGapSeconds: z.number().int().min(60).max(3_600),
   currentAircraftTtlSeconds: z.number().int().min(15).max(3_600),
@@ -118,6 +121,7 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   displayTimeZone: "Europe/London",
   mapStyleUrl: "https://tiles.openfreemap.org/styles/dark",
   rangeRingsNm: [5, 10, 25, 50, 100],
+  mapWaypoints: [...defaultMapWaypoints],
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,
@@ -181,7 +185,11 @@ export class AppSettingsService {
 
   get(): SettingsResponse {
     return {
-      settings: { ...this.current, rangeRingsNm: [...this.current.rangeRingsNm] },
+      settings: {
+        ...this.current,
+        rangeRingsNm: [...this.current.rangeRingsNm],
+        mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint }))
+      },
       updatedAt: this.updatedAt
     };
   }
@@ -190,7 +198,8 @@ export class AppSettingsService {
     const config = {
       ...bootConfig,
       ...this.current,
-      rangeRingsNm: [...this.current.rangeRingsNm]
+      rangeRingsNm: [...this.current.rangeRingsNm],
+      mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint }))
     };
     this.runtimeConfigs.add(config);
     return config;
@@ -221,7 +230,8 @@ export class AppSettingsService {
     this.current = settings;
     for (const config of this.runtimeConfigs) {
       Object.assign(config, settings, {
-        rangeRingsNm: [...settings.rangeRingsNm]
+        rangeRingsNm: [...settings.rangeRingsNm],
+        mapWaypoints: settings.mapWaypoints.map((waypoint) => ({ ...waypoint }))
       });
     }
   }

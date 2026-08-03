@@ -8,7 +8,7 @@ history indefinitely.
 ## Highlights
 
 - Dark MapLibre live map with altitude colouring, freshness, range rings,
-  Manchester arrival/departure fixes, receiver-relative distance/bearing,
+  configurable arrival/departure fixes, receiver-relative distance/bearing,
   synchronized table and aircraft details.
 - Restart-safe collector with receiver health, malformed-record isolation,
   duplicate/out-of-order snapshot rejection, and outage recovery.
