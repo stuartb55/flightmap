@@ -1,7 +1,7 @@
 import { Activity, BarChart3, Bell, Clock3, Map, RadioTower, Settings2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from '../lib/router'
-import { useLive } from '../state/LiveContext'
+import { useLiveStatus } from '../state/LiveContext'
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 
 const navigation = [
@@ -16,7 +16,7 @@ const navigation = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const mainRef = useRef<HTMLElement>(null)
-  const { alerts, receiver, connection } = useLive()
+  const { alerts, receiver, connection } = useLiveStatus()
   const activeAlerts = alerts.filter((alert) => !alert.dismissedAt).length
   const receiverState =
     connection === 'live' ? (receiver?.status ?? 'connecting') : connection === 'connecting' ? 'connecting' : connection

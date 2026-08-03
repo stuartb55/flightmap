@@ -25,7 +25,9 @@ vi.mock('../lib/api', () => ({
 }))
 
 vi.mock('../state/LiveContext', () => ({
-  useLive: () => ({ alerts: [], aircraftList: [], dispatch }),
+  useLiveStatus: () => ({ alerts: [] }),
+  useLiveAircraft: () => ({ aircraftList: [] }),
+  useLiveDispatch: () => dispatch,
 }))
 
 const watched: WatchlistEntry = {

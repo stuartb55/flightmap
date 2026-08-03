@@ -15,7 +15,7 @@ import {
 import { api } from '../lib/api'
 import { formatDate, formatTime } from '../lib/format'
 import { Link } from '../lib/router'
-import { useLive } from '../state/LiveContext'
+import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
 import type { AlertEvent, AlertKind, WatchlistEntry } from '../types'
 
 type AlertStatusFilter = 'active' | 'all' | 'dismissed'
@@ -105,7 +105,9 @@ function AlertCard({
 }
 
 export function AlertsPage() {
-  const { alerts, aircraftList, dispatch } = useLive()
+  const { alerts } = useLiveStatus()
+  const { aircraftList } = useLiveAircraft()
+  const dispatch = useLiveDispatch()
   const [statusFilter, setStatusFilter] = useState<AlertStatusFilter>('active')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [loading, setLoading] = useState(true)

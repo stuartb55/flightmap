@@ -17,7 +17,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 vi.mock('../state/LiveContext', () => ({
-  useLive: () => ({ dispatch }),
+  useLiveDispatch: () => dispatch,
 }))
 
 afterEach(cleanup)

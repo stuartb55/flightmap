@@ -95,7 +95,7 @@ items assume the documented trusted-LAN model.
       `ingestion/collector.ts:225` (after each snapshot) and `:331` (health
       loop). One is enough.
 
-- [ ] **10. The live table re-renders every row every second.**
+- [x] **10. The live table re-renders every row every second.**
       `state/LiveContext.tsx:224-227` builds a new context value per delta, and
       `components/AircraftTable.tsx` has no `React.memo`, no row memoisation,
       and no virtualisation. At 250 aircraft this reconciles thousands of nodes

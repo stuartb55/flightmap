@@ -1,4 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronUp, MapPinOff, Star } from 'lucide-react'
+import { memo } from 'react'
 import { aircraftLabel, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
 import type { AircraftSort, AircraftSortKey } from '../lib/aircraft-filter'
 import type { Aircraft } from '../types'
@@ -20,6 +21,68 @@ const columns: { key: AircraftSortKey; label: string }[] = [
   { key: 'speed', label: 'Speed' },
   { key: 'distance', label: 'Range' },
 ]
+
+/**
+ * Rows update at 1 Hz, so each one is memoised. Live deltas replace only the
+ * aircraft that changed, which leaves the rest referentially equal and lets
+ * the comparison below skip them.
+ */
+const AircraftRow = memo(function AircraftRow({
+  item,
+  isSelected,
+  onSelect,
+}: {
+  item: Aircraft
+  isSelected: boolean
+  onSelect: (icao: string) => void
+}) {
+  const isStale = (item.seenSeconds ?? 0) > 15
+  return (
+    <tr
+      className={`${isSelected ? 'selected' : ''} ${isStale ? 'stale' : ''}`}
+      onClick={() => onSelect(item.icao)}
+    >
+      <td>
+        <button
+          className="aircraft-identity"
+          type="button"
+          aria-label={`Select ${aircraftLabel(item)}`}
+          aria-pressed={isSelected}
+        >
+          <span className="aircraft-id-top">
+            <strong>{aircraftLabel(item)}</strong>
+            {item.watched ? <Star size={14} fill="currentColor" aria-label="Watched" /> : null}
+            {item.hasActiveAlert ? (
+              <AlertTriangle size={15} aria-label="Active alert" />
+            ) : null}
+            {item.latitude == null || item.longitude == null ? (
+              <MapPinOff size={14} aria-label="No position" />
+            ) : null}
+            <span
+              className={`freshness ${isStale ? 'freshness-stale' : ''}`}
+              title="Time since last report"
+            >
+              {item.seenSeconds == null ? '—' : `${Math.round(item.seenSeconds)}s`}
+            </span>
+          </span>
+          <small>
+            {item.registration || item.icao.toUpperCase()}
+            {item.typeCode ? ` · ${item.typeCode}` : ''}
+          </small>
+        </button>
+      </td>
+      <td>
+        <span className="primary-cell">{formatAltitude(item.altitudeBaro)}</span>
+      </td>
+      <td>
+        <span className="primary-cell">{formatSpeed(item.groundSpeed)}</span>
+      </td>
+      <td>
+        <span className="primary-cell">{formatDistance(item.distanceNm)}</span>
+      </td>
+    </tr>
+  )
+})
 
 export function AircraftTable({
   aircraft,
@@ -68,56 +131,14 @@ export function AircraftTable({
           </tr>
         </thead>
         <tbody>
-          {aircraft.map((item) => {
-            const isSelected = selectedIcao === item.icao
-            const isStale = (item.seenSeconds ?? 0) > 15
-            return (
-              <tr
-                key={item.icao}
-                className={`${isSelected ? 'selected' : ''} ${isStale ? 'stale' : ''}`}
-                onClick={() => onSelect(item.icao)}
-              >
-                <td>
-                  <button
-                    className="aircraft-identity"
-                    type="button"
-                    aria-label={`Select ${aircraftLabel(item)}`}
-                    aria-pressed={isSelected}
-                  >
-                    <span className="aircraft-id-top">
-                      <strong>{aircraftLabel(item)}</strong>
-                      {item.watched ? <Star size={14} fill="currentColor" aria-label="Watched" /> : null}
-                      {item.hasActiveAlert ? (
-                        <AlertTriangle size={15} aria-label="Active alert" />
-                      ) : null}
-                      {item.latitude == null || item.longitude == null ? (
-                        <MapPinOff size={14} aria-label="No position" />
-                      ) : null}
-                      <span
-                        className={`freshness ${isStale ? 'freshness-stale' : ''}`}
-                        title="Time since last report"
-                      >
-                        {item.seenSeconds == null ? '—' : `${Math.round(item.seenSeconds)}s`}
-                      </span>
-                    </span>
-                    <small>
-                      {item.registration || item.icao.toUpperCase()}
-                      {item.typeCode ? ` · ${item.typeCode}` : ''}
-                    </small>
-                  </button>
-                </td>
-                <td>
-                  <span className="primary-cell">{formatAltitude(item.altitudeBaro)}</span>
-                </td>
-                <td>
-                  <span className="primary-cell">{formatSpeed(item.groundSpeed)}</span>
-                </td>
-                <td>
-                  <span className="primary-cell">{formatDistance(item.distanceNm)}</span>
-                </td>
-              </tr>
-            )
-          })}
+          {aircraft.map((item) => (
+            <AircraftRow
+              key={item.icao}
+              item={item}
+              isSelected={selectedIcao === item.icao}
+              onSelect={onSelect}
+            />
+          ))}
         </tbody>
       </table>
       {!aircraft.length && loading ? (

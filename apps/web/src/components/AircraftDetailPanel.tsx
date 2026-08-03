@@ -24,7 +24,7 @@ import {
   formatSpeed,
   formatVerticalRate,
 } from '../lib/format'
-import { useLive } from '../state/LiveContext'
+import { useLiveDispatch } from '../state/LiveContext'
 import type { Aircraft, AircraftDetail } from '../types'
 
 interface Props {
@@ -53,7 +53,7 @@ function Metric({
 }
 
 export function AircraftDetailPanel({ aircraft, onClose }: Props) {
-  const { dispatch } = useLive()
+  const dispatch = useLiveDispatch()
   const [detail, setDetail] = useState<AircraftDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [watchPending, setWatchPending] = useState(false)

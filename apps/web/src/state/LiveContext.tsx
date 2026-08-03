@@ -24,13 +24,24 @@ import {
   type LiveState,
 } from './live-reducer'
 
-interface LiveContextValue extends LiveState {
+/**
+ * The live state is split across three contexts so a 1 Hz aircraft delta does
+ * not re-render consumers that only watch the connection, the alert list, or
+ * that only need to dispatch.
+ */
+interface LiveAircraftValue {
+  aircraft: LiveState['aircraft']
   aircraftList: Aircraft[]
-  refresh: () => Promise<void>
-  dispatch: Dispatch<LiveAction>
 }
 
-const LiveContext = createContext<LiveContextValue | null>(null)
+interface LiveStatusValue
+  extends Omit<LiveState, 'aircraft'> {
+  refresh: () => Promise<void>
+}
+
+const LiveAircraftContext = createContext<LiveAircraftValue | null>(null)
+const LiveStatusContext = createContext<LiveStatusValue | null>(null)
+const LiveDispatchContext = createContext<Dispatch<LiveAction> | null>(null)
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(liveReducer, initialLiveState)
@@ -221,16 +232,58 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     () => Object.values(state.aircraft).sort((a, b) => a.icao.localeCompare(b.icao)),
     [state.aircraft],
   )
-  const value = useMemo(
-    () => ({ ...state, aircraftList, refresh, dispatch }),
-    [state, aircraftList, refresh],
+  const aircraftValue = useMemo(
+    () => ({ aircraft: state.aircraft, aircraftList }),
+    [state.aircraft, aircraftList],
+  )
+  const statusValue = useMemo(
+    () => ({
+      alerts: state.alerts,
+      receiver: state.receiver,
+      sequence: state.sequence,
+      generatedAt: state.generatedAt,
+      connection: state.connection,
+      hasSnapshot: state.hasSnapshot,
+      error: state.error,
+      refresh,
+    }),
+    [
+      state.alerts,
+      state.receiver,
+      state.sequence,
+      state.generatedAt,
+      state.connection,
+      state.hasSnapshot,
+      state.error,
+      refresh,
+    ],
   )
 
-  return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>
+  return (
+    <LiveDispatchContext.Provider value={dispatch}>
+      <LiveStatusContext.Provider value={statusValue}>
+        <LiveAircraftContext.Provider value={aircraftValue}>
+          {children}
+        </LiveAircraftContext.Provider>
+      </LiveStatusContext.Provider>
+    </LiveDispatchContext.Provider>
+  )
 }
 
-export function useLive(): LiveContextValue {
-  const context = useContext(LiveContext)
-  if (!context) throw new Error('useLive must be used inside LiveProvider')
+export function useLiveAircraft(): LiveAircraftValue {
+  const context = useContext(LiveAircraftContext)
+  if (!context) throw new Error('useLiveAircraft must be used inside LiveProvider')
+  return context
+}
+
+export function useLiveStatus(): LiveStatusValue {
+  const context = useContext(LiveStatusContext)
+  if (!context) throw new Error('useLiveStatus must be used inside LiveProvider')
+  return context
+}
+
+export function useLiveDispatch(): Dispatch<LiveAction> {
+  const context = useContext(LiveDispatchContext)
+  if (!context) throw new Error('useLiveDispatch must be used inside LiveProvider')
   return context
 }

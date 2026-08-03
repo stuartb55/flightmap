@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -36,7 +37,7 @@ import {
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
-import { useLive } from '../state/LiveContext'
+import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
 import type { AlertEvent, TrackResponse } from '../types'
 
 type MobilePanel = 'list' | 'filters' | null
@@ -111,15 +112,9 @@ function useModalFocus(
 }
 
 export function LivePage() {
-  const {
-    aircraftList,
-    receiver,
-    connection,
-    error,
-    alerts,
-    dispatch,
-    hasSnapshot,
-  } = useLive()
+  const { aircraftList } = useLiveAircraft()
+  const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
+  const dispatch = useLiveDispatch()
   const [searchParams, setSearchParams] = useSearchParams()
   const [filters, setFilters] = useState<AircraftFilterState>(storedFilters)
   const [sort, setSort] = useState<AircraftSort>({ key: 'distance', direction: 'asc' })
@@ -264,10 +259,14 @@ export function LivePage() {
     ]
   }, [mapDisplay.trailMinutes, selected, selectedTrack])
 
-  const selectAircraft = (icao: string) => {
-    setSearchParams({ aircraft: icao })
-    setMobilePanel(null)
-  }
+  // Stable so the memoised aircraft rows are not invalidated every render.
+  const selectAircraft = useCallback(
+    (icao: string) => {
+      setSearchParams({ aircraft: icao })
+      setMobilePanel(null)
+    },
+    [setSearchParams],
+  )
 
   const closeDetails = () => {
     setSearchParams({})
