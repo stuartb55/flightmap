@@ -49,6 +49,22 @@ export class Database {
     return this.pool.query<T>(text, values as unknown[] | undefined);
   }
 
+  /**
+   * Runs `callback` on a dedicated pooled connection without an implicit
+   * transaction, for work that needs session state (advisory locks) to span
+   * several independently committed statements.
+   */
+  async connect<T>(
+    callback: (client: pg.PoolClient) => Promise<T>
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      return await callback(client);
+    } finally {
+      client.release();
+    }
+  }
+
   async transaction<T>(
     callback: (client: pg.PoolClient) => Promise<T>
   ): Promise<T> {

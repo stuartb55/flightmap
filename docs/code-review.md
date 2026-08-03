@@ -27,7 +27,7 @@ items assume the documented trusted-LAN model.
       history by aircraft count or bytes (or reduce the limit to ~60);
       serialise once in `publish()` and hand the same string to every sink.
 
-- [ ] **2. Retention maintenance is one transaction under a 60 s query timeout.**
+- [x] **2. Retention maintenance is one transaction under a 60 s query timeout.**
       `services/maintenance.ts:49-124` performs session closure, partition
       `DROP TABLE`s, and four unbatched `DELETE`s in a single transaction, while
       `db/database.ts:32-33` sets `statement_timeout`/`query_timeout` to 60 s.
