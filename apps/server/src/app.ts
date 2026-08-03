@@ -81,9 +81,20 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     trustProxy: options.config.trustProxy
   });
   const security = new RequestSecurity(options.config);
-  const apiLimiter = new FixedWindowRateLimiter(300, 60_000);
-  const mutationLimiter = new FixedWindowRateLimiter(90, 60_000);
-  const websocketLimiter = new FixedWindowRateLimiter(30, 60_000);
+  const rateWindowMs = options.config.rateLimitWindowMs;
+  const apiLimiter = new FixedWindowRateLimiter(
+    options.config.apiRateLimit,
+    rateWindowMs
+  );
+  const mutationLimiter = new FixedWindowRateLimiter(
+    options.config.mutationRateLimit,
+    rateWindowMs
+  );
+  const websocketLimiter = new FixedWindowRateLimiter(
+    options.config.websocketRateLimit,
+    rateWindowMs
+  );
+  const retryAfterSeconds = String(Math.max(1, Math.ceil(rateWindowMs / 1_000)));
 
   app.addHook("onRequest", async (request, reply) => {
     if (!security.hostAllowed(request.headers.host)) {
@@ -95,7 +106,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       });
     }
     if (request.url.startsWith("/api/") && !apiLimiter.consume(request.ip)) {
-      reply.header("retry-after", "60");
+      reply.header("retry-after", retryAfterSeconds);
       return reply.code(429).send({
         error: {
           code: "RATE_LIMITED",
@@ -108,7 +119,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     );
     if (isMutation) {
       if (!mutationLimiter.consume(request.ip)) {
-        reply.header("retry-after", "60");
+        reply.header("retry-after", retryAfterSeconds);
         return reply.code(429).send({
           error: {
             code: "RATE_LIMITED",

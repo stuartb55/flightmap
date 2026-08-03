@@ -60,6 +60,29 @@ const configSchema = z
       .enum(["true", "false"])
       .default("true")
       .transform((value) => value === "true"),
+    // Fixed-window request budgets per client address. The defaults are sized
+    // for interactive browser use; automated suites that drive the API hard
+    // from one address (the end-to-end and load runs in CI share a bucket)
+    // raise them rather than measuring the limiter instead of the server.
+    RATE_LIMIT_WINDOW_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(3_600_000)
+      .default(60_000),
+    API_RATE_LIMIT: z.coerce.number().int().min(1).max(1_000_000).default(300),
+    MUTATION_RATE_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1_000_000)
+      .default(90),
+    WEBSOCKET_RATE_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1_000_000)
+      .default(30),
     // "false" (default), "true", or a comma-separated list of trusted proxy
     // addresses/CIDRs. Without this every client behind a reverse proxy shares
     // one rate-limit bucket, because request.ip is the proxy's address.
@@ -115,6 +138,10 @@ type BootConfig = Readonly<{
   webDistDir: string;
   serveWeb: boolean;
   trustProxy: boolean | string;
+  rateLimitWindowMs: number;
+  apiRateLimit: number;
+  mutationRateLimit: number;
+  websocketRateLimit: number;
 }>;
 
 export type Config = BootConfig & Readonly<AppSettings>;
@@ -146,6 +173,10 @@ export function loadConfig(
     webDistDir: resolve(config.WEB_DIST_DIR),
     serveWeb: config.SERVE_WEB,
     trustProxy: config.APP_TRUST_PROXY,
+    rateLimitWindowMs: config.RATE_LIMIT_WINDOW_MS,
+    apiRateLimit: config.API_RATE_LIMIT,
+    mutationRateLimit: config.MUTATION_RATE_LIMIT,
+    websocketRateLimit: config.WEBSOCKET_RATE_LIMIT,
     ...defaultAppSettings,
     rangeRingsNm: [...defaultAppSettings.rangeRingsNm],
     mapWaypoints: defaultAppSettings.mapWaypoints.map((waypoint) => ({
