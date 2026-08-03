@@ -1,157 +1,582 @@
-# ADS-B Live Map and 30-Day Flight History
+# Flightmap — User Experience Enhancement Plan
 
-## Summary
+Prioritised backlog of user-facing improvements for the delivered v1 application.
+Authentication and security work is deliberately out of scope; the deployment
+model (trusted LAN, reverse proxy for remote access) is unchanged.
 
-Build a responsive, LAN-only web application that:
+The original v1 build specification has moved to
+[`docs/v1-build-plan.md`](docs/v1-build-plan.md) and remains the reference for
+existing behaviour.
 
-- Polls the existing readsb/dump1090 receiver every second.
-- Displays live aircraft on a polished dark aviation map.
-- Retains one-second core telemetry for positioned aircraft for 30 days.
-- Preserves compact aircraft and daily sighting summaries indefinitely.
-- Provides aircraft search, historical tracks, and animated replay.
-- Generates focused in-app alerts for emergency squawks, explicit emergency states, and watchlist matches.
-- Runs as a Docker Compose stack on a desktop/server-class LAN host.
+## How to use this document
 
-The empty workspace will become a TypeScript monorepo using React, MapLibre, Fastify, and PostgreSQL.
+Each item is self-contained and independently shippable. Work top to bottom
+within a tier; tiers are ordered by value per unit of effort. Tick the checkbox
+when the acceptance criteria pass and `npm run typecheck && npm run lint && npm run test`
+is clean.
 
-## Architecture and Data Collection
+Effort key: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3–5 days.
 
-### Application stack
+---
 
-- React + TypeScript + Vite for the responsive web interface.
-- MapLibre GL JS for aircraft, track, receiver, and range-ring layers.
-- Fastify + TypeScript for REST, WebSocket, ingestion, and scheduled maintenance.
-- PostgreSQL with native daily partitions for high-volume telemetry.
-- Shared Zod schemas for receiver validation and API contracts.
-- A single application container will serve the compiled UI, API, WebSocket endpoint, and collector; PostgreSQL remains a separate internal container.
-- Use a multi-stage Docker build with ARM64 and x86-64 support.
+## Tier 0 — Daily-use wins
 
-### Receiver integration
+These change what a user sees every time they open the app, and each is
+contained to the web workspace.
 
-- Read `aircraft.json` every 1,000 ms using its `now` timestamp and message count to reject duplicate or out-of-order snapshots.
-- Read `receiver.json` at startup and periodically to obtain receiver coordinates, software version, and advertised refresh interval.
-- Read `stats.json` every 60 seconds for message rate, accepted/bad messages, signal/noise, CPU time, and receiver health.
-- Use short request timeouts and exponential retry backoff while disconnected, returning to one-second polling immediately after recovery.
-- Mark the receiver degraded after 5 seconds without a valid snapshot and offline after 15 seconds.
-- Never allow malformed aircraft records to terminate ingestion; reject the affected record, count it, and continue.
-- Preserve UTC internally and display dates in `Europe/London`.
+### 1. Category-aware aircraft icons on the map — **M**
 
-### Recording rules
+- [ ] Implement
 
-- For every new receiver snapshot, insert one telemetry row for each aircraft with a valid latitude and longitude.
-- Retain core fields: source timestamp, ICAO hex, callsign, coordinates, barometric/geometric altitude, ground/indicated/true airspeed, Mach, track/headings, vertical rates, squawk, emergency state, category, RSSI, message count, `seen`, `seen_pos`, navigation targets, and ADS-B quality/source indicators.
-- Treat fields as nullable and support special source values such as `alt_baro: "ground"`.
-- Aircraft without positions update current state, identity, first/last-seen information, and alerts, but do not create duplicate position rows.
-- Start a track session on the first positioned report; close it after five minutes without a positioned report. A callsign change updates the session but does not split it unless the gap threshold is crossed.
-- Calculate receiver distance and bearing during ingestion for range display and historical summaries.
-- Batch each snapshot into one database transaction.
+**Problem.** Every aircraft on the map is the same 34 px plane glyph
+(`planeImage` in `apps/web/src/components/RadarMap.tsx:125`), differing only by
+altitude colour. A helicopter, an A380, a Cessna, and a ground vehicle are
+visually identical, so the map cannot be read at a glance.
 
-### Storage model
+**Approach.** The ADS-B emitter category already reaches the client
+(`Aircraft.category`, `apps/web/src/types.ts:57`) but is used only as a raw
+filter value. Add a category → shape mapping and generate one icon per
+(shape × altitude band) pair at style load:
 
-- `position_samples`: daily range-partitioned one-second telemetry, indexed by `(icao, recorded_at)`, session/time, and time; delete partitions older than 30 days.
-- `track_sessions`: session start/end, callsigns, sample count, altitude/speed extrema, closest range, and last known state; retain detailed session records for 30 days.
-- `aircraft_summary`: indefinite first/last seen, total observations, session count, closest range, and latest known identity.
-- `daily_aircraft_summary`: indefinite compact per-aircraft/day statistics so older activity remains searchable after track deletion.
-- `current_aircraft`: latest normalized state used for restart recovery and initial live snapshots.
-- `receiver_samples`: minute-level health statistics retained for 30 days.
-- `aircraft_metadata`: local ICAO lookup containing registration, type code, description, operator/owner, and country.
-- `watchlist` and `alert_events`: watchlist configuration is indefinite; alert events are retained for 30 days.
-- Run partition creation and retention pruning daily, with a manual maintenance command for recovery.
-- Document a minimum recommended 40 GB free database volume and expose database size/retention status in system health.
+| Category | Shape | Notes |
+| --- | --- | --- |
+| A1 | Light single-engine | Smaller glyph, straight wings |
+| A2 / A3 | Standard airliner | Current glyph, A3 slightly larger |
+| A4 / A5 | Heavy / super-heavy | Wider glyph, four engine marks |
+| A7 | Rotorcraft | Rotor disc glyph, no track rotation smoothing |
+| B1–B4 | Glider / balloon / parachute / ultralight | Simple diamond |
+| B6 / B7 | UAV / space vehicle | Chevron |
+| C0–C3 | Surface vehicle | Square, always rendered at ground colour |
+| unknown | Current glyph | Fallback |
 
-### Aircraft metadata
+Fall back to the type-code prefix (`metadata.typeCode`) where category is
+absent — `H` prefixes and known heavy types are a cheap improvement.
 
-- Import the readsb-compatible `tar1090-db` compressed CSV recommended by the readsb project, rather than making per-aircraft external API calls. [readsb database documentation](https://github.com/wiedehopf/readsb)
-- Check weekly using HTTP ETag/Last-Modified; download to staging, validate columns and row counts, then atomically replace the active metadata table.
-- Keep the previous successful import if download or validation fails.
-- Make the metadata URL and update schedule configurable and show its version/date in the UI.
+**Files.** `RadarMap.tsx` (icon generation, `liveAircraftData` icon key),
+new `apps/web/src/lib/aircraft-category.ts` (mapping + human labels),
+`AircraftFilters.tsx` (show "A3 · Large" instead of "A3").
 
-## User Experience and Interfaces
+**Acceptance.**
+- Rotorcraft, light aircraft, heavies, and surface vehicles are distinguishable
+  at default zoom without reading labels.
+- Icon count stays bounded (shapes × 8 altitude bands, generated once per style
+  load, not per render).
+- Unknown/absent categories render exactly as they do today.
+- The category filter dropdown shows human-readable labels.
+- Map legend documents the shapes alongside the existing altitude scale.
 
-### Live dashboard
+---
 
-- Default to a modern dark radar layout centered on the receiver at `53.61, -2.31`.
-- Use MapLibre with the configurable OpenFreeMap dark vector style; its hosted service supports MapLibre without an API key and includes required attribution. [OpenFreeMap guide](https://openfreemap.org/quick_start/)
-- Render aircraft as WebGL map symbols rotated to ground track, coloured by altitude, faded by freshness, and visually distinguished for selected, watched, stale, and emergency aircraft.
-- Show the receiver marker, configurable nautical-mile range rings, scale, zoom controls, and “fit active aircraft.”
-- Desktop: map with collapsible aircraft table and detail panel.
-- Mobile: full map with bottom sheets for filters, aircraft list, and aircraft details.
-- The live table supports sorting and filtering by callsign/registration/ICAO, altitude, distance, speed, category, source, freshness, and alert state.
-- Selecting an aircraft synchronizes the map, table, detail sheet, recent trail, and metadata.
-- Details show telemetry, signal/quality indicators, navigation targets, receiver-relative distance/bearing, metadata, first/last seen, and watchlist control.
-- Aircraft with no current position remain visible in the table but are not placed on the map.
-- Use aviation units throughout: feet, knots, nautical miles, feet per minute, and hPa.
+### 2. Short trails for every aircraft — **M**
 
-### History and replay
+- [ ] Implement
 
-- Search by date/time, ICAO, callsign, registration, type, operator, or alert state.
-- Results list track sessions with start/end, duration, callsigns, extrema, closest approach, and sample count.
-- Selecting sessions draws altitude-coloured trails and opens a time slider.
-- Replay interpolates marker movement between stored one-second samples while retaining actual points as the source of truth.
-- Support play/pause, speed controls, scrubbing, follow-aircraft mode, and simultaneous replay of filtered sessions.
-- Default history responses use adaptive downsampling for quick display; exact one-second data is available for a single session or bounded six-hour query.
-- Older indefinite summaries remain searchable but clearly show that the detailed track expired.
-- Do not implement CSV or GeoJSON exports in v1.
+**Problem.** Trails only render for the selected aircraft
+(`LivePage.tsx:228`, the `trail` memo). Users coming from tar1090/PiAware expect
+every aircraft to leave a short trail — it is what makes traffic flow legible
+and shows which direction an aircraft came from before you click it.
 
-### Alerts
+**Approach.** Accumulate positions client-side from the WebSocket deltas already
+arriving each second. Keep a bounded ring buffer per ICAO in `LiveContext`
+(default 5 minutes, capped by aircraft count), feed it into a new
+`all-aircraft-trails` GeoJSON source rendered below the existing track layer at
+low opacity. No server work required — this is display of data the client
+already receives.
 
-- Create alerts for squawks 7500, 7600, and 7700, explicit non-`none` emergency states, and watchlist matches. Record first sightings in receiver history without creating alerts.
-- Deduplicate each rule per track session; emergency state changes may create a new alert.
-- Display a persistent alert badge/feed, map highlighting, and dismissible in-app banners.
-- No email, browser push, Discord, or other external notifications in v1.
-- First and last sightings remain available from the indefinite aircraft summary after detailed tracks expire.
+Add a trail mode to `MapLayerPreferences`: `off` / `selected` (today's
+behaviour, the default) / `all`. Reuse the existing `mapDisplay.trailMinutes`
+control for length.
 
-### API and real-time contract
+**Files.** `apps/web/src/state/LiveContext.tsx` and `live-reducer.ts` (buffer),
+`RadarMap.tsx` (source + layer), `apps/web/src/lib/map-preferences.ts`,
+`MapLayerMenu.tsx`, `packages/shared/src/contracts.ts` (preference schema).
 
-- `GET /api/v1/status`: receiver, collector, database, retention, metadata, and application health.
-- `GET /api/v1/aircraft/live`: complete current snapshot for initial load and reconnect.
-- `GET /api/v1/aircraft/:icao`: live state, metadata, summary, recent sessions, and alerts.
-- `GET /api/v1/sessions`: cursor-paginated historical search and filters.
-- `GET /api/v1/sessions/:id/track?resolution=auto|1s|5s|15s|60s`: track points and session metadata.
-- `GET /api/v1/summaries`: older daily/aircraft summary search.
-- `GET /api/v1/alerts` and `POST /api/v1/alerts/:id/dismiss`.
-- `GET /api/v1/watchlist`, `PUT /api/v1/watchlist/:icao`, and `DELETE /api/v1/watchlist/:icao`.
-- `WS /api/v1/live`: sequenced aircraft upserts/removals, receiver state, and alerts. Clients obtain a REST snapshot first, apply ordered deltas, and resnapshot after a sequence gap.
-- Return ISO-8601 UTC timestamps, lowercase six-character ICAO identifiers, nullable unavailable values, and stable machine-readable error codes.
-- Validate query ranges and cap unbounded history requests to prevent accidental multi-million-row responses.
+**Acceptance.**
+- With trail mode `all` and 250 aircraft, the map holds ≥ 30 fps on the target
+  host and memory stays flat over a 30-minute session (bounded buffer, verified
+  by point count assertion in a unit test).
+- Trails clear when an aircraft ages out of the live set.
+- Existing selected-aircraft server-backed trail behaviour is unchanged in
+  `selected` mode.
+- Preference persists across reloads and is captured by saved views.
 
-## Operations, Security, and Configuration
+---
 
-- Docker Compose exposes only the application port, default `8080`; PostgreSQL is reachable only on the Compose network.
-- Configuration lives in `.env`, with a checked-in `.env.example` containing:
-  - `RECEIVER_BASE_URL=http://192.168.1.118:81/data`
-  - `POLL_INTERVAL_MS=1000`
-  - `HISTORY_RETENTION_DAYS=30`
-  - `DISPLAY_TIME_ZONE=Europe/London`
-  - `MAP_STYLE_URL=https://tiles.openfreemap.org/styles/dark`
-  - Metadata URL/schedule, database credentials, timeouts, and application port.
-- Receiver coordinates are discovered automatically, with optional environment overrides.
-- Serve UI and API from one origin, avoiding receiver CORS and mixed-origin browser issues.
-- Do not add login/authentication in v1; bind to the LAN interface and document that the deployment assumes a trusted home network.
-- Include liveness/readiness checks, structured logs, graceful shutdown, database migration commands, and restart-safe collection.
-- Provide setup, upgrade, metadata refresh, backup/restore, disk-sizing, and troubleshooting documentation.
-- Add a read-only system page showing receiver latency, last successful polls, rejected records, ingestion rate, database use, oldest/newest retained sample, and metadata freshness.
+### 3. Live table: vertical trend, more columns, and column choice — **M**
 
-## Test and Acceptance Plan
+- [ ] Implement
 
-- Unit-test parsing of full, sparse, MLAT, stale, ground, malformed, missing-position, and unknown-field aircraft records.
-- Test duplicate snapshot rejection, UTC conversion, distance/bearing calculations, session boundaries, summary aggregation, first-sighting history, emergency/watchlist deduplication, and retention cutoffs.
-- Integration-test against a controllable fake receiver for normal polling, timeouts, invalid JSON, partial records, out-of-order timestamps, receiver restart, outage, and recovery.
-- Verify daily partition creation, 30-day pruning, indefinite summary preservation, metadata atomic replacement, and failed-import rollback.
-- Contract-test every REST schema and WebSocket snapshot/delta/reconnect flow.
-- Component-test aircraft filtering, synchronized selection, stale/offline states, alerts, responsive panels, and unavailable fields.
-- End-to-end test live tracking, watchlist alerts, historical search, multi-track display, replay controls, and expired-track messaging on desktop and mobile viewports.
-- Load-test ingestion and live display with at least 250 simultaneous aircraft at one-second cadence; collection must remain current and the UI responsive.
-- Benchmark bounded track queries and adaptive replay so an ordinary single-session replay begins rendering within two seconds on the target server/LAN.
-- Confirm the UI reports receiver failure within 15 seconds and resumes automatically without losing application availability.
-- Verify accessibility with keyboard navigation, visible focus states, adequate contrast, semantic table/detail controls, and reduced-motion handling.
+**Problem.** The table exposes four columns — Aircraft, Altitude, Speed, Range
+(`AircraftTable.tsx:18`). Vertical rate is the single most useful missing field
+for spotting arrivals versus departures, and it is already in the payload
+(`Aircraft.verticalRate`). Squawk, operator, track, and type are also carried
+but only visible after selecting an aircraft.
 
-## Assumptions and Defaults
+**Approach.**
+- Add a climb/descend/level indicator beside altitude (arrow + rate, reusing
+  `formatVerticalRate`), always visible — this needs no column chooser.
+- Add optional columns: Vertical rate, Squawk, Track, Operator, Type, Age.
+- Add a column chooser to the table header, persisted per browser under
+  `flightmap.aircraft-columns.v1`, alongside the existing filter persistence.
+- Extend `AircraftSortKey` to cover the new sortable columns.
 
-- The application monitors one receiver in v1.
-- The receiver remains reachable from the Docker host at the supplied LAN address.
-- Detailed retention means every fresh positioned aircraft is sampled once per unique one-second receiver snapshot; it does not mean storing the complete raw JSON object.
-- Compact aircraft and daily summaries remain indefinitely, while positions, detailed sessions, receiver statistics, and alert events expire after 30 days.
-- The host is a desktop/server-class machine with SSD-backed persistent storage.
-- Internet access is available for map tiles and weekly metadata refresh; live collection and database history remain functional if internet access is lost.
-- No observer notes, photos, manual sightings, external notifications, exports, public access, or multi-user permissions are included in v1.
+**Files.** `AircraftTable.tsx`, `apps/web/src/lib/aircraft-filter.ts` (sort
+keys), new `apps/web/src/lib/table-columns.ts`, `styles/live.css`.
+
+**Acceptance.**
+- Climb/descend state is visible without opening the detail panel.
+- Column choice persists across reloads and degrades to defaults on corrupt
+  storage (mirroring `storedFilters` in `LivePage.tsx:50`).
+- Every column is sortable, with `aria-sort` maintained.
+- Mobile sheet keeps a sensible reduced column set regardless of desktop choice.
+
+---
+
+### 4. Unit preferences — **M**
+
+- [ ] Implement
+
+**Problem.** Units are hardcoded aviation units throughout
+(`apps/web/src/lib/format.ts`): feet, knots, nautical miles, ft/min. This is
+correct for aviation but wrong for a household member who thinks in kilometres,
+and there is no way to change it.
+
+**Approach.** Introduce a unit preference set — altitude (ft / m), speed
+(kt / km/h / mph), distance (nm / km / mi), vertical rate (ft/min / m/s) — with
+an `aviation` and a `metric` preset. Route every display through the existing
+`format.ts` helpers so the change is a single-layer edit; the helpers become
+preference-aware exactly as they already are time-zone-aware.
+
+Store per browser (`localStorage`, like map preferences) rather than in the
+server settings, so different viewers can differ. Surface the control in the
+existing Settings page under "Map and display", reading from local storage.
+
+**Files.** `apps/web/src/lib/format.ts`, new
+`apps/web/src/lib/unit-preferences.ts`, `SettingsPage.tsx`, plus every caller
+via the shared formatters. Exports (CSV/GeoJSON) stay in canonical aviation
+units — note this in the export UI.
+
+**Acceptance.**
+- Switching preset updates altitude, speed, distance, and vertical rate
+  everywhere — table, detail panel, history, insights, map labels — without a
+  reload.
+- Range rings, filter inputs, and their suffixes follow the preference, with
+  filter values converted rather than reinterpreted.
+- Existing `format.test.ts` cases pass under the aviation default; new cases
+  cover metric conversion and rounding.
+- Exports remain ft/kt/nm and say so.
+
+---
+
+### 5. Command palette (`Cmd`/`Ctrl` + `K`) — **S**
+
+- [ ] Implement
+
+**Problem.** Finding a specific aircraft means navigating to Live, focusing
+search with `/`, and typing — and there is no way to jump to History for a
+callsign, open a saved view, or reach Settings without using the nav.
+
+**Approach.** A single overlay that searches live aircraft (callsign,
+registration, ICAO, operator, type), saved views, and static destinations
+(pages, "toggle coverage layer", "fit aircraft", "centre receiver"). Selecting
+an aircraft routes to `/?aircraft=<icao>`; a modifier opens its profile.
+
+Reuse the existing modal focus-trap pattern (`useModalFocus`,
+`LivePage.tsx:71`) — extract it to `apps/web/src/lib/use-modal-focus.ts` so both
+callers share it rather than duplicating.
+
+**Files.** New `apps/web/src/components/CommandPalette.tsx`, mounted in
+`AppShell.tsx`; extracted `use-modal-focus.ts`; `KeyboardShortcuts.tsx`
+shortcut list.
+
+**Acceptance.**
+- Opens from any page, closes on `Escape`, restores prior focus.
+- Fully keyboard-driven with roving `aria-activedescendant` and an
+  `aria-live` result count.
+- Results rank exact ICAO/callsign matches first; no result state is explained,
+  not blank.
+- Does not intercept the shortcut while focus is in a form control
+  (`isFormTarget`).
+
+---
+
+### 6. Selection and navigation polish — **S**
+
+- [ ] Implement
+
+**Problem.** Three small frictions in the core interaction loop:
+
+1. Selecting an aircraft always re-centres and zooms the map
+   (`RadarMap.tsx:880`), yanking the view even when the aircraft is already
+   comfortably visible — which makes selecting from the table feel violent.
+2. The aircraft list cannot be walked with the keyboard. `A` focuses the first
+   row (`LivePage.tsx:305`) and then arrow keys do nothing useful.
+3. The `keydown` effect in `LivePage.tsx:298` has no dependency array, so the
+   listener is torn down and re-registered on every 1 Hz render.
+
+**Approach.**
+1. Only ease to the aircraft when it is outside the current viewport (or inside
+   an edge margin); otherwise leave the camera alone. Keep the existing
+   behaviour for the follow toggle.
+2. Add `↑`/`↓` to move the selection through the filtered list, `Enter` to open
+   details, `Home`/`End` to jump. Scroll the active row into view.
+3. Give the effect a proper dependency list.
+
+**Files.** `RadarMap.tsx`, `LivePage.tsx`, `AircraftTable.tsx`,
+`KeyboardShortcuts.tsx`.
+
+**Acceptance.**
+- Selecting a visible aircraft does not move the map; selecting an off-screen
+  one brings it into view.
+- Arrow-key navigation works from the table and from the command palette
+  results, honouring `prefers-reduced-motion` for scroll behaviour.
+- The keydown listener registers once per dependency change, not per render.
+
+---
+
+## Tier 1 — Substantial improvements
+
+### 7. Local alert notifications and sound — **M**
+
+- [ ] Implement
+
+**Problem.** Alerts are in-app only. If the tab is in the background — the
+normal state for a wall-mounted or second-monitor dashboard — an emergency
+squawk or watchlist arrival is missed entirely. v1 deliberately excluded
+external notification services; the browser Notification API is local and does
+not reintroduce that dependency.
+
+**Approach.** Opt-in, off by default, configured in Settings:
+- Browser notifications via the existing service worker, for chosen alert kinds
+  and severities.
+- An optional short audio cue with a distinct tone per severity, generated with
+  the Web Audio API so no asset is shipped or fetched.
+- Respect the page's visibility state — no notification while the tab is
+  focused and the alert is already on screen.
+- Rate-limit to avoid a burst during a receiver recovery.
+
+**Files.** New `apps/web/src/lib/notifications.ts`, `LiveContext.tsx` (alert
+subscription), `SettingsPage.tsx`, service worker registration in
+`apps/web/src/main.tsx`.
+
+**Acceptance.**
+- No permission is requested until the user enables the feature.
+- Clicking a notification focuses the tab and opens that alert's aircraft.
+- Sound respects an explicit mute and never plays before a user gesture has
+  unlocked audio.
+- Disabled by default; existing in-app banner behaviour is unchanged.
+
+---
+
+### 8. Live list virtualisation and render budget — **M**
+
+- [ ] Implement
+
+**Problem.** `AircraftTable` renders every filtered row into the DOM. Rows are
+memoised (`AircraftTable.tsx:30`) so updates are cheap, but with the 250+
+aircraft the load test targets, the initial mount and every filter change build
+a large tree, and `filterAircraft`/`sortAircraft` re-run on each 1 Hz snapshot.
+
+**Approach.**
+- Windowed rendering of table rows (a small hand-rolled windowing hook is
+  enough — no new dependency needed for a single fixed-height list).
+- Move filter/sort off the snapshot critical path: keep the sort comparator
+  stable and only re-sort when the sort key, the filter set, or the aircraft
+  identity set changes, not when telemetry values change.
+- Add a render-cost check to the existing load smoke script
+  (`infra/scripts/load-smoke.mjs`).
+
+**Files.** `AircraftTable.tsx`, new `apps/web/src/lib/use-window-list.ts`,
+`LivePage.tsx`, `infra/scripts/load-smoke.mjs`.
+
+**Acceptance.**
+- With 1,000 aircraft from the fake receiver, scrolling stays smooth and
+  selection latency stays under 100 ms.
+- Keyboard navigation and `aria-rowcount`/`aria-rowindex` semantics survive
+  virtualisation — a screen reader still reports the true total.
+- Existing `AircraftTable.test.tsx` assertions still hold for small lists.
+
+---
+
+### 9. Map interaction depth — **M**
+
+- [ ] Implement
+
+**Problem.** The map supports hover (a transient card, `RadarMap.tsx:942`) and
+click-to-select, and nothing else. There is no way to interrogate the map
+directly: no persistent popup, no click-to-filter on the altitude legend, no
+measuring, and no way to dismiss a selection by clicking empty space.
+
+**Approach.**
+- Persistent popup on click with the key telemetry and links to profile/history,
+  as an alternative to the side panel on wide screens.
+- Make the altitude legend interactive: click a band to isolate it, which writes
+  through to the existing altitude filter so the table and map stay consistent.
+- Click on empty map space clears the selection.
+- Optional ruler tool: click two points for distance and bearing, using the
+  existing great-circle helpers (`destinationPoint`, `RadarMap.tsx:186`, and the
+  server's `domain/geo.ts` as the reference implementation).
+
+**Files.** `RadarMap.tsx`, `MapLayerMenu.tsx`, `styles/live.css`.
+
+**Acceptance.**
+- Legend filtering and drawer filtering stay in sync in both directions.
+- Popup is keyboard-dismissible and does not trap focus.
+- Ruler is opt-in and does not interfere with selection clicks.
+
+---
+
+### 10. History: session timeline, sorting, and track colouring — **M**
+
+- [ ] Implement
+
+**Problem.** History results are a flat card list ordered newest-first with no
+sort control — `sort: 'started_desc'` is hardcoded in the saved-view payload
+(`HistoryPage.tsx:852`). Overlap between sessions is only surfaced as a
+sentence ("Tracks overlap in time and can be replayed together",
+`HistoryPage.tsx:901`). Tracks are always coloured by altitude
+(`altitudeColour`), so speed and climb structure are invisible.
+
+**Approach.**
+- A compact timeline strip above the map: one lane per selected session, drawn
+  against the replay bounds, with the replay cursor overlaid. Clicking a lane
+  focuses that track's profile; dragging scrubs.
+- A sort control for the session list (start time, duration, closest approach,
+  maximum altitude, sample count) wired through to the API and the saved view.
+- A colour-by control for tracks: altitude (default), ground speed, or vertical
+  rate, with the legend updating to match.
+
+**Files.** `HistoryPage.tsx`, new
+`apps/web/src/components/SessionTimeline.tsx`, `RadarMap.tsx` (colour
+expression), `apps/web/src/lib/format.ts` (speed and vertical-rate ramps),
+`apps/server/src/db/history-repository.ts` and `routes/api.ts` if the sort
+needs server support.
+
+**Acceptance.**
+- Timeline makes temporal overlap between up to eight tracks obvious at a
+  glance and stays legible on a narrow screen.
+- Sort choice is captured in the URL and in saved views, so a shared link
+  reproduces the same ordering.
+- Colour-by choice applies to both the map and the flight profile chart.
+
+---
+
+### 11. First-run onboarding — **S**
+
+- [ ] Implement
+
+**Problem.** A fresh install shows an empty dark map and "The latest receiver
+snapshot contains no current aircraft" (`LivePage.tsx:415`) until someone
+discovers that Settings needs a receiver URL. The README explains this; the
+application does not.
+
+**Approach.** When the receiver URL is unset or has never produced a snapshot,
+show a guided panel over the Live page: set the receiver URL, confirm
+coordinates, verify the connection, and a link to the fake receiver for anyone
+evaluating without hardware. Add a "Test connection" action to Settings that
+fetches the configured endpoint and reports what it found (aircraft count,
+receiver version, coordinates) before saving.
+
+**Files.** New `apps/web/src/components/SetupGuide.tsx`, `LivePage.tsx`,
+`SettingsPage.tsx`, a validation endpoint in `apps/server/src/routes/api.ts`
+backed by the existing collector fetch logic.
+
+**Acceptance.**
+- The guide appears only when the receiver has genuinely never delivered data,
+  never during a transient outage (which keeps the existing connection banner).
+- "Test connection" reports actionable failures — DNS, timeout, non-JSON,
+  missing fields — not a generic error.
+- Dismissible, and does not reappear once data has flowed.
+
+---
+
+### 12. Theme, density, and display preferences — **M**
+
+- [ ] Implement
+
+**Problem.** The interface is dark-only (`color-scheme: dark`,
+`styles/base.css:4`). A dark radar map is the right default, but the app is
+unreadable in a bright room, and there is no control over text size or density
+beyond browser zoom — which breaks the fixed-height app shell
+(`html, body, #root { overflow: hidden }`).
+
+**Approach.**
+- Extract the existing palette into semantic tokens (it is already
+  token-driven — `--bg`, `--panel`, `--text` etc.), then add a light theme by
+  overriding the token values only.
+- Theme choice: system / dark / light, persisted per browser. Pair the light
+  theme with a light map style URL so the map does not fight the chrome.
+- A comfortable/compact density toggle driving `--type-body`, `--type-control`,
+  and row padding.
+
+**Files.** `styles/base.css` (tokens), each page stylesheet (replace any
+remaining literal colours), new `apps/web/src/lib/theme.ts`, `AppShell.tsx`,
+`SettingsPage.tsx`.
+
+**Acceptance.**
+- Both themes meet WCAG AA contrast for body text and interactive controls;
+  verified by the existing `@axe-core/playwright` e2e pass run in both themes.
+- No flash of the wrong theme on load.
+- Alert, emergency, and altitude-band colours remain distinguishable in light
+  mode — these carry meaning and must be re-checked, not merely inverted.
+- Existing dark appearance is byte-for-byte unchanged as the default.
+
+---
+
+## Tier 2 — Depth and polish
+
+### 13. Multi-track profile comparison — **S**
+
+- [ ] Implement
+
+`FlightProfile` renders only the focused track (`HistoryPage.tsx:905`).
+Overlay up to four selected tracks on one altitude/speed axis, colour-matched to
+their map lines, so approaches to the same runway can be compared directly.
+
+**Acceptance.** Overlay is legible with four tracks; the accessible data table
+that backs the chart lists every series; single-track behaviour is unchanged.
+
+---
+
+### 14. Airport and runway layer — **M**
+
+- [ ] Implement
+
+The map shows configurable arrival/departure fixes
+(`default-waypoints.ts`) but no airports, so tracks converge on nothing visible.
+Ship a small bundled dataset of airports within a configurable radius of the
+receiver (ICAO, name, position, runway thresholds), rendered as a toggleable
+layer. Keep it local — no runtime external lookup, matching the offline-first
+metadata approach.
+
+**Acceptance.** Layer toggles with the others, is bounded in size, labels
+declutter at low zoom, and the data source and licence are documented in
+`docs/`.
+
+---
+
+### 15. Saved views: defaults and pinning — **S**
+
+- [ ] Implement
+
+Saved views exist for Live, History, and Insights
+(`SavedViewsControl.tsx`) but every visit starts from the built-in default.
+Allow marking one view per surface as the default applied on load, and pinning
+up to three to the header for one-click switching.
+
+**Acceptance.** Default applies on load without a visible flash of the built-in
+state; a URL with explicit parameters always wins over the default.
+
+---
+
+### 16. Map snapshot and share — **S**
+
+- [ ] Implement
+
+Add "Copy link" and "Download image" to the map controls. The link already
+exists in the URL for both Live and History — it just is not discoverable. The
+image uses the MapLibre canvas with an overlaid caption (receiver, timestamp,
+aircraft count).
+
+**Acceptance.** Copied link restores the identical view including viewport;
+downloaded PNG includes attribution required by the tile provider.
+
+---
+
+### 17. Insights drill-down and export polish — **S**
+
+- [ ] Implement
+
+Insights has strong data and CSV export
+(`GET /api/v1/exports/insights`). Add chart image export, per-series
+show/hide, and click-through from any chart element to a pre-filtered History
+search for that bucket.
+
+**Acceptance.** Every drill-down lands on a History query that returns the
+sessions the chart element counted.
+
+---
+
+### 18. In-app help — **S**
+
+- [ ] Implement
+
+Operational documentation lives in `docs/` and the README, reachable only from
+the repository. Add a Help page covering the shortcut reference, field
+glossary (NIC, NACp, SIL, emitter category, MLAT versus ADS-B), retention model,
+and what "detailed track expired" means — the concepts the UI already surfaces
+but never explains.
+
+**Acceptance.** Every jargon term shown in the detail panel appears in the
+glossary; the page works offline from the PWA shell.
+
+---
+
+## Tier 3 — Larger bets
+
+Worth doing, but each is a project rather than a feature. Scope properly before
+starting.
+
+### 19. Multiple receivers — **L**
+
+The data model, collector, and status view assume one receiver
+(`docs/v1-build-plan.md`, "Assumptions"). Supporting two or more means a
+receiver dimension through ingestion, storage, aggregates, and the UI, plus
+per-receiver coverage comparison. High value if a second receiver is ever added;
+no value until then.
+
+### 20. Aircraft photographs — **M**
+
+The single most-requested feature in comparable apps, and the one that breaks
+the offline-first rule: it requires a runtime external API. If pursued, make it
+explicitly opt-in, cache aggressively in PostgreSQL, degrade silently when
+offline, and state in Settings that enabling it sends ICAO addresses to a third
+party.
+
+### 21. Route inference — **L**
+
+Origin/destination is not in the ADS-B payload and cannot be derived from the
+receiver alone. Deriving probable routes from observed track geometry and
+repeated callsign patterns against the local history is feasible and stays
+offline, but it is a modelling exercise with an accuracy contract to define.
+
+---
+
+## Explicitly not planned
+
+- Authentication, user accounts, and per-user permissions — deployment model
+  unchanged, and out of scope by request.
+- External notification transports (email, push services, Discord, webhooks).
+- Public/internet-facing hosting affordances.
+- Any runtime dependency on a third-party API in the default configuration.
+
+---
+
+## Suggested sequencing
+
+1. **Sprint 1 — visual legibility.** Items 1, 3, 6. Highest visible change for
+   the least risk; all confined to the web workspace.
+2. **Sprint 2 — control and reach.** Items 2, 4, 5. Trails and units both touch
+   shared preference plumbing, so land them together.
+3. **Sprint 3 — attention and scale.** Items 7, 8, 11. Notifications and
+   onboarding make the dashboard usable unattended and from cold.
+4. **Sprint 4 — analysis.** Items 9, 10, 13. The history and map interrogation
+   work compounds.
+5. **Sprint 5 — accessibility and polish.** Items 12, 14–18.
+
+## Cross-cutting requirements
+
+Every item inherits the standards the v1 build already meets, and regressions
+against them block a merge:
+
+- Keyboard operable, visible focus, correct ARIA, and `prefers-reduced-motion`
+  respected. The `@axe-core/playwright` e2e pass must stay clean.
+- Desktop and mobile layouts both covered — the mobile bottom-sheet pattern in
+  `LivePage.tsx` is the reference.
+- Unavailable values render as `—`, never as `0`, `null`, or `NaN`.
+- New preferences fail safe: corrupt or absent storage falls back to defaults
+  without blocking live data (see `storedFilters`, `LivePage.tsx:50`).
+- Unit and component tests alongside the change; e2e coverage for anything that
+  alters a primary user flow.
+- `npm run typecheck`, `npm run lint`, `npm run test:coverage`, and
+  `npm run build` all pass.
