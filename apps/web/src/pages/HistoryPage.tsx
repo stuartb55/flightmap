@@ -34,6 +34,7 @@ import {
   formatTime,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { useAppCommands } from '../lib/app-commands'
 import type {
   HistoricalSummary,
   HistoryFilters,
@@ -643,6 +644,14 @@ export function HistoryPage() {
       window.setTimeout(() => historyMapRef.current?.applyViewport(viewport), 0)
     }
   }
+
+  useAppCommands((command) => {
+    if (command.type !== 'apply-saved-view' || command.configuration.surface !== 'history') {
+      return false
+    }
+    applySavedView(command.configuration)
+    return true
+  })
 
   const changeResolution = async (value: Resolution) => {
     setResolution(value)

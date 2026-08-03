@@ -44,6 +44,7 @@ import {
   useUnitPreferences,
 } from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
+import { useAppCommands } from '../lib/app-commands'
 import { displayTimeZone } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
@@ -427,6 +428,14 @@ export function InsightsPage() {
       window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
     }
   }
+
+  useAppCommands((command) => {
+    if (command.type !== 'apply-saved-view' || command.configuration.surface !== 'insights') {
+      return false
+    }
+    applySavedView(command.configuration)
+    return true
+  })
 
   return (
     <div className="standard-page insights-page">

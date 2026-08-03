@@ -8,7 +8,21 @@ export function isFormTarget(target: EventTarget | null): boolean {
   )
 }
 
+/**
+ * Narrower than isFormTarget: only somewhere text actually goes. Single-key
+ * shortcuts must also stand aside for buttons, whose own keys they would steal,
+ * but a modifier shortcut has no such conflict and would be unreachable from
+ * the focus a click usually leaves behind.
+ */
+export function isTextEntryTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.isContentEditable))
+  )
+}
+
 const shortcuts = [
+  ['⌘K / Ctrl K', 'Open the command palette'],
   ['/', 'Focus search'],
   ['A', 'Focus aircraft list'],
   ['↑ ↓', 'Select the previous or next aircraft'],

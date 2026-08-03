@@ -170,7 +170,7 @@ units — note this in the export UI.
 
 ### 5. Command palette (`Cmd`/`Ctrl` + `K`) — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Finding a specific aircraft means navigating to Live, focusing
 search with `/`, and typing — and there is no way to jump to History for a
