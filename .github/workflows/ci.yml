@@ -25,6 +25,38 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=high
 
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: flightmap
+          POSTGRES_PASSWORD: flightmap
+          POSTGRES_DB: flightmap_test
+          TZ: UTC
+          PGTZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username=flightmap --dbname=flightmap_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FLIGHTMAP_TEST_DATABASE_URL: postgres://flightmap:flightmap@127.0.0.1:5432/flightmap_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The repository's SQL — migrations, ingestion, retention, insights — runs
+      # against a real PostgreSQL here; the unit suites only assert on strings.
+      - run: npm run test:integration
+
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -61,6 +93,7 @@ jobs:
           curl --fail --silent --show-error \
             --request PATCH http://127.0.0.1:8080/api/v1/settings \
             --header 'content-type: application/json' \
+            --header 'origin: http://127.0.0.1:8080' \
             --data '{"receiverBaseUrl":"http://fake-receiver:8081/data","pollIntervalMs":1000,"receiverStatsIntervalMs":10000,"metadataUpdatesEnabled":false}'
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8080/api/v1/aircraft/live | grep --quiet '"icao":"400001"'; then

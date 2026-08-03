@@ -111,6 +111,20 @@ npm run build
 npm run db:migrate
 ```
 
+The repository's SQL — migrations, ingestion, retention, and the insight
+aggregates — is covered by a suite that runs against a real PostgreSQL. It
+skips itself unless a throwaway database is pointed at it, which is why
+`npm run test` needs no services:
+
+```sh
+docker run --rm -d --name flightmap-itest -p 55433:5432 \
+  -e POSTGRES_USER=flightmap -e POSTGRES_PASSWORD=flightmap \
+  -e POSTGRES_DB=flightmap_test -e TZ=UTC -e PGTZ=UTC postgres:18-alpine
+FLIGHTMAP_TEST_DATABASE_URL=postgres://flightmap:flightmap@127.0.0.1:55433/flightmap_test \
+  npm run test:integration
+docker rm -f flightmap-itest
+```
+
 ## Container images
 
 GitHub Actions builds the application for `linux/amd64` and `linux/arm64`.

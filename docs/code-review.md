@@ -135,7 +135,7 @@ items assume the documented trusted-LAN model.
 
 ## P4 — Testing gaps
 
-- [ ] **16. The 3,044-line repository — every line of SQL in the product — is
+- [x] **16. The 3,044-line repository — every line of SQL in the product — is
       never executed against PostgreSQL in CI.** `test/repository.test.ts` mocks
       `database.query` and asserts on SQL substrings. Coverage thresholds are
       48% for the server and **13%** for the web app (`vitest.config.ts` in each
@@ -147,7 +147,7 @@ items assume the documented trusted-LAN model.
       Testcontainers) for `ingestSnapshot`, session lifecycle, maintenance, and
       the insight aggregates. Raise web thresholds toward 40%+.
 
-- [ ] **17. Maintenance and insight backfill have no test against realistic data
+- [x] **17. Maintenance and insight backfill have no test against realistic data
       volumes** — exactly the code paths behind items 2 and 3.
 
 ---
