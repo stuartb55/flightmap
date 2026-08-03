@@ -99,6 +99,7 @@ export class ReceiverCollector {
   private started = false;
   private lastPublishedHealth = "unknown";
   private lastSessionSweepAt = 0;
+  private lastExpirySweepAt = 0;
 
   constructor(
     private readonly config: Pick<
@@ -228,6 +229,7 @@ export class ReceiverCollector {
             removals = await this.repository.removeExpiredCurrent(
               snapshot.recordedAt
             );
+            this.lastExpirySweepAt = Date.now();
           } catch (error) {
             this.logger.warn(
               { error },
@@ -331,7 +333,12 @@ export class ReceiverCollector {
       const health = this.state.health();
       let removals: string[] = [];
       try {
-        removals = await this.repository.removeExpiredCurrent();
+        // The aircraft loop sweeps after every snapshot it ingests; this loop
+        // only has to cover the case where snapshots have stopped arriving.
+        if (Date.now() - this.lastExpirySweepAt >= 2_000) {
+          removals = await this.repository.removeExpiredCurrent();
+          this.lastExpirySweepAt = Date.now();
+        }
         if (Date.now() - this.lastSessionSweepAt >= 60_000) {
           await this.repository.closeInactiveSessions();
           this.lastSessionSweepAt = Date.now();

@@ -71,7 +71,9 @@ describe("insight rollup boundaries", () => {
     const leaderCall = query.mock.calls.find(([sql]) =>
       sql.includes("reference_designators")
     );
-    expect(leaderCall?.[0]).toContain("unnest(f3.callsigns)");
+    expect(leaderCall?.[0]).toContain("activity_callsigns");
+    // A correlated subquery per ICAO made this the slowest query in the app.
+    expect(leaderCall?.[0]).not.toContain("WHERE f2.icao = f.icao");
     expect(JSON.parse(String(leaderCall?.[1]?.[2]))).toContainEqual({
       designator: "EZY",
       operator: "easyJet"

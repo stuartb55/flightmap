@@ -70,7 +70,7 @@ items assume the documented trusted-LAN model.
 
 ## P2 — Performance
 
-- [ ] **6. Free-text search has no usable index on the tables that grow
+- [x] **6. Free-text search has no usable index on the tables that grow
       forever.** `db/repository.ts:1849-1855` (`summaries`) runs
       `ILIKE '%…%'` against `d.icao`, `array_to_string(d.callsigns,' ')`, and
       metadata columns over `daily_aircraft_summary`, which is retained
@@ -80,18 +80,18 @@ items assume the documented trusted-LAN model.
       `002_search_indexes.sql` covers only registration, description, and
       operator. Search degrades permanently as history accumulates.
 
-- [ ] **7. `position_samples_time_idx` is redundant.**
+- [x] **7. `position_samples_time_idx` is redundant.**
       `db/migrations/001_initial.sql:88` — the primary key already leads with
       `recorded_at` and the table is range-partitioned on it. On the
       highest-volume table in the system this is pure write cost and disk.
 
-- [ ] **8. The insights leaderboard query is quadratic.**
+- [x] **8. The insights leaderboard query is quadratic.**
       `db/repository.ts:2073-2083` and `:2094-2100` run correlated subqueries
       per ICAO against the filtered CTE. Over a 366-day range with thousands of
       distinct aircraft this is the slowest query in the app.
       *Fix:* rewrite as a single grouped aggregate.
 
-- [ ] **9. Stale-aircraft cleanup runs twice per second.**
+- [x] **9. Stale-aircraft cleanup runs twice per second.**
       `ingestion/collector.ts:225` (after each snapshot) and `:331` (health
       loop). One is enough.
 

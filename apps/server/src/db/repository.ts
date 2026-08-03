@@ -1531,20 +1531,25 @@ export class FlightRepository {
        LEFT JOIN aircraft_metadata m ON m.icao = s.icao
        WHERE s.started_at >= $1 AND s.started_at <= $2
          AND ($3::text IS NULL OR s.icao = $3)
-         AND ($4::text IS NULL OR EXISTS (
-           SELECT 1 FROM unnest(s.callsigns) c WHERE c ILIKE '%' || $4 || '%'
+         AND ($4::text IS NULL OR (
+           -- The indexable predicate first; the per-callsign check keeps a
+           -- pattern from matching across two joined callsigns.
+           flightmap_callsigns_text(s.callsigns) LIKE '%' || lower($4) || '%'
+           AND EXISTS (
+             SELECT 1 FROM unnest(s.callsigns) c WHERE c ILIKE '%' || $4 || '%'
+           )
          ))
-         AND ($5::text IS NULL OR m.registration ILIKE '%' || $5 || '%')
-         AND ($6::text IS NULL OR m.type_code ILIKE '%' || $6 || '%')
-         AND ($7::text IS NULL OR m.operator ILIKE '%' || $7 || '%')
+         AND ($5::text IS NULL OR lower(m.registration) LIKE '%' || lower($5) || '%')
+         AND ($6::text IS NULL OR lower(m.type_code) LIKE '%' || lower($6) || '%')
+         AND ($7::text IS NULL OR lower(m.operator) LIKE '%' || lower($7) || '%')
          AND (
            $8::text IS NULL
-           OR s.icao ILIKE '%' || $8 || '%'
-           OR array_to_string(s.callsigns, ' ') ILIKE '%' || $8 || '%'
-           OR m.registration ILIKE '%' || $8 || '%'
-           OR m.type_code ILIKE '%' || $8 || '%'
-           OR m.description ILIKE '%' || $8 || '%'
-           OR m.operator ILIKE '%' || $8 || '%'
+           OR lower(s.icao::text) LIKE '%' || lower($8) || '%'
+           OR flightmap_callsigns_text(s.callsigns) LIKE '%' || lower($8) || '%'
+           OR lower(m.registration) LIKE '%' || lower($8) || '%'
+           OR lower(m.type_code) LIKE '%' || lower($8) || '%'
+           OR lower(m.description) LIKE '%' || lower($8) || '%'
+           OR lower(m.operator) LIKE '%' || lower($8) || '%'
          )
          AND (
            $9::text IS NULL OR $9 = 'any' AND EXISTS (
@@ -1883,11 +1888,12 @@ export class FlightRepository {
          AND ($2::date IS NULL OR d.summary_date <= $2)
          AND ($3::text IS NULL OR d.icao = $3)
          AND (
-           $4::text IS NULL OR d.icao ILIKE '%' || $4 || '%'
-           OR array_to_string(d.callsigns, ' ') ILIKE '%' || $4 || '%'
-           OR m.registration ILIKE '%' || $4 || '%'
-           OR m.type_code ILIKE '%' || $4 || '%'
-           OR m.operator ILIKE '%' || $4 || '%'
+           $4::text IS NULL
+           OR lower(d.icao::text) LIKE '%' || lower($4) || '%'
+           OR flightmap_callsigns_text(d.callsigns) LIKE '%' || lower($4) || '%'
+           OR lower(m.registration) LIKE '%' || lower($4) || '%'
+           OR lower(m.type_code) LIKE '%' || lower($4) || '%'
+           OR lower(m.operator) LIKE '%' || lower($4) || '%'
          )
          AND (
            $5::date IS NULL OR
@@ -2099,42 +2105,55 @@ export class FlightRepository {
          FROM daily_aircraft_summary
          WHERE summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
            AND summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)`;
+    // Sessions and callsigns are grouped once per ICAO rather than recomputed
+    // by a correlated subquery for every row of the leaderboard.
     const activityCte = hourly
       ? `WITH filtered AS (
            SELECT * FROM hourly_aircraft_activity
            WHERE bucket_hour >= $1 AND bucket_hour < $2
-         ), activity AS (
+         ), activity_totals AS (
            SELECT f.icao, sum(f.reports) AS reports,
-                  sum(f.positioned_reports) AS positioned_reports,
-                  (SELECT count(DISTINCT s.session_id)
-                   FROM filtered f2
-                   CROSS JOIN LATERAL unnest(f2.session_ids) AS s(session_id)
-                   WHERE f2.icao = f.icao) AS sessions,
-                  ARRAY(
-                    SELECT DISTINCT trim(c.callsign)
-                    FROM filtered f3
-                    CROSS JOIN LATERAL unnest(f3.callsigns) AS c(callsign)
-                    WHERE f3.icao = f.icao
-                      AND NULLIF(trim(c.callsign), '') IS NOT NULL
-                  ) AS callsigns
+                  sum(f.positioned_reports) AS positioned_reports
            FROM filtered f GROUP BY f.icao
+         ), activity_sessions AS (
+           SELECT f.icao, count(DISTINCT s.session_id) AS sessions
+           FROM filtered f
+           CROSS JOIN LATERAL unnest(f.session_ids) AS s(session_id)
+           GROUP BY f.icao
+         ), activity_callsigns AS (
+           SELECT f.icao, array_agg(DISTINCT trim(c.callsign)) AS callsigns
+           FROM filtered f
+           CROSS JOIN LATERAL unnest(f.callsigns) AS c(callsign)
+           WHERE NULLIF(trim(c.callsign), '') IS NOT NULL
+           GROUP BY f.icao
+         ), activity AS (
+           SELECT t.icao, t.reports, t.positioned_reports,
+                  COALESCE(s.sessions, 0) AS sessions,
+                  COALESCE(c.callsigns, '{}'::text[]) AS callsigns
+           FROM activity_totals t
+           LEFT JOIN activity_sessions s ON s.icao = t.icao
+           LEFT JOIN activity_callsigns c ON c.icao = t.icao
          )`
       : `WITH filtered AS (
            SELECT * FROM daily_aircraft_summary
            WHERE summary_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
              AND summary_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
-         ), activity AS (
+         ), activity_totals AS (
            SELECT f.icao, sum(f.observations) AS reports,
                   sum(f.positioned_observations) AS positioned_reports,
-                  sum(f.session_count) AS sessions,
-                  ARRAY(
-                    SELECT DISTINCT trim(c.callsign)
-                    FROM filtered f2
-                    CROSS JOIN LATERAL unnest(f2.callsigns) AS c(callsign)
-                    WHERE f2.icao = f.icao
-                      AND NULLIF(trim(c.callsign), '') IS NOT NULL
-                  ) AS callsigns
+                  sum(f.session_count) AS sessions
            FROM filtered f GROUP BY f.icao
+         ), activity_callsigns AS (
+           SELECT f.icao, array_agg(DISTINCT trim(c.callsign)) AS callsigns
+           FROM filtered f
+           CROSS JOIN LATERAL unnest(f.callsigns) AS c(callsign)
+           WHERE NULLIF(trim(c.callsign), '') IS NOT NULL
+           GROUP BY f.icao
+         ), activity AS (
+           SELECT t.icao, t.reports, t.positioned_reports, t.sessions,
+                  COALESCE(c.callsigns, '{}'::text[]) AS callsigns
+           FROM activity_totals t
+           LEFT JOIN activity_callsigns c ON c.icao = t.icao
          )`;
     const leadersSql = `${activityCte}, reference_designators AS (
          SELECT upper(d.designator) AS designator, d.operator
