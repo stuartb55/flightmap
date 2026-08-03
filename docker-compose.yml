@@ -41,6 +41,7 @@ services:
     environment:
       APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
       APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
+      APP_TRUST_PROXY: ${APP_TRUST_PROXY:-false}
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-flightmap}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-flightmap}}
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"

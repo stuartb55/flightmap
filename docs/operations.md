@@ -129,6 +129,23 @@ configured origins, and provide authentication if remote or untrusted-network
 access is required. Flightmap also applies fixed-window HTTP and WebSocket rate
 limits, but these are safeguards rather than an identity system.
 
+State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) require an `Origin`
+header that matches the request Host or an entry in `APP_ALLOWED_ORIGINS`;
+requests without one are rejected. Scripted API clients must send it.
+
+Behind a reverse proxy, every client otherwise shares one rate-limit bucket
+because `request.ip` is the proxy's address. Set `APP_TRUST_PROXY` to `true`,
+or to a comma-separated list of trusted proxy addresses/CIDRs, so
+`X-Forwarded-For` is used instead. Leave it unset (`false`) when the app is
+reached directly — a trusted proxy header from an untrusted client would
+defeat rate limiting. Concurrent live WebSocket connections are capped at 64
+in total and 8 per client address.
+
+The Content-Security-Policy allows the origin of the configured map style URL
+and nothing else remote. A style that loads its tiles, sprites or glyphs from a
+different origin needs that origin adding to `contentSecurityPolicy` in
+`apps/server/src/app.ts`.
+
 Custom non-Compose deployments can supply `DATABASE_SSL=true` and a mounted
 `DATABASE_SSL_CA_FILE`; certificate verification remains enabled. Configure
 database volume capacity on the Settings page to expose utilization in system

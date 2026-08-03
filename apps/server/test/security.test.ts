@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { contentSecurityPolicy } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
+import { appSettingsPatchSchema } from "../src/settings.js";
 import {
   FixedWindowRateLimiter,
   RequestSecurity
@@ -62,5 +64,54 @@ describe("fixed-window rate limiting", () => {
       expect(limiter.consume(`client-${index}`, 0)).toBe(true);
     }
     expect(limiter.consume("current-client", 1_001)).toBe(true);
+  });
+});
+
+describe("content security policy", () => {
+  it("allows the configured map style origin instead of all of http and https", () => {
+    const policy = contentSecurityPolicy("https://tiles.openfreemap.org/styles/dark");
+    expect(policy).toContain("connect-src 'self' ws: wss: https://tiles.openfreemap.org");
+    expect(policy).toContain("img-src 'self' data: blob: https://tiles.openfreemap.org");
+    expect(policy).not.toContain(" http:");
+  });
+
+  it("falls back to same-origin only when the map style URL is unusable", () => {
+    const policy = contentSecurityPolicy("not a url");
+    expect(policy).toContain("connect-src 'self' ws: wss:;");
+  });
+});
+
+describe("settings URL schemes", () => {
+  it("accepts http and https and rejects everything else", () => {
+    expect(
+      appSettingsPatchSchema.safeParse({
+        receiverBaseUrl: "http://receiver.local/data"
+      }).success
+    ).toBe(true);
+    expect(
+      appSettingsPatchSchema.safeParse({
+        receiverBaseUrl: "file:///etc/passwd"
+      }).success
+    ).toBe(false);
+    expect(
+      appSettingsPatchSchema.safeParse({
+        metadataUrl: "gopher://example.test/db.csv"
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("proxy trust", () => {
+  it("is off by default and configurable for a reverse proxy deployment", () => {
+    expect(loadConfig({ NODE_ENV: "test" }).trustProxy).toBe(false);
+    expect(
+      loadConfig({ NODE_ENV: "test", APP_TRUST_PROXY: "true" }).trustProxy
+    ).toBe(true);
+    expect(
+      loadConfig({
+        NODE_ENV: "test",
+        APP_TRUST_PROXY: "10.0.0.0/8"
+      }).trustProxy
+    ).toBe("10.0.0.0/8");
   });
 });

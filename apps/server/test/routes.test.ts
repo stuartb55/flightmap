@@ -67,6 +67,12 @@ function dependencies() {
   };
 }
 
+// Mutations now require an Origin that matches the Host header.
+const sameOrigin = {
+  host: "localhost:8080",
+  origin: "http://localhost:8080"
+} as const;
+
 async function app(): Promise<FastifyInstance> {
   return buildApp({
     config: loadConfig({
@@ -111,6 +117,7 @@ describe("structured route errors", () => {
     const update = await server.inject({
       method: "PATCH",
       url: "/api/v1/settings",
+      headers: sameOrigin,
       payload: { receiverName: "Roof receiver" }
     });
     expect(update.statusCode).toBe(200);
@@ -195,6 +202,7 @@ describe("structured route errors", () => {
     const response = await server.inject({
       method: "POST",
       url: "/api/v1/saved-views",
+      headers: sameOrigin,
       payload: {
         name: "Broken view",
         configuration: { surface: "live", filters: {} }
@@ -215,6 +223,7 @@ describe("structured route errors", () => {
     const invalid = await server.inject({
       method: "POST",
       url: "/api/v1/alerts/rules/preview",
+      headers: sameOrigin,
       payload: { name: "No predicate" }
     });
     expect(invalid.statusCode).toBe(400);
@@ -223,6 +232,7 @@ describe("structured route errors", () => {
     const valid = await server.inject({
       method: "POST",
       url: "/api/v1/alerts/rules/preview",
+      headers: sameOrigin,
       payload: { name: "Nearby", maximumDistanceNm: 20 }
     });
     expect(valid.statusCode).toBe(200);
@@ -390,7 +400,7 @@ describe("structured route errors", () => {
     const response = await server.inject({
       method: "PUT",
       url: "/api/v1/watchlist/abc123",
-      headers: { "content-type": "application/json" },
+      headers: { ...sameOrigin, "content-type": "application/json" },
       payload: '{"label":'
     });
     expect(response.statusCode).toBe(400);
@@ -406,6 +416,20 @@ describe("request security", () => {
     const server = await app();
     expect((await server.inject("/api/v1/status")).statusCode).toBe(200);
     expect((await server.inject("/api/v1/auth/session")).statusCode).toBe(404);
+    await server.close();
+  });
+
+  it("rejects a mutation that sends no Origin header at all", async () => {
+    const server = await app();
+    const response = await server.inject({
+      method: "PUT",
+      url: "/api/v1/watchlist/abc123",
+      payload: {}
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: { code: "ORIGIN_NOT_ALLOWED" }
+    });
     await server.close();
   });
 

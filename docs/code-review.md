@@ -107,27 +107,27 @@ items assume the documented trusted-LAN model.
 
 ## P3 — Security hardening (within the no-auth LAN model)
 
-- [ ] **11. Mutations pass when the `Origin` header is absent.**
+- [x] **11. Mutations pass when the `Origin` header is absent.**
       `app.ts:90-91` checks the origin only `if (request.headers.origin)`.
       Browsers always send it cross-origin so exploitability is low, but this
       should fail closed. One-line fix.
 
-- [ ] **12. Rate limiting collapses behind the recommended reverse proxy.**
+- [x] **12. Rate limiting collapses behind the recommended reverse proxy.**
       `app.ts:52` sets `trustProxy: false`, so `request.ip` is the proxy's
       address and every remote user shares one 300/min bucket (`app.ts:55-57`).
       Either document this or make `trustProxy` configurable.
 
-- [ ] **13. `receiverBaseUrl` and `metadataUrl` accept any URL scheme.**
+- [x] **13. `receiverBaseUrl` and `metadataUrl` accept any URL scheme.**
       `settings.ts:20` and `:44` — Zod's `.url()` permits `file:`, `gopher:`,
       and friends. Restrict to `http`/`https` explicitly.
 
-- [ ] **14. CSP is broader than it needs to be.** `app.ts:114-115` allows all of
+- [x] **14. CSP is broader than it needs to be.** `app.ts:114-115` allows all of
       `http:` and `https:` in `connect-src` and `img-src` to accommodate an
       arbitrary map style URL.
       *Fix:* derive the allowed origin from the configured `mapStyleUrl` at
       render time.
 
-- [ ] **15. No cap on concurrent WebSocket connections.** Only 30 *new*
+- [x] **15. No cap on concurrent WebSocket connections.** Only 30 *new*
       connections per minute per IP are limited (`app.ts:57`). Combined with
       item 1, a handful of stuck clients is expensive.
 

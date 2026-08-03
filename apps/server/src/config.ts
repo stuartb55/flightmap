@@ -59,7 +59,20 @@ const configSchema = z
     SERVE_WEB: z
       .enum(["true", "false"])
       .default("true")
-      .transform((value) => value === "true")
+      .transform((value) => value === "true"),
+    // "false" (default), "true", or a comma-separated list of trusted proxy
+    // addresses/CIDRs. Without this every client behind a reverse proxy shares
+    // one rate-limit bucket, because request.ip is the proxy's address.
+    APP_TRUST_PROXY: z
+      .string()
+      .default("false")
+      .transform((value): boolean | string =>
+        value.trim() === "true"
+          ? true
+          : value.trim() === "false" || value.trim() === ""
+            ? false
+            : value.trim()
+      )
   })
   .superRefine((config, context) => {
     if (
@@ -101,6 +114,7 @@ type BootConfig = Readonly<{
   databaseSslCaFile: string | null;
   webDistDir: string;
   serveWeb: boolean;
+  trustProxy: boolean | string;
 }>;
 
 export type Config = BootConfig & Readonly<AppSettings>;
@@ -131,6 +145,7 @@ export function loadConfig(
       : null,
     webDistDir: resolve(config.WEB_DIST_DIR),
     serveWeb: config.SERVE_WEB,
+    trustProxy: config.APP_TRUST_PROXY,
     ...defaultAppSettings,
     rangeRingsNm: [...defaultAppSettings.rangeRingsNm]
   };

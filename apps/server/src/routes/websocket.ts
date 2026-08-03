@@ -6,12 +6,23 @@ import {
   RequestSecurity
 } from "../security.js";
 
+/** Every open socket receives every delta, so concurrency is capped as well
+ *  as connection rate. A LAN install has a handful of clients. */
+const MAX_CONNECTIONS = 64;
+const MAX_CONNECTIONS_PER_IP = 8;
+
 export async function registerWebSocketRoute(
   app: FastifyInstance,
   hub: LiveHub,
   security: RequestSecurity,
-  connectionLimiter: FixedWindowRateLimiter
+  connectionLimiter: FixedWindowRateLimiter,
+  limits: { total?: number; perIp?: number } = {}
 ): Promise<void> {
+  const maxConnections = limits.total ?? MAX_CONNECTIONS;
+  const maxPerIp = limits.perIp ?? MAX_CONNECTIONS_PER_IP;
+  let openConnections = 0;
+  const openByIp = new Map<string, number>();
+
   await app.register(websocket, {
     options: {
       maxPayload: 1024,
@@ -34,6 +45,14 @@ export async function registerWebSocketRoute(
         socket.close(1008, "WebSocket policy rejected");
         return;
       }
+      const ip = request.ip;
+      if (
+        openConnections >= maxConnections ||
+        (openByIp.get(ip) ?? 0) >= maxPerIp
+      ) {
+        socket.close(1013, "Too many live connections");
+        return;
+      }
       const rawSince = (request.query as { since?: unknown }).since;
       const since =
         typeof rawSince === "string" && /^\d+$/.test(rawSince)
@@ -46,6 +65,18 @@ export async function registerWebSocketRoute(
         socket.close(1008, "Invalid sequence");
         return;
       }
+
+      openConnections += 1;
+      openByIp.set(ip, (openByIp.get(ip) ?? 0) + 1);
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        openConnections -= 1;
+        const remaining = (openByIp.get(ip) ?? 1) - 1;
+        if (remaining > 0) openByIp.set(ip, remaining);
+        else openByIp.delete(ip);
+      };
 
       const unsubscribe = hub.subscribe((_message, encoded) => {
         if (socket.readyState === socket.OPEN) {
@@ -64,14 +95,13 @@ export async function registerWebSocketRoute(
         if (socket.readyState === socket.OPEN) socket.ping();
       }, 30_000);
       keepalive.unref();
-      socket.once("close", () => {
+      const teardown = (): void => {
         clearInterval(keepalive);
         unsubscribe();
-      });
-      socket.once("error", () => {
-        clearInterval(keepalive);
-        unsubscribe();
-      });
+        release();
+      };
+      socket.once("close", teardown);
+      socket.once("error", teardown);
     }
   );
 }

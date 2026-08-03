@@ -16,12 +16,23 @@ const timeZoneSchema = z
     }
   }, "Enter a valid IANA time zone, such as Europe/London");
 
+/** Zod's `.url()` also accepts file:, gopher: and friends. */
+const httpUrlSchema = z
+  .string()
+  .url()
+  .max(2_000)
+  .refine((value) => {
+    try {
+      return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  }, "Enter an http:// or https:// URL");
+
 const settingsShape = {
-  receiverBaseUrl: z
-    .string()
-    .url()
-    .max(2_000)
-    .transform((value) => value.replace(/\/+$/, "")),
+  receiverBaseUrl: httpUrlSchema.transform((value) =>
+    value.replace(/\/+$/, "")
+  ),
   receiverName: z.string().trim().min(1).max(100),
   receiverLatitude: z.number().min(-90).max(90).nullable(),
   receiverLongitude: z.number().min(-180).max(180).nullable(),
@@ -30,7 +41,7 @@ const settingsShape = {
   receiverInfoIntervalMs: z.number().int().min(10_000).max(86_400_000),
   receiverStatsIntervalMs: z.number().int().min(10_000).max(86_400_000),
   displayTimeZone: timeZoneSchema,
-  mapStyleUrl: z.string().url().max(2_000),
+  mapStyleUrl: httpUrlSchema,
   rangeRingsNm: z
     .array(z.number().positive().max(1_000))
     .min(1)
@@ -41,7 +52,7 @@ const settingsShape = {
   historyRetentionDays: z.number().int().min(1).max(365),
   sessionGapSeconds: z.number().int().min(60).max(3_600),
   currentAircraftTtlSeconds: z.number().int().min(15).max(3_600),
-  metadataUrl: z.string().url().max(2_000),
+  metadataUrl: httpUrlSchema,
   metadataCheckIntervalMs: z.number().int().min(60_000).max(2_592_000_000),
   metadataTimeoutMs: z.number().int().min(1_000).max(300_000),
   metadataMinRows: z.number().int().min(1).max(10_000_000),

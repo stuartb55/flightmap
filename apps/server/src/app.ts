@@ -25,6 +25,35 @@ export type BuildAppOptions = {
   loggerInstance?: FastifyBaseLogger;
 };
 
+/**
+ * The map style is the only remote origin the client contacts, so the policy
+ * names it instead of allowing all of `http:` and `https:`. A style hosted on
+ * one origin but serving tiles, sprites or glyphs from another needs that
+ * origin adding here.
+ */
+export function contentSecurityPolicy(mapStyleUrl: string): string {
+  let mapOrigin = "";
+  try {
+    const url = new URL(mapStyleUrl);
+    if (["http:", "https:"].includes(url.protocol)) mapOrigin = ` ${url.origin}`;
+  } catch {
+    mapOrigin = "";
+  }
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: blob:${mapOrigin}`,
+    `connect-src 'self' ws: wss:${mapOrigin}`,
+    "font-src 'self' data:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+  ].join("; ");
+}
+
 export function validationErrorMessage(error: ZodError): string {
   const issue = error.issues[0];
   if (!issue) return "The request was invalid";
@@ -49,7 +78,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     bodyLimit: 64 * 1024,
     requestTimeout: 30_000,
     keepAliveTimeout: 72_000,
-    trustProxy: false
+    trustProxy: options.config.trustProxy
   });
   const security = new RequestSecurity(options.config);
   const apiLimiter = new FixedWindowRateLimiter(300, 60_000);
@@ -87,10 +116,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
           }
         });
       }
-      if (
-        request.headers.origin &&
-        !security.originAllowed(request.headers.origin, request.headers.host)
-      ) {
+      // Fail closed: a mutation without an Origin header is rejected too.
+      if (!security.originAllowed(request.headers.origin, request.headers.host)) {
         return reply.code(403).send({
           error: {
             code: "ORIGIN_NOT_ALLOWED",
@@ -107,19 +134,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header("referrer-policy", "same-origin");
     reply.header(
       "content-security-policy",
-      [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https: http:",
-        "connect-src 'self' ws: wss: https: http:",
-        "font-src 'self' data:",
-        "worker-src 'self' blob:",
-        "object-src 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-        "frame-ancestors 'none'"
-      ].join("; ")
+      contentSecurityPolicy(options.config.mapStyleUrl)
     );
     reply.header(
       "permissions-policy",
