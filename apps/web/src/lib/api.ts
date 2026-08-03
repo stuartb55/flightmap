@@ -5,20 +5,34 @@ import type {
   TrackResponse,
 } from '../types'
 import type {
+  AircraftActivityResponse,
+  CoverageCellDetailResponse,
+  CustomAlertRule,
+  CustomAlertRuleInput,
+  CustomAlertRulePatch,
   InsightCoverageResponse,
   InsightOverview,
+  InsightPatternsResponse,
+  RangeProfileResponse,
   SavedView,
   SavedViewInput,
   SavedViewPatch,
 } from '@flightmap/shared'
 import {
+  aircraftActivityResponseSchema,
   aircraftDetailResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
+  coverageCellDetailResponseSchema,
+  customAlertRulePreviewSchema,
+  customAlertRuleSchema,
+  customAlertRulesResponseSchema,
   dismissAlertsResponseSchema,
   liveAircraftResponseSchema,
   insightCoverageResponseSchema,
   insightOverviewSchema,
+  insightPatternsResponseSchema,
+  rangeProfileResponseSchema,
   savedViewSchema,
   savedViewsResponseSchema,
   sessionsResponseSchema,
@@ -166,10 +180,27 @@ export const api = {
     ).then(adaptAircraftDetail)
   },
 
+  aircraftActivity(
+    icao: string,
+    range: { from: string; to: string; bucket: 'day' | 'month' },
+    signal?: AbortSignal,
+  ) {
+    return request<AircraftActivityResponse>(
+      `/aircraft/${encodeURIComponent(icao)}/activity${queryString(range)}`,
+      { signal },
+      aircraftActivityResponseSchema,
+    )
+  },
+
   sessions(filters: HistoryFilters, cursor?: string | null, signal?: AbortSignal) {
     return request<{ items: WireSession[]; nextCursor: string | null }>(
       `/sessions${queryString({
         q: filters.query,
+        icao: filters.icao,
+        callsign: filters.callsign,
+        registration: filters.registration,
+        type: filters.type,
+        operator: filters.operator,
         from: filters.from ? dateTimeInputToIso(filters.from) : '',
         to: filters.to ? dateTimeInputToIso(filters.to) : '',
         alert: filters.alert,
@@ -211,6 +242,7 @@ export const api = {
       session: WireSession
       resolution: TrackResponse['resolution']
       points: WireTrackPoint[]
+      events: TrackResponse['events']
       truncated: boolean
     }>(
       `/sessions/${encodeURIComponent(id)}/track${queryString({
@@ -251,6 +283,26 @@ export const api = {
       },
       dismissAlertsResponseSchema,
     ).then((result) => result.items.map(adaptAlert))
+  },
+
+  customAlertRules(signal?: AbortSignal) {
+    return request<{ items: CustomAlertRule[] }>('/alerts/rules', { signal }, customAlertRulesResponseSchema).then((response) => response.items)
+  },
+
+  previewCustomAlertRule(input: CustomAlertRuleInput) {
+    return request<{ matches: Array<{ icao: string; callsign: string | null; registration: string | null }> }>('/alerts/rules/preview', { method: 'POST', body: JSON.stringify(input) }, customAlertRulePreviewSchema)
+  },
+
+  createCustomAlertRule(input: CustomAlertRuleInput) {
+    return request<CustomAlertRule>('/alerts/rules', { method: 'POST', body: JSON.stringify(input) }, customAlertRuleSchema)
+  },
+
+  updateCustomAlertRule(id: string, patch: CustomAlertRulePatch) {
+    return request<CustomAlertRule>(`/alerts/rules/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }, customAlertRuleSchema)
+  },
+
+  deleteCustomAlertRule(id: string) {
+    return request<void>(`/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   watchlist(signal?: AbortSignal) {
@@ -303,6 +355,39 @@ export const api = {
       `/insights/coverage${queryString(range)}`,
       { signal },
       insightCoverageResponseSchema,
+    )
+  },
+
+  insightPatterns(
+    range: { from: string; to: string; timeZone: string; compare?: boolean },
+    signal?: AbortSignal,
+  ) {
+    return request<InsightPatternsResponse>(
+      `/insights/patterns${queryString({ ...range, compare: range.compare ? 'true' : undefined })}`,
+      { signal },
+      insightPatternsResponseSchema,
+    )
+  },
+
+  rangeProfile(
+    range: { from: string; to: string; altitudeBand: 'all' | 'ground' | 'low' | 'medium' | 'high'; compare?: boolean },
+    signal?: AbortSignal,
+  ) {
+    return request<RangeProfileResponse>(
+      `/insights/range-profile${queryString({ ...range, compare: range.compare ? 'true' : undefined })}`,
+      { signal },
+      rangeProfileResponseSchema,
+    )
+  },
+
+  coverageCellDetail(
+    range: { from: string; to: string; latitude: number; longitude: number },
+    signal?: AbortSignal,
+  ) {
+    return request<CoverageCellDetailResponse>(
+      `/insights/coverage-cell${queryString(range)}`,
+      { signal },
+      coverageCellDetailResponseSchema,
     )
   },
 

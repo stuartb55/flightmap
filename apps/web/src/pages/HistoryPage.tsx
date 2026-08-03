@@ -16,11 +16,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { RadarMap } from '../components/RadarMap'
+import { FlightProfile } from '../components/FlightProfile'
 import type { RadarMapHandle } from '../components/RadarMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { isFormTarget } from '../components/KeyboardShortcuts'
 import { api } from '../lib/api'
-import { useLocation } from '../lib/router'
+import { Link, useLocation } from '../lib/router'
 import { useCoverageCells, useMapLayers } from '../lib/map-preferences'
 import {
   dateTimeInputToIso,
@@ -45,6 +46,11 @@ function defaultFilters(query = ''): HistoryFilters {
   const now = new Date()
   return {
     query,
+    icao: '',
+    callsign: '',
+    registration: '',
+    type: '',
+    operator: '',
     from: formatDateTimeInput(new Date(now.getTime() - 6 * 60 * 60_000)),
     to: formatDateTimeInput(now),
     alert: '',
@@ -54,11 +60,22 @@ function defaultFilters(query = ''): HistoryFilters {
 function filtersFromSearch(search: string): HistoryFilters {
   const params = new URLSearchParams(search)
   const defaults = defaultFilters(params.get('aircraft') ?? '')
+  const inputDate = (value: string | null, fallback: string) => {
+    if (!value) return fallback
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return value
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? fallback : formatDateTimeInput(parsed)
+  }
   const alert = params.get('alert')
   return {
     query: params.get('q') ?? defaults.query,
-    from: params.get('from') ?? defaults.from,
-    to: params.get('to') ?? defaults.to,
+    icao: params.get('icao') ?? defaults.icao,
+    callsign: params.get('callsign') ?? defaults.callsign,
+    registration: params.get('registration') ?? defaults.registration,
+    type: params.get('type') ?? defaults.type,
+    operator: params.get('operator') ?? defaults.operator,
+    from: inputDate(params.get('from'), defaults.from),
+    to: inputDate(params.get('to'), defaults.to),
     alert: ['emergency_squawk', 'emergency_state', 'watchlist'].includes(alert ?? '')
       ? (alert as HistoryFilters['alert'])
       : '',
@@ -68,6 +85,11 @@ function filtersFromSearch(search: string): HistoryFilters {
 function filtersSearch(filters: HistoryFilters): string {
   const params = new URLSearchParams()
   if (filters.query.trim()) params.set('q', filters.query.trim())
+  if (filters.icao.trim()) params.set('icao', filters.icao.trim())
+  if (filters.callsign.trim()) params.set('callsign', filters.callsign.trim())
+  if (filters.registration.trim()) params.set('registration', filters.registration.trim())
+  if (filters.type.trim()) params.set('type', filters.type.trim())
+  if (filters.operator.trim()) params.set('operator', filters.operator.trim())
   if (filters.from) params.set('from', filters.from)
   if (filters.to) params.set('to', filters.to)
   if (filters.alert) params.set('alert', filters.alert)
@@ -158,6 +180,7 @@ function SessionCard({
         </span>
         <ChevronRight size={16} className="session-chevron" />
       </button>
+      <Link className="session-profile-link" to={`/aircraft/${session.icao}`}>Aircraft profile</Link>
     </article>
   )
 }
@@ -183,6 +206,7 @@ function SummaryCard({ summary }: { summary: HistoricalSummary }) {
           ? 'Daily summary · narrow the date range to select detailed tracks'
           : 'Summary retained · one-second track no longer available'}
       </p>
+      <Link className="session-profile-link" to={`/aircraft/${summary.icao}`}>Aircraft profile</Link>
     </article>
   )
 }
@@ -198,6 +222,7 @@ export function HistoryPage() {
   const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null)
   const [summaryNextCursor, setSummaryNextCursor] = useState<string | null>(null)
   const [tracks, setTracks] = useState<Record<string, TrackResponse>>({})
+  const [focusedTrackId, setFocusedTrackId] = useState<string | null>(null)
   const [trackLoading, setTrackLoading] = useState<Set<string>>(new Set())
   const [sessionLoading, setSessionLoading] = useState(true)
   const [summaryLoading, setSummaryLoading] = useState(true)
@@ -385,6 +410,7 @@ export function HistoryPage() {
           result.status === 'fulfilled' ? [[result.value.session.id, result.value] as const] : [],
         )
         setTracks(Object.fromEntries(restoredTracks))
+        setFocusedTrackId(restoredTracks[0]?.[0] ?? null)
         setReplayTime(restored.replayTime)
         if (restoredTracks.length !== restored.selectedSessionIds.length) {
           setTrackError('One or more shared tracks have expired or are no longer available.')
@@ -416,6 +442,9 @@ export function HistoryPage() {
         delete next[session.id]
         return next
       })
+      if (focusedTrackId === session.id) {
+        setFocusedTrackId(Object.keys(tracks).find((id) => id !== session.id) ?? null)
+      }
       return
     }
     if (!session.hasDetailedTrack) return
@@ -428,6 +457,7 @@ export function HistoryPage() {
     try {
       const track = await api.track(session.id, resolution)
       setTracks((current) => ({ ...current, [session.id]: track }))
+      setFocusedTrackId(session.id)
     } catch (requestError) {
       setTrackError(requestError instanceof Error ? requestError.message : 'Track could not be loaded')
     } finally {
@@ -440,6 +470,7 @@ export function HistoryPage() {
   }
 
   const selectedTracks = useMemo(() => Object.values(tracks), [tracks])
+  const focusedTrack = focusedTrackId ? tracks[focusedTrackId] ?? null : null
   const selectedMetrics = useMemo(() => {
     const uniqueAircraft = new Set(selectedTracks.map((track) => track.session.icao)).size
     const samples = selectedTracks.reduce((total, track) => total + track.points.length, 0)
@@ -526,6 +557,7 @@ export function HistoryPage() {
 
   const clearTracks = () => {
     setTracks({})
+    setFocusedTrackId(null)
     setReplayTime(null)
     setPlaying(false)
   }
@@ -555,6 +587,11 @@ export function HistoryPage() {
     if (configuration.surface !== 'history') return
     const nextFilters: HistoryFilters = {
       query: configuration.filters.query,
+      icao: configuration.filters.icao,
+      callsign: configuration.filters.callsign,
+      registration: configuration.filters.registration,
+      type: configuration.filters.type,
+      operator: configuration.filters.operator,
       from: formatDateTimeInput(new Date(configuration.filters.from)),
       to: formatDateTimeInput(new Date(configuration.filters.to)),
       alert: configuration.filters.alert,
@@ -640,6 +677,16 @@ export function HistoryPage() {
               <option value="watchlist">Watchlist match</option>
             </select>
           </label>
+          <details className="history-advanced-filters">
+            <summary><SlidersHorizontal size={14} /> Exact aircraft filters</summary>
+            <div className="history-filter-grid">
+              <label className="field"><span>ICAO</span><input value={filters.icao} maxLength={6} onChange={(event) => setFilters({ ...filters, icao: event.target.value })} /></label>
+              <label className="field"><span>Callsign</span><input value={filters.callsign} maxLength={16} onChange={(event) => setFilters({ ...filters, callsign: event.target.value })} /></label>
+              <label className="field"><span>Registration</span><input value={filters.registration} maxLength={32} onChange={(event) => setFilters({ ...filters, registration: event.target.value })} /></label>
+              <label className="field"><span>Type</span><input value={filters.type} maxLength={16} onChange={(event) => setFilters({ ...filters, type: event.target.value })} /></label>
+              <label className="field history-filter-wide"><span>Operator</span><input value={filters.operator} maxLength={128} onChange={(event) => setFilters({ ...filters, operator: event.target.value })} /></label>
+            </div>
+          </details>
           <button
             className="primary-button full-width"
             type="submit"
@@ -760,6 +807,11 @@ export function HistoryPage() {
             surface: 'history',
             filters: {
               query: appliedFilters.query,
+              icao: appliedFilters.icao,
+              callsign: appliedFilters.callsign,
+              registration: appliedFilters.registration,
+              type: appliedFilters.type,
+              operator: appliedFilters.operator,
               from: dateTimeInputToIso(appliedFilters.from),
               to: dateTimeInputToIso(appliedFilters.to),
               alert: appliedFilters.alert,
@@ -801,6 +853,7 @@ export function HistoryPage() {
                     <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
                   </button>
                   <span className="track-export-links">
+                    <button type="button" aria-pressed={focusedTrackId === track.session.id} onClick={() => setFocusedTrackId((current) => current === track.session.id ? null : track.session.id)}>Profile</button>
                     <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=csv&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} telemetry as CSV`}>CSV</a>
                     <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=geojson&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} track as GeoJSON`}>GeoJSON</a>
                   </span>
@@ -814,6 +867,17 @@ export function HistoryPage() {
             </dl>
             {selectedMetrics.overlapping ? <p>Tracks overlap in time and can be replayed together.</p> : null}
           </section>
+        ) : null}
+
+        {focusedTrack ? (
+          <FlightProfile
+            track={focusedTrack}
+            replayTime={replayTime}
+            onReplayTime={(time) => {
+              setPlaying(false)
+              setReplayTime(time)
+            }}
+          />
         ) : null}
 
         {replayBounds && replayTime != null ? (

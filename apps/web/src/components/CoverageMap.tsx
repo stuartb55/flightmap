@@ -38,13 +38,14 @@ function fitCoverage(map: MapLibreMap, cells: CoverageCell[]) {
   map.fitBounds(bounds, { padding: 42, maxZoom: 9, duration: 0 })
 }
 
-export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[] }>(function CoverageMap(
-  { cells },
+export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]; onSelectCell?: (cell: CoverageCell) => void }>(function CoverageMap(
+  { cells, onSelectCell },
   forwardedRef,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef(cells)
+  const onSelectCellRef = useRef(onSelectCell)
   const [mapError, setMapError] = useState(false)
 
   useImperativeHandle(forwardedRef, () => ({
@@ -69,6 +70,7 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
       })
     },
   }))
+  onSelectCellRef.current = onSelectCell
 
   useEffect(() => {
     cellsRef.current = cells
@@ -143,6 +145,13 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
           'circle-stroke-opacity': 0.35,
           'circle-stroke-width': 1,
         },
+      })
+      map.on('mouseenter', 'insight-coverage-cells', () => { map.getCanvas().style.cursor = 'pointer' })
+      map.on('mouseleave', 'insight-coverage-cells', () => { map.getCanvas().style.cursor = '' })
+      map.on('click', 'insight-coverage-cells', (event) => {
+        const id = event.features?.[0]?.id
+        const cell = typeof id === 'number' ? cellsRef.current[id] : undefined
+        if (cell) onSelectCellRef.current?.(cell)
       })
       fitCoverage(map, cellsRef.current)
     })

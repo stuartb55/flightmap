@@ -35,7 +35,7 @@ import {
 } from '../lib/aircraft-filter'
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
-import { useCoverageCells, useMapLayers } from '../lib/map-preferences'
+import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
 import { useLive } from '../state/LiveContext'
 import type { AlertEvent, TrackResponse } from '../types'
 
@@ -131,6 +131,7 @@ export function LivePage() {
   const [bannerError, setBannerError] = useState<string | null>(null)
   const [dismissingBanner, setDismissingBanner] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
+  const [mapDisplay, setMapDisplay] = useMapDisplay()
   const coverage = useCoverageCells(mapLayers.coverage)
   const mapRef = useRef<RadarMapHandle>(null)
   const livePageRef = useRef<HTMLDivElement>(null)
@@ -230,7 +231,11 @@ export function LivePage() {
   }, [selected?.sessionId, mapLayers.trails])
 
   const trail = useMemo<TrackResponse[]>(() => {
-    if (selectedTrack) return [selectedTrack]
+    if (selectedTrack) {
+      const latest = Date.parse(selectedTrack.points.at(-1)?.recordedAt ?? selectedTrack.session.startedAt)
+      const cutoff = latest - mapDisplay.trailMinutes * 60_000
+      return [{ ...selectedTrack, points: selectedTrack.points.filter((point) => Date.parse(point.recordedAt) >= cutoff) }]
+    }
     if (!selected?.trail?.length) return []
     return [
       {
@@ -253,10 +258,11 @@ export function LivePage() {
         },
         resolution: '1s',
         points: selected.trail,
+        events: [],
         truncated: false,
       },
     ]
-  }, [selected, selectedTrack])
+  }, [mapDisplay.trailMinutes, selected, selectedTrack])
 
   const selectAircraft = (icao: string) => {
     setSearchParams({ aircraft: icao })
@@ -286,6 +292,7 @@ export function LivePage() {
     setFilters(configuration.filters)
     setSort(configuration.sort)
     setMapLayers(configuration.mapLayers)
+    setMapDisplay(configuration.display ?? defaultMapDisplay)
     if (configuration.viewport) mapRef.current?.applyViewport(configuration.viewport)
   }
 
@@ -464,6 +471,8 @@ export function LivePage() {
           tracks={trail}
           mapLayers={mapLayers}
           onMapLayersChange={setMapLayers}
+          mapDisplay={mapDisplay}
+          onMapDisplayChange={setMapDisplay}
           coverageCells={coverage.cells}
         />
         <SavedViewsControl
@@ -473,6 +482,7 @@ export function LivePage() {
             surface: 'live',
             filters,
             sort,
+            display: mapDisplay,
             mapLayers,
             viewport: mapRef.current?.getViewport() ?? null,
           })}

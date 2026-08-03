@@ -135,6 +135,45 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   await expect(details.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
 })
 
+test('opens aircraft profiles and synchronised flight analysis', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The analysis workflow is exercised once on desktop Chromium')
+  await openFlightmap(page)
+  await page.locator('.desktop-aircraft-panel').getByRole('button', { name: 'Select FLT0001' }).click()
+  await page.locator('.detail-panel').getByRole('link', { name: 'Profile' }).click()
+  await expect(page.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Lifetime aircraft statistics' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'History' }).last().click()
+  const session = page.locator('.session-card button:enabled').first()
+  await expect(session).toBeVisible({ timeout: 15_000 })
+  await session.click()
+  await expect(page.getByRole('region', { name: 'Flight profile and event timeline' })).toBeVisible()
+  await page.getByRole('button', { name: /Receiver distance/ }).click()
+  await expect(page.getByRole('button', { name: /Receiver distance/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('previews, creates, toggles, and removes a custom alert rule', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Installation-wide alert rule mutation is exercised once')
+  // Rules are installation-wide, so a retry must not inherit the rule a failed attempt left behind.
+  const existing = await (await request.get('/api/v1/alerts/rules')).json() as { items: { id: string, name: string }[] }
+  for (const rule of existing.items.filter((item) => item.name === 'E2E nearby aircraft')) {
+    await request.delete(`/api/v1/alerts/rules/${rule.id}`)
+  }
+
+  await page.goto('/alerts')
+  await page.getByLabel('Rule name').fill('E2E nearby aircraft')
+  await page.getByLabel('Maximum distance (nm)').fill('100')
+  await page.getByRole('button', { name: 'Preview matches' }).click()
+  await expect(page.getByText(/current aircraft match|No current aircraft match/)).toBeVisible()
+  await page.getByRole('button', { name: 'Create rule' }).click()
+  const rule = page.locator('.custom-rule-list article').filter({ hasText: 'E2E nearby aircraft' })
+  await expect(rule).toHaveCount(1)
+  await rule.getByRole('checkbox').uncheck()
+  await expect(rule).toContainText('Disabled')
+  await rule.getByRole('button', { name: 'Delete E2E nearby aircraft' }).click()
+  await expect(rule).toHaveCount(0)
+})
+
 test('restores selected history tracks, replay position, and exports after refresh', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The mobile history layout is covered separately')
   await page.goto('/history')
@@ -166,6 +205,7 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   await page.getByRole('button', { name: '24 hours' }).click()
   await page.getByLabel('Compare preceding period').check()
   await expect(page.getByRole('region', { name: 'Period comparison' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Receiver range profile' })).toBeVisible()
 
   await page.getByRole('button', { name: /Saved views/ }).click()
   await page.getByPlaceholder('View name').fill('E2E Insights')

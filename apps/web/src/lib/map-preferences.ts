@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { mapLayerPreferencesSchema, type CoverageCell, type MapLayerPreferences } from '@flightmap/shared'
+import { mapDisplayPreferencesSchema, mapLayerPreferencesSchema, type CoverageCell, type MapDisplayPreferences, type MapLayerPreferences } from '@flightmap/shared'
 import { api } from './api'
 
 const STORAGE_KEY = 'flightmap.map-layers.v1'
+const DISPLAY_STORAGE_KEY = 'flightmap.map-display.v1'
+
+export const defaultMapDisplay: MapDisplayPreferences = { trailMinutes: 15, labelDensity: 'auto' }
 
 export const defaultMapLayers: MapLayerPreferences = {
   coverage: false,
@@ -32,6 +35,21 @@ export function useMapLayers() {
     }
   }, [layers])
   return [layers, setLayers] as const
+}
+
+export function useMapDisplay() {
+  const [display, setDisplay] = useState<MapDisplayPreferences>(() => {
+    try {
+      const result = mapDisplayPreferencesSchema.safeParse(JSON.parse(localStorage.getItem(DISPLAY_STORAGE_KEY) ?? 'null'))
+      return result.success ? result.data : { ...defaultMapDisplay }
+    } catch {
+      return { ...defaultMapDisplay }
+    }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(display)) } catch { /* optional preference */ }
+  }, [display])
+  return [display, setDisplay] as const
 }
 
 export function useCoverageCells(enabled: boolean) {

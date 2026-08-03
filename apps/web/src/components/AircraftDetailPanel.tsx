@@ -177,6 +177,7 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
         </button>
         <div className="aircraft-workflow-links">
           <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>Live</Link>
+          <Link to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}>Profile</Link>
           <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>History</Link>
         </div>
         {aircraft.watched ? (

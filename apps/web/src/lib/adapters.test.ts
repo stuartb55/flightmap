@@ -51,6 +51,7 @@ describe('API adapters', () => {
       rule: 'emergency_squawk',
       state: '7700',
       message: 'General emergency',
+      severity: 'critical',
       occurredAt: '2026-07-29T12:00:00.000Z',
       dismissedAt: null,
       callsign: 'EZY42KD',

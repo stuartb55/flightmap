@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type {
   AircraftDetailResponse,
+  AircraftActivityQuery,
+  AircraftActivityResponse,
   AircraftMetadata,
   AircraftSummary,
   AlertEvent,
@@ -10,26 +12,36 @@ import type {
   InsightAvailability,
   InsightCoverageQuery,
   InsightCoverageResponse,
+  CoverageCellDetailQuery,
+  CoverageCellDetailResponse,
+  CustomAlertRule,
+  CustomAlertRuleInput,
+  CustomAlertRulePatch,
   InsightLeader,
   InsightMetrics,
   InsightOverview,
+  InsightPatternsQuery,
+  InsightPatternsResponse,
   InsightQuery,
   LiveAircraft,
   SavedView,
   SavedViewConfiguration,
   SavedViewInput,
   SavedViewPatch,
+  RangeProfileQuery,
+  RangeProfileResponse,
   SessionQuery,
   SessionsResponse,
   SummariesResponse,
   SummaryQuery,
   TrackPoint,
+  TrackEvent,
   TrackResponse,
   TrackSession,
   WatchlistEntry,
   WatchlistInput
 } from "@flightmap/shared";
-import { savedViewSchema } from "@flightmap/shared";
+import { customAlertRuleInputSchema, savedViewSchema } from "@flightmap/shared";
 import type { Config } from "../config.js";
 import { z } from "zod";
 import {
@@ -81,6 +93,7 @@ type AlertRow = {
   rule: AlertEvent["rule"];
   state: string | null;
   message: string;
+  severity: AlertEvent["severity"];
   occurred_at: Date | string;
   dismissed_at: Date | string | null;
   callsign: string | null;
@@ -91,6 +104,24 @@ type SavedViewRow = {
   name: string;
   surface: SavedView["surface"];
   configuration: SavedViewConfiguration;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+type CustomAlertRuleRow = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  severity: CustomAlertRule["severity"];
+  callsign_prefix: string | null;
+  icao: string | null;
+  operator: string | null;
+  type_code: string | null;
+  minimum_altitude_ft: number | null;
+  maximum_altitude_ft: number | null;
+  minimum_distance_nm: number | null;
+  maximum_distance_nm: number | null;
+  cooldown_minutes: number;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -140,6 +171,14 @@ function number(value: number | string): number {
 
 function nullableNumber(value: number | string | null): number | null {
   return value === null ? null : number(value);
+}
+
+type RangeAltitudeBand = "ground" | "low" | "medium" | "high";
+function rangeAltitudeBand(onGround: boolean, altitude: number | null): RangeAltitudeBand {
+  if (onGround) return "ground";
+  if (altitude === null || altitude < 10_000) return "low";
+  if ((altitude ?? 0) < 25_000) return "medium";
+  return "high";
 }
 
 type InsightAggregateRow = {
@@ -198,10 +237,49 @@ function alertFromRow(row: AlertRow): AlertEvent {
     rule: row.rule,
     state: row.state,
     message: row.message,
+    severity: row.severity,
     occurredAt: iso(row.occurred_at),
     dismissedAt: row.dismissed_at ? iso(row.dismissed_at) : null,
     callsign: row.callsign
   };
+}
+
+function customAlertRuleFromRow(row: CustomAlertRuleRow): CustomAlertRule {
+  return {
+    id: row.id,
+    name: row.name,
+    enabled: row.enabled,
+    severity: row.severity,
+    callsignPrefix: row.callsign_prefix,
+    icao: row.icao?.trim().toLowerCase() ?? null,
+    operator: row.operator,
+    typeCode: row.type_code,
+    minimumAltitudeFt: row.minimum_altitude_ft,
+    maximumAltitudeFt: row.maximum_altitude_ft,
+    minimumDistanceNm: row.minimum_distance_nm,
+    maximumDistanceNm: row.maximum_distance_nm,
+    cooldownMinutes: row.cooldown_minutes,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  };
+}
+
+function customRuleMatches(
+  rule: CustomAlertRule,
+  aircraft: LiveAircraft,
+  altitude: number | null
+): boolean {
+  const callsign = aircraft.callsign?.trim().toLowerCase() ?? "";
+  const operator = aircraft.metadata?.operator?.toLowerCase() ?? "";
+  const typeCode = aircraft.metadata?.typeCode?.toLowerCase() ?? "";
+  return (!rule.callsignPrefix || callsign.startsWith(rule.callsignPrefix.toLowerCase()))
+    && (!rule.icao || aircraft.icao === rule.icao)
+    && (!rule.operator || operator.includes(rule.operator.toLowerCase()))
+    && (!rule.typeCode || typeCode === rule.typeCode.toLowerCase())
+    && (rule.minimumAltitudeFt == null || (altitude != null && altitude >= rule.minimumAltitudeFt))
+    && (rule.maximumAltitudeFt == null || (altitude != null && altitude <= rule.maximumAltitudeFt))
+    && (rule.minimumDistanceNm == null || (aircraft.distanceNm != null && aircraft.distanceNm >= rule.minimumDistanceNm))
+    && (rule.maximumDistanceNm == null || (aircraft.distanceNm != null && aircraft.distanceNm <= rule.maximumDistanceNm));
 }
 
 function savedViewFromRow(row: SavedViewRow): SavedView {
@@ -408,12 +486,26 @@ export class FlightRepository {
         "SELECT * FROM aircraft_metadata WHERE icao = ANY($1::text[])",
         [icaos]
       );
+      const customRuleResult = await client.query<CustomAlertRuleRow>(
+        "SELECT * FROM custom_alert_rules WHERE enabled ORDER BY created_at"
+      );
       const activeAlertResult = await client.query<{ icao: string }>(
         `SELECT DISTINCT icao FROM alert_events
          WHERE icao = ANY($1::text[])
            AND rule = ANY($2::text[])
            AND dismissed_at IS NULL`,
         [icaos, [...activeAircraftAlertRules]]
+      );
+      const customAlertCooldownResult = await client.query<{
+        icao: string;
+        state: string;
+        last_occurred_at: Date | string;
+      }>(
+        `SELECT icao, state, max(occurred_at) AS last_occurred_at
+         FROM alert_events
+         WHERE rule = 'custom' AND icao = ANY($1::text[]) AND state IS NOT NULL
+         GROUP BY icao, state`,
+        [icaos]
       );
 
       const currentByIcao = new Map(
@@ -428,6 +520,11 @@ export class FlightRepository {
       const activeAlerts = new Set(
         activeAlertResult.rows.map((row) => row.icao.trim())
       );
+      const customRules = customRuleResult.rows.map(customAlertRuleFromRow);
+      const customAlertCooldowns = new Map(customAlertCooldownResult.rows.map((row) => [
+        `${row.state}:${row.icao.trim()}`,
+        new Date(row.last_occurred_at)
+      ]));
       const sessionSamples: Array<Record<string, unknown>> = [];
       const positionSamples: Array<Record<string, unknown>> = [];
       const sessionIdentityUpdates: Array<Record<string, unknown>> = [];
@@ -445,6 +542,14 @@ export class FlightRepository {
           maximumAltitudeFt: number | null;
         }
       >();
+      const rangeByBucket = new Map<string, {
+        profileDate: string;
+        bearingBucket: number;
+        altitudeBand: RangeAltitudeBand;
+        rangeBucketNm: number;
+        reports: number;
+        aircraftIcaos: Set<string>;
+      }>();
       const alertSamples: Array<Record<string, unknown>> = [];
 
       for (const aircraft of uniqueAircraft) {
@@ -492,6 +597,28 @@ export class FlightRepository {
               }
             : null
         );
+
+        for (const rule of customRules) {
+          if (!customRuleMatches(rule, aircraft, analyticalAltitude)) continue;
+          const cooldownMapKey = `${rule.id}:${aircraft.icao}`;
+          const lastCustomAlert = customAlertCooldowns.get(cooldownMapKey);
+          if (rule.cooldownMinutes > 0 && lastCustomAlert
+            && snapshot.recordedAt.getTime() - lastCustomAlert.getTime() < rule.cooldownMinutes * 60_000) continue;
+          const cooldownKey = rule.cooldownMinutes > 0 ? iso(snapshot.recordedAt) : encounterKey;
+          alertSamples.push({
+            id: randomUUID(),
+            icao: aircraft.icao,
+            sessionId,
+            rule: "custom",
+            state: rule.id,
+            message: `${rule.name} matched ${aircraft.callsign || aircraft.metadata?.registration || aircraft.icao}`,
+            severity: rule.severity,
+            callsign: aircraft.callsign,
+            occurredAt: aircraft.recordedAt,
+            dedupeKey: `${cooldownKey}:custom:${rule.id}:${aircraft.icao}`
+          });
+          customAlertCooldowns.set(cooldownMapKey, snapshot.recordedAt);
+        }
 
         if (
           sessionId &&
@@ -579,6 +706,26 @@ export class FlightRepository {
               maximumAltitudeFt: analyticalAltitude
             });
           }
+          if (aircraft.distanceNm !== null && aircraft.bearingDeg !== null) {
+            const bearingBucket = Math.floor((((aircraft.bearingDeg % 360) + 360) % 360) / 5);
+            const rangeBucketNm = Math.min(500, Math.floor(Math.max(0, aircraft.distanceNm) / 5) * 5);
+            const altitudeBand = rangeAltitudeBand(aircraft.onGround, analyticalAltitude);
+            const rangeKey = `${bearingBucket}:${altitudeBand}:${rangeBucketNm}`;
+            const range = rangeByBucket.get(rangeKey);
+            if (range) {
+              range.reports += 1;
+              range.aircraftIcaos.add(aircraft.icao);
+            } else {
+              rangeByBucket.set(rangeKey, {
+                profileDate: utcDay(snapshot.recordedAt),
+                bearingBucket,
+                altitudeBand,
+                rangeBucketNm,
+                reports: 1,
+                aircraftIcaos: new Set([aircraft.icao])
+              });
+            }
+          }
         }
 
         for (const candidate of candidates) {
@@ -589,6 +736,7 @@ export class FlightRepository {
             rule: candidate.rule,
             state: candidate.state,
             message: candidate.message,
+            severity: candidate.rule === "watchlist" ? "warning" : "critical",
             callsign: aircraft.callsign,
             occurredAt: aircraft.recordedAt,
             dedupeKey: candidate.dedupeKey
@@ -630,6 +778,10 @@ export class FlightRepository {
           aircraftIcaos: [...cell.aircraftIcaos]
         }))
       );
+      await this.upsertRangeHistogram(client, [...rangeByBucket.values()].map((range) => ({
+        ...range,
+        aircraftIcaos: [...range.aircraftIcaos]
+      })));
       const insertedAlerts = await this.insertAlerts(client, alertSamples);
       const newlyAlertedIcaos = new Set(
         insertedAlerts
@@ -1085,6 +1237,43 @@ export class FlightRepository {
     );
   }
 
+  private async upsertRangeHistogram(
+    client: Queryable,
+    rows: Array<{
+      profileDate: string;
+      bearingBucket: number;
+      altitudeBand: RangeAltitudeBand;
+      rangeBucketNm: number;
+      reports: number;
+      aircraftIcaos: string[];
+    }>
+  ): Promise<void> {
+    if (!rows.length) return;
+    await client.query(
+      `INSERT INTO daily_range_histogram (
+         profile_date, bearing_bucket, altitude_band, range_bucket_nm, reports, aircraft_icaos
+       )
+       SELECT x.profile_date, x.bearing_bucket, x.altitude_band, x.range_bucket_nm, x.reports, x.aircraft_icaos
+       FROM jsonb_to_recordset($1::jsonb) AS x(
+         profile_date date, bearing_bucket smallint, altitude_band text,
+         range_bucket_nm smallint, reports bigint, aircraft_icaos text[]
+       )
+       ON CONFLICT (profile_date, bearing_bucket, altitude_band, range_bucket_nm) DO UPDATE SET
+         reports = daily_range_histogram.reports + EXCLUDED.reports,
+         aircraft_icaos = ARRAY(
+           SELECT DISTINCT value FROM unnest(daily_range_histogram.aircraft_icaos || EXCLUDED.aircraft_icaos) value
+         )`,
+      [json(rows.map((row) => ({
+        profile_date: row.profileDate,
+        bearing_bucket: row.bearingBucket,
+        altitude_band: row.altitudeBand,
+        range_bucket_nm: row.rangeBucketNm,
+        reports: row.reports,
+        aircraft_icaos: row.aircraftIcaos
+      })))]
+    );
+  }
+
   private async insertAlerts(
     client: Queryable,
     rows: Array<Record<string, unknown>>
@@ -1092,19 +1281,19 @@ export class FlightRepository {
     if (rows.length === 0) return [];
     const result = await client.query<AlertRow>(
       `INSERT INTO alert_events (
-         id, icao, session_id, rule, state, message, callsign,
+         id, icao, session_id, rule, state, message, severity, callsign,
          occurred_at, dedupe_key
        )
        SELECT
-         x.id, x.icao, x.session_id, x.rule, x.state, x.message,
+         x.id, x.icao, x.session_id, x.rule, x.state, x.message, x.severity,
          x.callsign, x.occurred_at, x.dedupe_key
        FROM jsonb_to_recordset($1::jsonb) AS x(
          id uuid, icao text, session_id uuid, rule text, state text,
-         message text, callsign text, occurred_at timestamptz,
+         message text, severity text, callsign text, occurred_at timestamptz,
          dedupe_key text
        )
        ON CONFLICT (dedupe_key) DO NOTHING
-       RETURNING id, icao, session_id, rule, state, message,
+       RETURNING id, icao, session_id, rule, state, message, severity,
                  occurred_at, dismissed_at, callsign`,
       [
         json(
@@ -1115,6 +1304,7 @@ export class FlightRepository {
             rule: row.rule,
             state: row.state,
             message: row.message,
+            severity: row.severity,
             callsign: row.callsign,
             occurred_at: row.occurredAt,
             dedupe_key: row.dedupeKey
@@ -1247,7 +1437,7 @@ export class FlightRepository {
           [icao]
         ),
         this.database.query<AlertRow>(
-          `SELECT id, icao, session_id, rule, state, message,
+          `SELECT id, icao, session_id, rule, state, message, severity,
                   occurred_at, dismissed_at, callsign
            FROM alert_events WHERE icao = $1
            ORDER BY occurred_at DESC LIMIT 50`,
@@ -1402,7 +1592,7 @@ export class FlightRepository {
     const interval = intervalForResolution(resolution);
     const limit = Math.max(1, Math.min(options.limit ?? 20_000, 20_000));
     const direction = options.tail ? "DESC" : "ASC";
-    const points = await this.database.query<{
+    const [points, eventRows] = await Promise.all([this.database.query<{
       recorded_at: Date | string;
       latitude: number;
       longitude: number;
@@ -1450,7 +1640,74 @@ export class FlightRepository {
       resolution === "1s"
         ? [id, options.from ?? null, limit + 1]
         : [id, interval, options.from ?? null, limit + 1]
-    );
+    ), this.database.query<{
+      type: TrackEvent["type"];
+      occurred_at: Date | string;
+      label: string;
+      value: string | null;
+      severity: TrackEvent["severity"];
+    }>(
+      `WITH ordered AS (
+         SELECT recorded_at, callsign, squawk, emergency, distance_nm,
+                lag(callsign) OVER (ORDER BY recorded_at) AS previous_callsign,
+                lag(squawk) OVER (ORDER BY recorded_at) AS previous_squawk,
+                lag(emergency) OVER (ORDER BY recorded_at) AS previous_emergency,
+                row_number() OVER (ORDER BY recorded_at) AS row_number
+         FROM position_samples
+         WHERE session_id = $1
+       ), changes AS (
+         SELECT CASE
+                  WHEN callsign IS DISTINCT FROM previous_callsign THEN 'callsign'
+                  WHEN squawk IS DISTINCT FROM previous_squawk THEN 'squawk'
+                  ELSE 'emergency'
+                END AS type,
+                recorded_at AS occurred_at,
+                CASE
+                  WHEN callsign IS DISTINCT FROM previous_callsign THEN 'Callsign changed'
+                  WHEN squawk IS DISTINCT FROM previous_squawk THEN 'Squawk changed'
+                  ELSE 'Emergency state changed'
+                END AS label,
+                CASE
+                  WHEN callsign IS DISTINCT FROM previous_callsign THEN callsign
+                  WHEN squawk IS DISTINCT FROM previous_squawk THEN squawk
+                  ELSE emergency
+                END AS value,
+                CASE
+                  WHEN emergency IS DISTINCT FROM previous_emergency
+                    AND emergency IS NOT NULL AND emergency <> 'none' THEN 'critical'
+                  WHEN squawk IS DISTINCT FROM previous_squawk
+                    AND squawk IN ('7500', '7600', '7700') THEN 'critical'
+                  ELSE 'info'
+                END AS severity
+         FROM ordered
+         WHERE row_number > 1
+           AND (callsign IS DISTINCT FROM previous_callsign
+             OR squawk IS DISTINCT FROM previous_squawk
+             OR emergency IS DISTINCT FROM previous_emergency)
+       ), closest AS (
+         SELECT recorded_at AS occurred_at, distance_nm
+         FROM ordered WHERE distance_nm IS NOT NULL
+         ORDER BY distance_nm ASC, recorded_at ASC LIMIT 1
+       )
+       SELECT 'session_start' AS type, s.started_at AS occurred_at,
+              'Session started' AS label, NULL::text AS value, 'info' AS severity
+       FROM track_sessions s WHERE s.id = $1
+       UNION ALL
+       SELECT 'session_end', s.ended_at, 'Session ended', NULL::text, 'info'
+       FROM track_sessions s WHERE s.id = $1 AND s.ended_at IS NOT NULL
+       UNION ALL
+       SELECT type, occurred_at, label, value, severity FROM changes
+       UNION ALL
+       SELECT 'alert', a.occurred_at, a.message, a.state,
+              CASE WHEN a.rule IN ('emergency_squawk', 'emergency_state') THEN 'critical' ELSE 'warning' END
+       FROM alert_events a WHERE a.session_id = $1
+       UNION ALL
+       SELECT 'closest_approach', occurred_at, 'Closest approach',
+              round(distance_nm::numeric, 1)::text || ' nm', 'info'
+       FROM closest
+       ORDER BY occurred_at`,
+      [id]
+    )]);
     const truncated = points.rows.length > limit;
     const page = truncated
       ? options.tail
@@ -1474,7 +1731,88 @@ export class FlightRepository {
       session: sessionFromRow(row),
       resolution,
       points: trackPoints,
+      events: eventRows.rows.map((event) => ({
+        type: event.type,
+        occurredAt: iso(event.occurred_at),
+        label: event.label,
+        value: event.value,
+        severity: event.severity
+      })),
       truncated
+    };
+  }
+
+  async aircraftActivity(
+    icao: string,
+    query: AircraftActivityQuery,
+    now = new Date()
+  ): Promise<AircraftActivityResponse> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const interval = query.bucket === "month" ? "month" : "day";
+    const [result, callsignResult] = await Promise.all([this.database.query<{
+      bucket_start: Date | string;
+      bucket_end: Date | string;
+      observations: number | string;
+      positioned_observations: number | string;
+      sessions: number | string;
+      active_days: number | string;
+      closest_range_nm: number | string | null;
+      maximum_altitude_ft: number | string | null;
+    }>(
+      `SELECT date_trunc($4, summary_date::timestamp AT TIME ZONE 'UTC') AS bucket_start,
+              date_trunc($4, summary_date::timestamp AT TIME ZONE 'UTC')
+                + CASE WHEN $4 = 'month' THEN interval '1 month' ELSE interval '1 day' END AS bucket_end,
+              sum(observations) AS observations,
+              sum(positioned_observations) AS positioned_observations,
+              sum(session_count) AS sessions,
+              count(*) AS active_days,
+              min(closest_range_nm) AS closest_range_nm,
+              max(maximum_altitude_ft) AS maximum_altitude_ft
+       FROM daily_aircraft_summary
+       WHERE icao = $1
+         AND summary_date >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+         AND summary_date < ($3::timestamptz AT TIME ZONE 'UTC')::date + 1
+       GROUP BY 1, 2 ORDER BY 1`,
+      [icao, from, to, interval]
+    ), this.database.query<{ callsign: string }>(
+      `SELECT DISTINCT callsign
+       FROM daily_aircraft_summary d
+       CROSS JOIN LATERAL unnest(d.callsigns) callsign
+       WHERE d.icao = $1
+         AND d.summary_date >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+         AND d.summary_date < ($3::timestamptz AT TIME ZONE 'UTC')::date + 1
+         AND callsign <> ''
+       ORDER BY callsign`,
+      [icao, from, to]
+    )]);
+    const series = result.rows.map((activity) => ({
+      bucketStart: iso(activity.bucket_start),
+      bucketEnd: iso(activity.bucket_end),
+      observations: number(activity.observations),
+      positionedObservations: number(activity.positioned_observations),
+      sessions: number(activity.sessions),
+      closestRangeNm: nullableNumber(activity.closest_range_nm),
+      maximumAltitudeFt: nullableNumber(activity.maximum_altitude_ft)
+    }));
+    return {
+      icao,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      bucket: query.bucket,
+      totals: {
+        observations: series.reduce((sum, point) => sum + point.observations, 0),
+        positionedObservations: series.reduce((sum, point) => sum + point.positionedObservations, 0),
+        sessions: series.reduce((sum, point) => sum + point.sessions, 0),
+        activeDays: result.rows.reduce((sum, point) => sum + number(point.active_days), 0),
+        closestRangeNm: series.reduce<number | null>((best, point) =>
+          point.closestRangeNm == null ? best : best == null ? point.closestRangeNm : Math.min(best, point.closestRangeNm), null),
+        maximumAltitudeFt: series.reduce<number | null>((best, point) =>
+          point.maximumAltitudeFt == null ? best : best == null ? point.maximumAltitudeFt : Math.max(best, point.maximumAltitudeFt), null)
+      },
+      callsigns: callsignResult.rows.map((point) => point.callsign),
+      series,
+      detailedTrackFrom: new Date(now.getTime() - this.config.historyRetentionDays * 86_400_000).toISOString()
     };
   }
 
@@ -1976,6 +2314,156 @@ export class FlightRepository {
     };
   }
 
+  async insightPatterns(
+    query: InsightPatternsQuery,
+    now = new Date()
+  ): Promise<InsightPatternsResponse> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const duration = to.getTime() - from.getTime();
+    if (duration > 366 * 86_400_000) {
+      throw new RepositoryInputError("RANGE_TOO_LARGE", "Pattern queries are limited to 366 days");
+    }
+    const previousFrom = new Date(from.getTime() - duration);
+    const result = await this.database.query<{
+      period: "current" | "previous";
+      weekday: number | string;
+      hour: number | string;
+      unique_aircraft: number | string;
+      reports: number | string;
+      sessions: number | string;
+    }>(
+      `WITH ranges(period, range_from, range_to) AS (
+         VALUES ('current'::text, $1::timestamptz, $2::timestamptz),
+                ('previous'::text, $3::timestamptz, $1::timestamptz)
+       ), activity AS (
+         SELECT r.period,
+                extract(isodow FROM h.bucket_hour AT TIME ZONE $4)::int - 1 AS weekday,
+                extract(hour FROM h.bucket_hour AT TIME ZONE $4)::int AS hour,
+                count(DISTINCT h.icao) AS unique_aircraft,
+                sum(h.reports) AS reports
+         FROM ranges r
+         JOIN hourly_aircraft_activity h ON h.bucket_hour >= r.range_from AND h.bucket_hour < r.range_to
+         WHERE r.period = 'current' OR $5::boolean
+         GROUP BY r.period, weekday, hour
+       ), session_counts AS (
+         SELECT r.period,
+                extract(isodow FROM h.bucket_hour AT TIME ZONE $4)::int - 1 AS weekday,
+                extract(hour FROM h.bucket_hour AT TIME ZONE $4)::int AS hour,
+                count(DISTINCT session_id) AS sessions
+         FROM ranges r
+         JOIN hourly_aircraft_activity h ON h.bucket_hour >= r.range_from AND h.bucket_hour < r.range_to
+         CROSS JOIN LATERAL unnest(h.session_ids) session_id
+         WHERE r.period = 'current' OR $5::boolean
+         GROUP BY r.period, weekday, hour
+       )
+       SELECT a.*, coalesce(s.sessions, 0) AS sessions
+       FROM activity a
+       LEFT JOIN session_counts s USING (period, weekday, hour)
+       ORDER BY a.period, a.weekday, a.hour`,
+      [from, to, previousFrom, query.timeZone, query.compare]
+    );
+    const previous = new Map(
+      result.rows.filter((row) => row.period === "previous")
+        .map((row) => [`${row.weekday}:${row.hour}`, number(row.reports)])
+    );
+    const cells = result.rows.filter((row) => row.period === "current").map((row) => {
+      const previousReports = previous.get(`${row.weekday}:${row.hour}`) ?? null;
+      const reports = number(row.reports);
+      return {
+        weekday: number(row.weekday),
+        hour: number(row.hour),
+        uniqueAircraft: number(row.unique_aircraft),
+        sessions: number(row.sessions),
+        reports,
+        previousReports,
+        changePercent: previousReports == null || previousReports === 0
+          ? null
+          : ((reports - previousReports) / previousReports) * 100
+      };
+    });
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone: query.timeZone,
+      cells,
+      busiest: cells.reduce<(typeof cells)[number] | null>((best, cell) =>
+        !best || cell.reports > best.reports ? cell : best, null),
+      availability: await this.insightAvailability(from, now)
+    };
+  }
+
+  async rangeProfile(query: RangeProfileQuery): Promise<RangeProfileResponse> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const duration = to.getTime() - from.getTime();
+    if (duration > 366 * 86_400_000) {
+      throw new RepositoryInputError("RANGE_TOO_LARGE", "Range profiles are limited to 366 days");
+    }
+    const previousFrom = new Date(from.getTime() - duration);
+    const [result, availability] = await Promise.all([
+      this.database.query<{
+        period: "current" | "previous";
+        bearing_bucket: number;
+        range_bucket_nm: number;
+        reports: number | string;
+      }>(
+        `WITH ranges(period, range_from, range_to) AS (
+           VALUES ('current'::text, ($1::timestamptz AT TIME ZONE 'UTC')::date, (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)),
+                  ('previous'::text, ($3::timestamptz AT TIME ZONE 'UTC')::date, ($1::timestamptz AT TIME ZONE 'UTC')::date)
+         )
+         SELECT r.period, h.bearing_bucket, h.range_bucket_nm, sum(h.reports) AS reports
+         FROM ranges r
+         JOIN daily_range_histogram h ON h.profile_date >= r.range_from AND h.profile_date < r.range_to
+         WHERE ($4::text = 'all' OR h.altitude_band = $4)
+           AND (r.period = 'current' OR $5::boolean)
+         GROUP BY r.period, h.bearing_bucket, h.range_bucket_nm
+         ORDER BY r.period, h.bearing_bucket, h.range_bucket_nm`,
+        [from, to, previousFrom, query.altitudeBand, query.compare]
+      ),
+      this.database.query<{ available_from: Date | string | null }>(
+        "SELECT min(profile_date) AS available_from FROM daily_range_histogram"
+      )
+    ]);
+    const percentile = (rows: typeof result.rows, fraction: number): number | null => {
+      const total = rows.reduce((sum, row) => sum + number(row.reports), 0);
+      if (!total) return null;
+      const target = total * fraction;
+      let cumulative = 0;
+      for (const row of rows) {
+        cumulative += number(row.reports);
+        if (cumulative >= target) return row.range_bucket_nm + 2.5;
+      }
+      return rows.at(-1)?.range_bucket_nm ?? null;
+    };
+    const sectorRows = (period: "current" | "previous", bearing: number) =>
+      result.rows.filter((row) => row.period === period && row.bearing_bucket === bearing);
+    const sectors = Array.from({ length: 72 }, (_, bearing) => {
+      const current = sectorRows("current", bearing);
+      const previous = sectorRows("previous", bearing);
+      const p95 = percentile(current, 0.95);
+      const previousP95 = percentile(previous, 0.95);
+      return {
+        bearingStartDeg: bearing * 5,
+        bearingEndDeg: bearing * 5 + 5,
+        reports: current.reduce((sum, row) => sum + number(row.reports), 0),
+        medianRangeNm: percentile(current, 0.5),
+        p95RangeNm: p95,
+        maximumRangeNm: current.length ? current.at(-1)!.range_bucket_nm + 5 : null,
+        previousP95RangeNm: previousP95,
+        p95ChangeNm: p95 == null || previousP95 == null ? null : p95 - previousP95
+      };
+    });
+    const available = availability.rows[0]?.available_from;
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      altitudeBand: query.altitudeBand,
+      sectors,
+      availableFrom: available ? utcDate(available) : null
+    };
+  }
+
   async insightsCoverage(
     query: InsightCoverageQuery,
     now = new Date()
@@ -2047,10 +2535,75 @@ export class FlightRepository {
     };
   }
 
+  async coverageCellDetail(
+    query: CoverageCellDetailQuery
+  ): Promise<CoverageCellDetailResponse> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const grid = coverageGridCell(query.latitude, query.longitude);
+    const result = await this.database.query<{
+      reports: number | string;
+      maximum_altitude_ft: number | string | null;
+      aircraft_icaos: string[];
+    }>(
+      `SELECT coalesce(sum(reports), 0) AS reports,
+              max(maximum_altitude_ft) AS maximum_altitude_ft,
+              ARRAY(SELECT DISTINCT icao
+                    FROM daily_coverage_cells nested
+                    CROSS JOIN LATERAL unnest(nested.aircraft_icaos) AS icao
+                    WHERE nested.coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+                      AND nested.coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)
+                      AND nested.latitude_index = $3
+                      AND nested.longitude_index = $4
+                    ORDER BY icao) AS aircraft_icaos
+       FROM daily_coverage_cells
+       WHERE coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
+         AND coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)
+         AND latitude_index = $3 AND longitude_index = $4`,
+      [from, to, grid.latitudeIndex, grid.longitudeIndex]
+    );
+    const row = result.rows[0] ?? {
+      reports: 0,
+      maximum_altitude_ft: null,
+      aircraft_icaos: []
+    };
+    const metadata = row.aircraft_icaos.length === 0
+      ? { rows: [] as MetadataRow[] }
+      : await this.database.query<MetadataRow>(
+          `SELECT requested.icao, m.registration, m.type_code, m.description,
+                  m.operator, m.owner, m.country
+           FROM unnest($1::text[]) requested(icao)
+           LEFT JOIN aircraft_metadata m ON m.icao = requested.icao
+           ORDER BY coalesce(m.registration, requested.icao)`,
+          [row.aircraft_icaos]
+        );
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      cell: {
+        latitude: grid.latitude,
+        longitude: grid.longitude,
+        south: grid.south,
+        west: grid.west,
+        north: grid.north,
+        east: grid.east,
+        reports: number(row.reports),
+        uniqueAircraft: row.aircraft_icaos.length,
+        maximumAltitudeFt: nullableNumber(row.maximum_altitude_ft)
+      },
+      aircraft: metadata.rows.map((item) => ({
+        icao: item.icao,
+        registration: item.registration,
+        typeCode: item.type_code,
+        operator: item.operator
+      }))
+    };
+  }
+
   async alerts(query: AlertQuery): Promise<AlertsResponse> {
     const cursor = decodeCursor(query.cursor, alertCursorSchema);
     const result = await this.database.query<AlertRow>(
-      `SELECT id, icao, session_id, rule, state, message,
+      `SELECT id, icao, session_id, rule, state, message, severity,
               occurred_at, dismissed_at, callsign
        FROM alert_events
        WHERE ($1::text IS NULL OR icao = $1)
@@ -2082,11 +2635,84 @@ export class FlightRepository {
     };
   }
 
+  async customAlertRules(): Promise<CustomAlertRule[]> {
+    const result = await this.database.query<CustomAlertRuleRow>(
+      "SELECT * FROM custom_alert_rules ORDER BY updated_at DESC, name"
+    );
+    return result.rows.map(customAlertRuleFromRow);
+  }
+
+  async createCustomAlertRule(input: CustomAlertRuleInput): Promise<CustomAlertRule> {
+    const result = await this.database.query<CustomAlertRuleRow>(
+      `INSERT INTO custom_alert_rules (
+         id, name, enabled, severity, callsign_prefix, icao, operator, type_code,
+         minimum_altitude_ft, maximum_altitude_ft, minimum_distance_nm, maximum_distance_nm,
+         cooldown_minutes
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING *`,
+      [randomUUID(), input.name, input.enabled, input.severity, input.callsignPrefix,
+        input.icao, input.operator, input.typeCode, input.minimumAltitudeFt,
+        input.maximumAltitudeFt, input.minimumDistanceNm, input.maximumDistanceNm,
+        input.cooldownMinutes]
+    );
+    return customAlertRuleFromRow(result.rows[0]!);
+  }
+
+  async updateCustomAlertRule(id: string, patch: CustomAlertRulePatch): Promise<CustomAlertRule | null> {
+    const current = (await this.database.query<CustomAlertRuleRow>(
+      "SELECT * FROM custom_alert_rules WHERE id = $1", [id]
+    )).rows[0];
+    if (!current) return null;
+    const existing = customAlertRuleFromRow(current);
+    const input = customAlertRuleInputSchema.parse({
+      name: patch.name ?? existing.name,
+      enabled: patch.enabled ?? existing.enabled,
+      severity: patch.severity ?? existing.severity,
+      callsignPrefix: patch.callsignPrefix === undefined ? existing.callsignPrefix : patch.callsignPrefix,
+      icao: patch.icao === undefined ? existing.icao : patch.icao,
+      operator: patch.operator === undefined ? existing.operator : patch.operator,
+      typeCode: patch.typeCode === undefined ? existing.typeCode : patch.typeCode,
+      minimumAltitudeFt: patch.minimumAltitudeFt === undefined ? existing.minimumAltitudeFt : patch.minimumAltitudeFt,
+      maximumAltitudeFt: patch.maximumAltitudeFt === undefined ? existing.maximumAltitudeFt : patch.maximumAltitudeFt,
+      minimumDistanceNm: patch.minimumDistanceNm === undefined ? existing.minimumDistanceNm : patch.minimumDistanceNm,
+      maximumDistanceNm: patch.maximumDistanceNm === undefined ? existing.maximumDistanceNm : patch.maximumDistanceNm,
+      cooldownMinutes: patch.cooldownMinutes ?? existing.cooldownMinutes
+    });
+    const result = await this.database.query<CustomAlertRuleRow>(
+      `UPDATE custom_alert_rules SET name=$2, enabled=$3, severity=$4, callsign_prefix=$5,
+         icao=$6, operator=$7, type_code=$8, minimum_altitude_ft=$9, maximum_altitude_ft=$10,
+         minimum_distance_nm=$11, maximum_distance_nm=$12, cooldown_minutes=$13, updated_at=now()
+       WHERE id=$1 RETURNING *`,
+      [id, input.name, input.enabled, input.severity, input.callsignPrefix, input.icao,
+        input.operator, input.typeCode, input.minimumAltitudeFt, input.maximumAltitudeFt,
+        input.minimumDistanceNm, input.maximumDistanceNm, input.cooldownMinutes]
+    );
+    return result.rows[0] ? customAlertRuleFromRow(result.rows[0]) : null;
+  }
+
+  async deleteCustomAlertRule(id: string): Promise<boolean> {
+    const result = await this.database.query("DELETE FROM custom_alert_rules WHERE id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async previewCustomAlertRule(input: CustomAlertRuleInput) {
+    const now = new Date().toISOString();
+    const rule: CustomAlertRule = { ...input, id: randomUUID(), createdAt: now, updatedAt: now };
+    const matches = (await this.liveAircraft()).filter((aircraft) =>
+      customRuleMatches(rule, aircraft, aircraft.onGround ? 0 : aircraft.altitudeBarometricFt ?? aircraft.altitudeGeometricFt)
+    );
+    return { matches: matches.slice(0, 100).map((aircraft) => ({
+      icao: aircraft.icao,
+      callsign: aircraft.callsign,
+      registration: aircraft.metadata?.registration ?? null
+    })) };
+  }
+
   async dismissAlert(id: string, at = new Date()): Promise<AlertEvent | null> {
     const result = await this.database.query<AlertRow>(
       `UPDATE alert_events SET dismissed_at = COALESCE(dismissed_at, $2)
        WHERE id = $1
-       RETURNING id, icao, session_id, rule, state, message,
+       RETURNING id, icao, session_id, rule, state, message, severity,
                  occurred_at, dismissed_at, callsign`,
       [id, at]
     );
@@ -2098,7 +2724,7 @@ export class FlightRepository {
       `UPDATE alert_events
        SET dismissed_at = COALESCE(dismissed_at, $2)
        WHERE id = ANY($1::uuid[])
-       RETURNING id, icao, session_id, rule, state, message,
+       RETURNING id, icao, session_id, rule, state, message, severity,
                  occurred_at, dismissed_at, callsign`,
       [ids, at]
     );

@@ -12,6 +12,8 @@ vi.mock('../lib/api', () => ({
   api: {
     insightsOverview: vi.fn(),
     insightsCoverage: vi.fn(),
+    insightPatterns: vi.fn(),
+    rangeProfile: vi.fn(),
     savedViews: vi.fn().mockResolvedValue([]),
     createSavedView: vi.fn(),
     updateSavedView: vi.fn(),
@@ -100,6 +102,8 @@ describe('InsightsPage', () => {
   beforeEach(() => {
     vi.mocked(api.insightsOverview).mockResolvedValue(overview())
     vi.mocked(api.insightsCoverage).mockResolvedValue(coverage)
+    vi.mocked(api.insightPatterns).mockResolvedValue({ from: coverage.from, to: coverage.to, timeZone: 'Europe/London', cells: [], busiest: null, availability })
+    vi.mocked(api.rangeProfile).mockResolvedValue({ from: coverage.from, to: coverage.to, altitudeBand: 'all', sectors: [], availableFrom: null })
   })
 
   it('renders chart summaries, equivalent data tables, leaders, and coverage', async () => {

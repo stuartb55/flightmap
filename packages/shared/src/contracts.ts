@@ -120,8 +120,64 @@ export const aircraftSummarySchema = z.object({
 export const alertRuleSchema = z.enum([
   "emergency_squawk",
   "emergency_state",
-  "watchlist"
+  "watchlist",
+  "custom"
 ]);
+
+const customAlertPredicateShape = {
+  callsignPrefix: z.string().trim().max(16).nullable().default(null),
+  icao: icaoSchema.nullable().default(null),
+  operator: z.string().trim().max(128).nullable().default(null),
+  typeCode: z.string().trim().max(16).nullable().default(null),
+  minimumAltitudeFt: nullableFiniteNumberSchema.default(null),
+  maximumAltitudeFt: nullableFiniteNumberSchema.default(null),
+  minimumDistanceNm: nullableFiniteNumberSchema.default(null),
+  maximumDistanceNm: nullableFiniteNumberSchema.default(null)
+};
+
+function customAlertRuleIsValid(rule: Record<string, unknown>) {
+  const predicates = ["callsignPrefix", "icao", "operator", "typeCode", "minimumAltitudeFt", "maximumAltitudeFt", "minimumDistanceNm", "maximumDistanceNm"];
+  return predicates.some((key) => rule[key] !== null && rule[key] !== undefined && rule[key] !== "")
+    && (!(typeof rule.minimumAltitudeFt === "number" && typeof rule.maximumAltitudeFt === "number") || rule.minimumAltitudeFt <= rule.maximumAltitudeFt)
+    && (!(typeof rule.minimumDistanceNm === "number" && typeof rule.maximumDistanceNm === "number") || rule.minimumDistanceNm <= rule.maximumDistanceNm);
+}
+
+const customAlertRuleBaseSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  enabled: z.boolean().default(true),
+  severity: z.enum(["info", "warning", "critical"]).default("warning"),
+  ...customAlertPredicateShape,
+  cooldownMinutes: z.number().int().min(0).max(10_080).default(0)
+});
+export const customAlertRuleInputSchema = customAlertRuleBaseSchema.refine(customAlertRuleIsValid, { message: "At least one valid predicate is required" });
+
+export const customAlertRuleSchema = customAlertRuleInputSchema.and(z.object({
+  id: z.string().uuid(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema
+}));
+
+export const customAlertRulesResponseSchema = z.object({ items: z.array(customAlertRuleSchema) });
+export const customAlertRulePatchSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  enabled: z.boolean().optional(),
+  severity: z.enum(["info", "warning", "critical"]).optional(),
+  callsignPrefix: z.string().trim().max(16).nullable().optional(),
+  icao: icaoSchema.nullable().optional(),
+  operator: z.string().trim().max(128).nullable().optional(),
+  typeCode: z.string().trim().max(16).nullable().optional(),
+  minimumAltitudeFt: nullableFiniteNumberSchema.optional(),
+  maximumAltitudeFt: nullableFiniteNumberSchema.optional(),
+  minimumDistanceNm: nullableFiniteNumberSchema.optional(),
+  maximumDistanceNm: nullableFiniteNumberSchema.optional(),
+  cooldownMinutes: z.number().int().min(0).max(10_080).optional()
+}).refine(
+  (patch) => Object.keys(patch).length > 0,
+  { message: "At least one field is required" }
+);
+export const customAlertRulePreviewSchema = z.object({
+  matches: z.array(z.object({ icao: icaoSchema, callsign: z.string().nullable(), registration: z.string().nullable() }))
+});
 
 export const dailyAircraftSummarySchema = z.object({
   icao: icaoSchema,
@@ -175,6 +231,22 @@ export const trackPointSchema = z.object({
   bearingDeg: nullableFiniteNumberSchema
 });
 
+export const trackEventSchema = z.object({
+  type: z.enum([
+    "session_start",
+    "session_end",
+    "callsign",
+    "squawk",
+    "emergency",
+    "alert",
+    "closest_approach"
+  ]),
+  occurredAt: isoDateTimeSchema,
+  label: z.string(),
+  value: z.string().nullable(),
+  severity: z.enum(["info", "warning", "critical"]).default("info")
+});
+
 export const alertEventSchema = z.object({
   id: z.string().uuid(),
   icao: icaoSchema,
@@ -182,6 +254,7 @@ export const alertEventSchema = z.object({
   rule: alertRuleSchema,
   state: z.string().nullable(),
   message: z.string(),
+  severity: z.enum(["info", "warning", "critical"]).default("warning"),
   occurredAt: isoDateTimeSchema,
   dismissedAt: isoDateTimeSchema.nullable(),
   callsign: z.string().nullable()
@@ -262,7 +335,36 @@ export const trackResponseSchema = z.object({
   session: trackSessionSchema,
   resolution: z.enum(["1s", "5s", "15s", "60s"]),
   points: z.array(trackPointSchema),
+  events: z.array(trackEventSchema).default([]),
   truncated: z.boolean()
+});
+
+export const aircraftActivityPointSchema = z.object({
+  bucketStart: isoDateTimeSchema,
+  bucketEnd: isoDateTimeSchema,
+  observations: z.number().int().nonnegative(),
+  positionedObservations: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  closestRangeNm: nullableFiniteNumberSchema,
+  maximumAltitudeFt: nullableFiniteNumberSchema
+});
+
+export const aircraftActivityResponseSchema = z.object({
+  icao: icaoSchema,
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  bucket: z.enum(["day", "month"]),
+  totals: z.object({
+    observations: z.number().int().nonnegative(),
+    positionedObservations: z.number().int().nonnegative(),
+    sessions: z.number().int().nonnegative(),
+    activeDays: z.number().int().nonnegative(),
+    closestRangeNm: nullableFiniteNumberSchema,
+    maximumAltitudeFt: nullableFiniteNumberSchema
+  }),
+  callsigns: z.array(z.string()),
+  series: z.array(aircraftActivityPointSchema),
+  detailedTrackFrom: isoDateTimeSchema
 });
 
 export const summariesResponseSchema = z.object({
@@ -293,6 +395,11 @@ export const mapLayerPreferencesSchema = z
   })
   .strict();
 
+export const mapDisplayPreferencesSchema = z.object({
+  trailMinutes: z.union([z.literal(1), z.literal(5), z.literal(15), z.literal(30)]).default(15),
+  labelDensity: z.enum(["auto", "reduced", "full"]).default("auto")
+});
+
 export const mapViewportSchema = z
   .object({
     longitude: z.number().finite().min(-180).max(180),
@@ -311,6 +418,7 @@ const savedViewBaseSchema = z.object({
 export const liveSavedViewConfigurationSchema = savedViewBaseSchema
   .extend({
     surface: z.literal("live"),
+    display: mapDisplayPreferencesSchema.optional(),
     filters: z
       .object({
         query: z.string().max(128),
@@ -341,6 +449,11 @@ export const historySavedViewConfigurationSchema = savedViewBaseSchema
     filters: z
       .object({
         query: z.string().max(128),
+        icao: z.string().max(6).default(""),
+        callsign: z.string().max(16).default(""),
+        registration: z.string().max(32).default(""),
+        type: z.string().max(16).default(""),
+        operator: z.string().max(128).default(""),
         from: isoDateTimeSchema,
         to: isoDateTimeSchema,
         alert: z.enum(["", "emergency_squawk", "emergency_state", "watchlist"])
@@ -534,6 +647,58 @@ export const insightCoverageResponseSchema = z.object({
   availability: insightAvailabilitySchema
 });
 
+export const insightPatternCellSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  hour: z.number().int().min(0).max(23),
+  uniqueAircraft: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  reports: z.number().int().nonnegative(),
+  previousReports: z.number().int().nonnegative().nullable(),
+  changePercent: nullableFiniteNumberSchema
+});
+
+export const insightPatternsResponseSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  timeZone: z.string(),
+  cells: z.array(insightPatternCellSchema),
+  busiest: insightPatternCellSchema.nullable(),
+  availability: insightAvailabilitySchema
+});
+
+export const rangeProfileSectorSchema = z.object({
+  bearingStartDeg: z.number().int().min(0).max(355),
+  bearingEndDeg: z.number().int().min(5).max(360),
+  reports: z.number().int().nonnegative(),
+  medianRangeNm: nullableFiniteNumberSchema,
+  p95RangeNm: nullableFiniteNumberSchema,
+  maximumRangeNm: nullableFiniteNumberSchema,
+  previousP95RangeNm: nullableFiniteNumberSchema,
+  p95ChangeNm: nullableFiniteNumberSchema
+});
+
+export const rangeProfileResponseSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  altitudeBand: z.enum(["all", "ground", "low", "medium", "high"]),
+  sectors: z.array(rangeProfileSectorSchema),
+  availableFrom: z.string().date().nullable()
+});
+
+export const coverageCellDetailResponseSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  cell: coverageCellSchema,
+  aircraft: z.array(
+    z.object({
+      icao: icaoSchema,
+      registration: z.string().nullable(),
+      typeCode: z.string().nullable(),
+      operator: z.string().nullable()
+    })
+  )
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -581,6 +746,53 @@ export const insightCoverageQuerySchema = z
       });
     }
   });
+
+export const insightPatternsQuerySchema = z
+  .object({
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema,
+    timeZone: z.string().trim().min(1).max(64),
+    compare: z
+      .preprocess(emptyToUndefined, z.enum(["true", "false"]).optional())
+      .transform((value) => value === "true")
+  })
+  .superRefine((query, context) => {
+    if (Date.parse(query.from) >= Date.parse(query.to)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "from must be before to" });
+    }
+  });
+
+export const rangeProfileQuerySchema = z
+  .object({
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema,
+    altitudeBand: z.enum(["all", "ground", "low", "medium", "high"]).default("all"),
+    compare: z.preprocess(emptyToUndefined, z.enum(["true", "false"]).optional()).transform((value) => value === "true")
+  })
+  .superRefine((query, context) => {
+    if (Date.parse(query.from) >= Date.parse(query.to)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "from must be before to" });
+  });
+
+export const aircraftActivityQuerySchema = z
+  .object({
+    from: isoDateTimeSchema,
+    to: isoDateTimeSchema,
+    bucket: z.enum(["day", "month"]).default("day")
+  })
+  .superRefine((query, context) => {
+    if (Date.parse(query.from) >= Date.parse(query.to)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "from must be before to"
+      });
+    }
+  });
+
+export const coverageCellDetailQuerySchema = insightCoverageQuerySchema.extend({
+  latitude: z.coerce.number().finite().min(-90).max(90),
+  longitude: z.coerce.number().finite().min(-180).max(180)
+});
 
 export const sessionExportQuerySchema = z
   .object({
@@ -724,7 +936,11 @@ export type DailyAircraftSummary = z.infer<
 >;
 export type TrackSession = z.infer<typeof trackSessionSchema>;
 export type TrackPoint = z.infer<typeof trackPointSchema>;
+export type TrackEvent = z.infer<typeof trackEventSchema>;
 export type AlertRule = z.infer<typeof alertRuleSchema>;
+export type CustomAlertRule = z.infer<typeof customAlertRuleSchema>;
+export type CustomAlertRuleInput = z.infer<typeof customAlertRuleInputSchema>;
+export type CustomAlertRulePatch = z.infer<typeof customAlertRulePatchSchema>;
 export type AlertEvent = z.infer<typeof alertEventSchema>;
 export type WatchlistEntry = z.infer<typeof watchlistEntrySchema>;
 export type StatusResponse = z.infer<typeof statusResponseSchema>;
@@ -734,6 +950,8 @@ export type AircraftDetailResponse = z.infer<
 >;
 export type SessionsResponse = z.infer<typeof sessionsResponseSchema>;
 export type TrackResponse = z.infer<typeof trackResponseSchema>;
+export type AircraftActivityPoint = z.infer<typeof aircraftActivityPointSchema>;
+export type AircraftActivityResponse = z.infer<typeof aircraftActivityResponseSchema>;
 export type SummariesResponse = z.infer<typeof summariesResponseSchema>;
 export type AlertsResponse = z.infer<typeof alertsResponseSchema>;
 export type DismissAlertsResponse = z.infer<
@@ -741,6 +959,7 @@ export type DismissAlertsResponse = z.infer<
 >;
 export type WatchlistResponse = z.infer<typeof watchlistResponseSchema>;
 export type MapLayerPreferences = z.infer<typeof mapLayerPreferencesSchema>;
+export type MapDisplayPreferences = z.infer<typeof mapDisplayPreferencesSchema>;
 export type MapViewport = z.infer<typeof mapViewportSchema>;
 export type SavedViewConfiguration = z.infer<
   typeof savedViewConfigurationSchema
@@ -758,6 +977,13 @@ export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<
   typeof insightCoverageResponseSchema
 >;
+export type InsightPatternCell = z.infer<typeof insightPatternCellSchema>;
+export type InsightPatternsResponse = z.infer<typeof insightPatternsResponseSchema>;
+export type RangeProfileSector = z.infer<typeof rangeProfileSectorSchema>;
+export type RangeProfileResponse = z.infer<typeof rangeProfileResponseSchema>;
+export type CoverageCellDetailResponse = z.infer<
+  typeof coverageCellDetailResponseSchema
+>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type SessionQuery = z.infer<typeof sessionQuerySchema>;
 export type TrackQuery = z.infer<typeof trackQuerySchema>;
@@ -767,6 +993,12 @@ export type DismissAlertsInput = z.infer<typeof dismissAlertsInputSchema>;
 export type WatchlistInput = z.infer<typeof watchlistInputSchema>;
 export type InsightQuery = z.infer<typeof insightQuerySchema>;
 export type InsightCoverageQuery = z.infer<typeof insightCoverageQuerySchema>;
+export type InsightPatternsQuery = z.infer<typeof insightPatternsQuerySchema>;
+export type RangeProfileQuery = z.infer<typeof rangeProfileQuerySchema>;
+export type AircraftActivityQuery = z.infer<typeof aircraftActivityQuerySchema>;
+export type CoverageCellDetailQuery = z.infer<
+  typeof coverageCellDetailQuerySchema
+>;
 export type SessionExportQuery = z.infer<typeof sessionExportQuerySchema>;
 export type LiveDelta = z.infer<typeof liveDeltaSchema>;
 export type LiveWebSocketMessage = z.infer<

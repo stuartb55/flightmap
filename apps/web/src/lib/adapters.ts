@@ -99,10 +99,12 @@ export function adaptReceiver(receiver: WireReceiver): Receiver {
 }
 
 export function adaptAlert(alert: WireAlert): AlertEvent {
-  const type = alert.rule === 'watchlist' ? 'watchlist' : 'emergency'
+  const type = alert.rule === 'watchlist' ? 'watchlist' : alert.rule === 'custom' ? 'custom' : 'emergency'
   const title =
     alert.rule === 'watchlist'
       ? 'Watchlist aircraft detected'
+      : alert.rule === 'custom'
+        ? 'Custom rule matched'
       : alert.rule === 'emergency_squawk'
         ? `Emergency squawk${alert.state ? ` ${alert.state}` : ''}`
         : 'Emergency state reported'
@@ -115,7 +117,7 @@ export function adaptAlert(alert: WireAlert): AlertEvent {
     title,
     message: alert.message,
     dismissedAt: alert.dismissedAt,
-    severity: type === 'emergency' ? 'critical' : type === 'watchlist' ? 'warning' : 'info',
+    severity: alert.severity,
   }
 }
 
@@ -153,6 +155,9 @@ export function adaptTrackPoint(point: WireTrackPoint): TrackPoint {
     altitudeFt: point.onGround ? 0 : (point.altitudeBarometricFt ?? point.altitudeGeometricFt),
     groundSpeedKt: point.groundSpeedKt,
     trackDegrees: point.trackDeg,
+    verticalRateFpm: point.verticalRateFpm,
+    distanceNm: point.distanceNm,
+    bearingDegrees: point.bearingDeg,
   }
 }
 
@@ -160,12 +165,14 @@ export function adaptTrack(response: {
   session: WireSession
   resolution: TrackResponse['resolution']
   points: WireTrackPoint[]
+  events?: TrackResponse['events']
   truncated: boolean
 }): TrackResponse {
   return {
     session: adaptSession(response.session),
     resolution: response.resolution,
     points: response.points.map(adaptTrackPoint),
+    events: response.events ?? [],
     truncated: response.truncated,
   }
 }

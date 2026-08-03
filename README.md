@@ -13,17 +13,21 @@ history indefinitely.
 - Restart-safe collector with receiver health, malformed-record isolation,
   duplicate/out-of-order snapshot rejection, and outage recovery.
 - Five-minute-gap track sessions, historical search, adaptive track resolution,
-  URL-restorable multi-track display, animated replay, and CSV/GeoJSON export.
+  URL-restorable multi-track display, animated replay, synchronized telemetry
+  profiles and event timelines, and CSV/GeoJSON export.
+- Dedicated aircraft profiles with all-time receiver activity, observed
+  callsigns, retained summaries, and direct Live/History navigation.
 - Activity and coverage Insights with hourly/daily charts, receiver-performance
   context, preceding-period comparison, indefinite 0.05-degree coverage cells,
-  and accessible chart data tables.
+  weekly local-time patterns, bearing/altitude range profiles, drill-downs, and
+  accessible chart data tables.
 - Browser-local map layer preferences plus installation-wide saved views for
   Live, History, and Insights workflows.
 - Installable progressive web app with standalone display, app shortcuts,
   branded icons, automatic updates, and an offline application shell.
 - Focused in-app alerts for 7500/7600/7700 squawks, explicit emergencies, and
-  watchlist matches. First sightings remain available in receiver history
-  without flooding the alert feed.
+  watchlist or configurable identity/altitude/distance matches. First sightings
+  remain available in receiver history without flooding the alert feed.
 - Local registration/type/operator enrichment from the readsb-compatible
   tar1090 aircraft database.
 - Offline airline inference from observed ICAO callsign designators in
@@ -150,18 +154,23 @@ The primary routes are:
 - `GET /api/v1/status`
 - `GET /api/v1/aircraft/live`
 - `GET /api/v1/aircraft/:icao`
+- `GET /api/v1/aircraft/:icao/activity?from&to&bucket=day|month`
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/:id/track` with bounded `resolution`, `from`, `tail`,
   and `limit` query options
 - `GET /api/v1/summaries`
 - `GET /api/v1/insights/overview?from&to&bucket=hour|day&compare=true|false`
   and `GET /api/v1/insights/coverage?from&to`
+- `GET /api/v1/insights/patterns`, `GET /api/v1/insights/range-profile`, and
+  `GET /api/v1/insights/coverage-cell`
 - `GET`/`POST /api/v1/saved-views` and `PATCH`/`DELETE
   `/api/v1/saved-views/:id` (20 installation-wide views maximum)
 - `GET /api/v1/exports/insights`, `GET /api/v1/exports/coverage`, and
   `GET /api/v1/exports/sessions/:id?format=csv|geojson`
 - `GET /api/v1/alerts`, `POST /api/v1/alerts/:id/dismiss`, and bulk
   `POST /api/v1/alerts/dismiss`
+- `GET`/`POST /api/v1/alerts/rules`, `POST /api/v1/alerts/rules/preview`, and
+  `PATCH`/`DELETE /api/v1/alerts/rules/:id`
 - `GET /api/v1/watchlist`, `PUT /api/v1/watchlist/:icao`, and
   `DELETE /api/v1/watchlist/:icao`
 - `GET /api/v1/settings` and `PATCH /api/v1/settings`
