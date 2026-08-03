@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   aircraftIconId,
+  needsRecentre,
   interpolateTrack,
   isEmergencyAircraft,
   replayPointAtTime,
@@ -66,6 +67,34 @@ describe('aircraftIconId', () => {
   it('keeps surface vehicles on the ground colour whatever the altitude band', () => {
     expect(aircraftIconId('ground', 'unknown')).toBe('aircraft-ground-ground')
     expect(aircraftIconId('ground', 'high')).toBe('aircraft-ground-ground')
+  })
+})
+
+describe('needsRecentre', () => {
+  it('leaves the camera alone for an aircraft comfortably in view', () => {
+    expect(needsRecentre({ x: 500, y: 400 }, 1000, 800)).toBe(false)
+  })
+
+  it('recentres when the aircraft is off screen', () => {
+    expect(needsRecentre({ x: -40, y: 400 }, 1000, 800)).toBe(true)
+    expect(needsRecentre({ x: 1200, y: 400 }, 1000, 800)).toBe(true)
+    expect(needsRecentre({ x: 500, y: -10 }, 1000, 800)).toBe(true)
+    expect(needsRecentre({ x: 500, y: 900 }, 1000, 800)).toBe(true)
+  })
+
+  it('treats an aircraft crowding an edge as needing a recentre', () => {
+    expect(needsRecentre({ x: 20, y: 400 }, 1000, 800)).toBe(true)
+    expect(needsRecentre({ x: 985, y: 400 }, 1000, 800)).toBe(true)
+  })
+
+  it('clamps the margin so a small map does not recentre on everything', () => {
+    // A 120px-wide map would have no interior at all with a 90px margin.
+    expect(needsRecentre({ x: 60, y: 60 }, 120, 120)).toBe(false)
+    expect(needsRecentre({ x: 5, y: 60 }, 120, 120)).toBe(true)
+  })
+
+  it('recentres when the map has not been laid out yet', () => {
+    expect(needsRecentre({ x: 0, y: 0 }, 0, 0)).toBe(true)
   })
 })
 

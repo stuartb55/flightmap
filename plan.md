@@ -202,7 +202,7 @@ shortcut list.
 
 ### 6. Selection and navigation polish — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Three small frictions in the core interaction loop:
 

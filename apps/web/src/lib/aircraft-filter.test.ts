@@ -4,6 +4,7 @@ import {
   aircraftFilterErrors,
   defaultAircraftFilters,
   filterAircraft,
+  nextSelectionIndex,
   sortAircraft,
 } from './aircraft-filter'
 import { aircraft } from '../test/fixtures'
@@ -153,5 +154,32 @@ describe('remaining filter and sort branches', () => {
     expect(
       aircraftFilterErrors({ ...defaultAircraftFilters, maximumDistance: '-5' }),
     ).toMatchObject({ maximumDistance: expect.any(String) })
+  })
+})
+
+describe('nextSelectionIndex', () => {
+  it('steps forwards and backwards through the visible list', () => {
+    expect(nextSelectionIndex(0, 5, 1)).toBe(1)
+    expect(nextSelectionIndex(3, 5, -1)).toBe(2)
+  })
+
+  it('stops at both ends instead of wrapping', () => {
+    expect(nextSelectionIndex(4, 5, 1)).toBe(4)
+    expect(nextSelectionIndex(0, 5, -1)).toBe(0)
+  })
+
+  it('starts from the appropriate end when nothing is selected', () => {
+    expect(nextSelectionIndex(-1, 5, 1)).toBe(0)
+    expect(nextSelectionIndex(-1, 5, -1)).toBe(4)
+  })
+
+  it('jumps to the first and last aircraft', () => {
+    expect(nextSelectionIndex(2, 5, 'first')).toBe(0)
+    expect(nextSelectionIndex(2, 5, 'last')).toBe(4)
+  })
+
+  it('has nowhere to move in an empty list', () => {
+    expect(nextSelectionIndex(-1, 0, 1)).toBeNull()
+    expect(nextSelectionIndex(-1, 0, 'first')).toBeNull()
   })
 })

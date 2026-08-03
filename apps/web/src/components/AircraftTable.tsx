@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronUp, MapPinOff, Star } from 'lucide-react'
-import { memo, type ReactNode } from 'react'
+import { memo, useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import {
   aircraftLabel,
   formatAltitude,
@@ -117,16 +117,19 @@ const AircraftRow = memo(function AircraftRow({
   item,
   isSelected,
   columns,
+  rowRef,
   onSelect,
 }: {
   item: Aircraft
   isSelected: boolean
   columns: readonly ColumnKey[]
+  rowRef?: RefObject<HTMLTableRowElement | null>
   onSelect: (icao: string) => void
 }) {
   const isStale = (item.seenSeconds ?? 0) > 15
   return (
     <tr
+      ref={rowRef}
       className={`${isSelected ? 'selected' : ''} ${isStale ? 'stale' : ''}`}
       onClick={() => onSelect(item.icao)}
     >
@@ -151,6 +154,20 @@ export function AircraftTable({
   emptyDescription = 'Try widening the current filters.',
 }: Props) {
   const visible = columnDefinitions.filter((column) => columns.includes(column.key))
+  const selectedRowRef = useRef<HTMLTableRowElement>(null)
+
+  // Keyboard navigation is useless if the row it moves to is off screen. Only
+  // the nearest edge is scrolled, so a row already in view does not jump.
+  useEffect(() => {
+    if (!selectedIcao) return
+    selectedRowRef.current?.scrollIntoView({
+      block: 'nearest',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    })
+  }, [selectedIcao])
+
   const changeSort = (key: AircraftSortKey) =>
     onSort({
       key,
@@ -195,6 +212,7 @@ export function AircraftTable({
               item={item}
               isSelected={selectedIcao === item.icao}
               columns={columns}
+              rowRef={selectedIcao === item.icao ? selectedRowRef : undefined}
               onSelect={onSelect}
             />
           ))}
