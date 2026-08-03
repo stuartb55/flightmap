@@ -30,8 +30,10 @@ import {
   formatDateTimeInput,
   formatDistance,
   formatDuration,
+  formatSpeed,
   formatTime,
 } from '../lib/format'
+import { useUnitPreferences } from '../lib/unit-preferences'
 import type {
   HistoricalSummary,
   HistoryFilters,
@@ -147,6 +149,7 @@ function SessionCard({
   loading: boolean
   onToggle: () => void
 }) {
+  useUnitPreferences()
   const label = session.callsigns[0] || session.registration || session.icao.toUpperCase()
   return (
     <article className={`session-card ${selected ? 'selected' : ''}`}>
@@ -168,7 +171,7 @@ function SessionCard({
           </span>
           <span className="session-stats">
             <span><small>Altitude</small>{formatAltitude(session.maximumAltitudeFt)}</span>
-            <span><small>Max speed</small>{session.maximumSpeedKt == null ? '—' : `${Math.round(session.maximumSpeedKt)} kt`}</span>
+            <span><small>Max speed</small>{formatSpeed(session.maximumSpeedKt)}</span>
             <span><small>Closest</small>{formatDistance(session.closestDistanceNm)}</span>
             <span><small>Samples</small>{session.sampleCount.toLocaleString('en-GB')}</span>
           </span>
@@ -186,6 +189,7 @@ function SessionCard({
 }
 
 function SummaryCard({ summary }: { summary: HistoricalSummary }) {
+  useUnitPreferences()
   return (
     <article className="summary-card">
       <div>
@@ -212,6 +216,7 @@ function SummaryCard({ summary }: { summary: HistoricalSummary }) {
 }
 
 export function HistoryPage() {
+  useUnitPreferences()
   const { search: routeSearch, navigate } = useLocation()
   const [filters, setFilters] = useState<HistoryFilters>(() =>
     filtersFromSearch(routeSearch),
@@ -893,6 +898,7 @@ export function HistoryPage() {
                 </article>
               ))}
             </div>
+            <p className="export-units-note">Exports always use aviation units: feet, knots and nautical miles.</p>
             <dl>
               <div><dt>Aircraft</dt><dd>{selectedMetrics.uniqueAircraft}</dd></div>
               <div><dt>Displayed points</dt><dd>{selectedMetrics.samples.toLocaleString('en-GB')}</dd></div>

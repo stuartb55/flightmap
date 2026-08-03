@@ -20,7 +20,8 @@ import {
   shapePoints,
   type AircraftShape,
 } from '../lib/aircraft-category'
-import { aircraftLabel, altitudeColour } from '../lib/format'
+import { aircraftLabel, altitudeColour, altitudeDisplayValue, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
+import { unitLabels, useUnitPreferences, type UnitPreferences } from '../lib/unit-preferences'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import type { TrailPoint } from '../state/live-reducer'
 import { waypointData } from './waypoints'
@@ -298,6 +299,7 @@ function destinationPoint(
 function ringData(
   receiver: Receiver | null | undefined,
   rings: readonly number[],
+  units: UnitPreferences,
 ): FeatureCollection<Polygon> {
   const latitude = receiver?.latitude ?? defaultReceiver().latitude
   const longitude = receiver?.longitude ?? defaultReceiver().longitude
@@ -309,14 +311,20 @@ function ringData(
       )
       return {
         type: 'Feature',
-        properties: { distance, label: `${distance} nm` },
+        // Rings are configured in nautical miles; only their label follows the
+        // browser's distance unit.
+        properties: { distance, label: formatDistance(distance, units) },
         geometry: { type: 'Polygon', coordinates: [points] },
       }
     }),
   }
 }
 
-function liveAircraftData(aircraft: Aircraft[], selectedIcao?: string | null): FeatureCollection<Point> {
+function liveAircraftData(
+  aircraft: Aircraft[],
+  units: UnitPreferences,
+  selectedIcao?: string | null,
+): FeatureCollection<Point> {
   return {
     type: 'FeatureCollection',
     features: aircraft
@@ -333,7 +341,12 @@ function liveAircraftData(aircraft: Aircraft[], selectedIcao?: string | null): F
         properties: {
           icao: item.icao,
           label: aircraftLabel(item),
-          secondary: item.altitudeBaro === 'ground' ? 'GND' : item.altitudeBaro?.toLocaleString() ?? '',
+          secondary:
+            item.altitudeBaro === 'ground'
+              ? 'GND'
+              : item.altitudeBaro == null
+                ? ''
+                : altitudeDisplayValue(item.altitudeBaro, units).toLocaleString('en-GB'),
           rotation: item.track ?? item.trueHeading ?? 0,
           icon: aircraftIconId(aircraftShape(item), altitudeBand(item.altitudeBaro)),
           selected: item.icao === selectedIcao ? 1 : 0,
@@ -472,6 +485,18 @@ function replayData(tracks: TrackResponse[], replayTime?: number | null): Featur
   }
 }
 
+/** Thousands label for the legend, so the colour bands stay readable in metres. */
+export function scaleLabel(feet: number, units: UnitPreferences): string {
+  const thousands = altitudeDisplayValue(feet, units) / 1_000
+  return `${units.altitude === 'm' ? thousands.toFixed(1) : thousands.toFixed(0)}k`
+}
+
+/** MapLibre's scale bar offers three unit families; map ours onto them. */
+function scaleUnit(unit: UnitPreferences['distance']): 'nautical' | 'metric' | 'imperial' {
+  if (unit === 'km') return 'metric'
+  return unit === 'mi' ? 'imperial' : 'nautical'
+}
+
 function setSourceData(map: MapLibreMap, source: string, data: FeatureCollection) {
   ;(map.getSource(source) as GeoJSONSource | undefined)?.setData(data)
 }
@@ -498,6 +523,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const runtime = useRuntimeConfig()
   const runtimeRef = useRef(runtime)
   runtimeRef.current = runtime
+  const units = useUnitPreferences()
+  const unitsRef = useRef(units)
+  unitsRef.current = units
+  const scaleControlRef = useRef<maplibregl.ScaleControl | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const aircraftRef = useRef(aircraft)
@@ -621,7 +650,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       }),
       'bottom-left',
     )
-    map.addControl(new maplibregl.ScaleControl({ unit: 'nautical' }), 'bottom-left')
+    const scale = new maplibregl.ScaleControl({ unit: scaleUnit(unitsRef.current.distance) })
+    scaleControlRef.current = scale
+    map.addControl(scale, 'bottom-left')
 
     map.on('error', (event) => {
       if (!map.isStyleLoaded()) setMapError(event.error?.message ?? 'Map tiles are unavailable')
@@ -657,7 +688,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(RINGS_SOURCE, {
         type: 'geojson',
-        data: ringData(receiverRef.current, runtimeRef.current.rangeRingsNm)
+        data: ringData(receiverRef.current, runtimeRef.current.rangeRingsNm, unitsRef.current)
       })
       map.addLayer({
         id: 'range-ring-fill',
@@ -799,7 +830,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(AIRCRAFT_SOURCE, {
         type: 'geojson',
-        data: liveAircraftData(aircraftRef.current, selectedIcaoRef.current),
+        data: liveAircraftData(aircraftRef.current, unitsRef.current, selectedIcaoRef.current),
       })
       map.addLayer({
         id: 'aircraft-watched-halo',
@@ -945,14 +976,19 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
-    setSourceData(mapRef.current, AIRCRAFT_SOURCE, liveAircraftData(aircraft, selectedIcao))
-  }, [aircraft, selectedIcao, mapReady])
+    setSourceData(mapRef.current, AIRCRAFT_SOURCE, liveAircraftData(aircraft, units, selectedIcao))
+  }, [aircraft, selectedIcao, units, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     setSourceData(mapRef.current, RECEIVER_SOURCE, receiverData(receiver))
-    setSourceData(mapRef.current, RINGS_SOURCE, ringData(receiver, runtime.rangeRingsNm))
-  }, [receiver, runtime.rangeRingsNm, mapReady])
+    setSourceData(mapRef.current, RINGS_SOURCE, ringData(receiver, runtime.rangeRingsNm, units))
+  }, [receiver, runtime.rangeRingsNm, units, mapReady])
+
+  useEffect(() => {
+    if (!mapReady) return
+    scaleControlRef.current?.setUnit(scaleUnit(units.distance))
+  }, [units.distance, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1082,16 +1118,19 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} display={onMapDisplayChange ? mapDisplay : undefined} onDisplayChange={onMapDisplayChange} /> : null}
       {hoveredIcao ? (() => {
         const hovered = aircraft.find((item) => item.icao === hoveredIcao)
-        return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : `${hovered.altitudeBaro.toLocaleString('en-GB')} ft`} · {hovered.groundSpeed == null ? 'Speed —' : `${Math.round(hovered.groundSpeed)} kt`}</small></div> : null
+        return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : formatAltitude(hovered.altitudeBaro, units)} · {hovered.groundSpeed == null ? 'Speed —' : formatSpeed(hovered.groundSpeed, units)}</small></div> : null
       })() : null}
       <div className="map-legend" aria-label="Map legend">
-        <div className="map-altitude-scale" aria-label="Altitude colour scale">
+        <div
+          className="map-altitude-scale"
+          aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
+        >
           <span>GND</span>
           <i />
-          <span>10k</span>
-          <span>20k</span>
-          <span>30k</span>
-          <span>40k+</span>
+          <span>{scaleLabel(10_000, units)}</span>
+          <span>{scaleLabel(20_000, units)}</span>
+          <span>{scaleLabel(30_000, units)}</span>
+          <span>{scaleLabel(40_000, units)}+ {unitLabels.altitude[units.altitude]}</span>
         </div>
         <ul className="map-shape-key">
           {aircraftShapes.map((shape) => (

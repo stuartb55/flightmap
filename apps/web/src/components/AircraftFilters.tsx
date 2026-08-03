@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react'
 import { RotateCcw, Search, X } from 'lucide-react'
 import { categoryOptionLabel } from '../lib/aircraft-category'
 import {
@@ -6,6 +7,16 @@ import {
   defaultAircraftFilters,
   type AircraftFilters as AircraftFilterState,
 } from '../lib/aircraft-filter'
+import {
+  altitudeToFeet,
+  convertAltitude,
+  convertDistance,
+  convertSpeed,
+  distanceToNauticalMiles,
+  speedToKnots,
+  unitLabels,
+  useUnitPreferences,
+} from '../lib/unit-preferences'
 
 interface Props {
   filters: AircraftFilterState
@@ -15,13 +26,94 @@ interface Props {
   onClose?: () => void
 }
 
+/**
+ * Filter values are stored in canonical units — they are matched against
+ * receiver data and travel in URLs and saved views — so the field converts on
+ * the way in and out. The draft keeps what was typed while it still describes
+ * the stored value, so "12" does not become "12.00" mid-keystroke, and a reset
+ * or a unit change drops straight back to the converted value.
+ */
+function UnitField({
+  label,
+  value,
+  unit,
+  placeholder,
+  error,
+  step,
+  toDisplay,
+  toCanonical,
+  onChange,
+}: {
+  label: string
+  value: string
+  unit: string
+  placeholder: string
+  error?: string
+  step?: string
+  toDisplay: (canonical: number) => number
+  toCanonical: (display: number) => number
+  onChange: (value: string) => void
+}) {
+  const [draft, setDraft] = useState<{ canonical: string; unit: string; text: string } | null>(null)
+  const derived =
+    value === '' || !Number.isFinite(Number(value))
+      ? value
+      : String(Math.round(toDisplay(Number(value)) * 100) / 100)
+  const text = draft?.canonical === value && draft.unit === unit ? draft.text : derived
+
+  const handle = (next: string) => {
+    const canonical =
+      next.trim() === '' || !Number.isFinite(Number(next))
+        ? next
+        : String(Math.round(toCanonical(Number(next)) * 1_000) / 1_000)
+    setDraft({ canonical, unit, text: next })
+    onChange(canonical)
+  }
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <span className="input-suffix">
+        <input
+          type="number"
+          min="0"
+          step={step}
+          value={text}
+          onChange={(event) => handle(event.target.value)}
+          placeholder={placeholder}
+          aria-invalid={Boolean(error)}
+        />
+        <small>{unit}</small>
+      </span>
+      {error ? <small className="field-error">{error}</small> : null}
+    </label>
+  )
+}
+
 export function AircraftFilters({ filters, sources, categories, onChange, onClose }: Props) {
+  const units = useUnitPreferences()
   const update = <K extends keyof AircraftFilterState>(
     key: K,
     value: AircraftFilterState[K],
   ) => onChange({ ...filters, [key]: value })
   const active = activeFilterCount(filters)
   const errors = aircraftFilterErrors(filters)
+  const altitudeField = (
+    key: 'minimumAltitude' | 'maximumAltitude',
+    label: string,
+    placeholder: string,
+  ): ReactNode => (
+    <UnitField
+      label={label}
+      value={filters[key]}
+      unit={unitLabels.altitude[units.altitude]}
+      placeholder={placeholder}
+      error={errors[key]}
+      toDisplay={(feet) => convertAltitude(feet, units.altitude)}
+      toCanonical={(display) => altitudeToFeet(display, units.altitude)}
+      onChange={(next) => update(key, next)}
+    />
+  )
 
   return (
     <div className="filter-panel">
@@ -50,70 +142,36 @@ export function AircraftFilters({ filters, sources, categories, onChange, onClos
       </label>
 
       <div className="field-pair">
-        <label className="field">
-          <span>Minimum speed</span>
-          <span className="input-suffix">
-            <input
-              type="number"
-              min="0"
-              value={filters.minimumSpeed}
-              onChange={(event) => update('minimumSpeed', event.target.value)}
-              placeholder="0"
-              aria-invalid={Boolean(errors.minimumSpeed)}
-            />
-            <small>kt</small>
-          </span>
-          {errors.minimumSpeed ? <small className="field-error">{errors.minimumSpeed}</small> : null}
-        </label>
-        <label className="field">
-          <span>Maximum range</span>
-          <span className="input-suffix">
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={filters.maximumDistance}
-              onChange={(event) => update('maximumDistance', event.target.value)}
-              placeholder="100"
-              aria-invalid={Boolean(errors.maximumDistance)}
-            />
-            <small>nm</small>
-          </span>
-          {errors.maximumDistance ? <small className="field-error">{errors.maximumDistance}</small> : null}
-        </label>
+        <UnitField
+          label="Minimum speed"
+          value={filters.minimumSpeed}
+          unit={unitLabels.speed[units.speed]}
+          placeholder="0"
+          error={errors.minimumSpeed}
+          toDisplay={(knots) => convertSpeed(knots, units.speed)}
+          toCanonical={(display) => speedToKnots(display, units.speed)}
+          onChange={(next) => update('minimumSpeed', next)}
+        />
+        <UnitField
+          label="Maximum range"
+          value={filters.maximumDistance}
+          unit={unitLabels.distance[units.distance]}
+          placeholder={String(Math.round(convertDistance(100, units.distance)))}
+          error={errors.maximumDistance}
+          step="any"
+          toDisplay={(nauticalMiles) => convertDistance(nauticalMiles, units.distance)}
+          toCanonical={(display) => distanceToNauticalMiles(display, units.distance)}
+          onChange={(next) => update('maximumDistance', next)}
+        />
       </div>
 
       <div className="field-pair">
-        <label className="field">
-          <span>Minimum altitude</span>
-          <span className="input-suffix">
-            <input
-              type="number"
-              min="0"
-              value={filters.minimumAltitude}
-              onChange={(event) => update('minimumAltitude', event.target.value)}
-              placeholder="0"
-              aria-invalid={Boolean(errors.minimumAltitude)}
-            />
-            <small>ft</small>
-          </span>
-          {errors.minimumAltitude ? <small className="field-error">{errors.minimumAltitude}</small> : null}
-        </label>
-        <label className="field">
-          <span>Maximum altitude</span>
-          <span className="input-suffix">
-            <input
-              type="number"
-              min="0"
-              value={filters.maximumAltitude}
-              onChange={(event) => update('maximumAltitude', event.target.value)}
-              placeholder="50000"
-              aria-invalid={Boolean(errors.maximumAltitude)}
-            />
-            <small>ft</small>
-          </span>
-          {errors.maximumAltitude ? <small className="field-error">{errors.maximumAltitude}</small> : null}
-        </label>
+        {altitudeField('minimumAltitude', 'Minimum altitude', '0')}
+        {altitudeField(
+          'maximumAltitude',
+          'Maximum altitude',
+          String(Math.round(convertAltitude(50_000, units.altitude))),
+        )}
       </div>
 
       <label className="field">

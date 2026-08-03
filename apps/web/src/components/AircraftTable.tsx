@@ -9,6 +9,7 @@ import {
   formatVerticalRate,
   verticalTrend,
 } from '../lib/format'
+import { useUnitPreferences } from '../lib/unit-preferences'
 import type { AircraftSort, AircraftSortKey } from '../lib/aircraft-filter'
 import { columnDefinitions, defaultColumns, type ColumnKey } from '../lib/table-columns'
 import type { Aircraft } from '../types'
@@ -126,6 +127,9 @@ const AircraftRow = memo(function AircraftRow({
   rowRef?: RefObject<HTMLTableRowElement | null>
   onSelect: (icao: string) => void
 }) {
+  // Subscribing here rather than in the table means a unit change repaints the
+  // rows despite the memo: their props are unchanged by it.
+  useUnitPreferences()
   const isStale = (item.seenSeconds ?? 0) > 15
   return (
     <tr

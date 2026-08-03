@@ -3,6 +3,7 @@ import type { AircraftActivityResponse } from '@flightmap/shared'
 import { Activity, CalendarDays, Clock3, MapPin, Plane, Radio, Star } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatAltitude, formatDate, formatDateTime, formatDistance } from '../lib/format'
+import { useUnitPreferences } from '../lib/unit-preferences'
 import { Link, useLocation } from '../lib/router'
 import type { AircraftDetail } from '../types'
 
@@ -34,6 +35,7 @@ function ActivityBars({ activity }: { activity: AircraftActivityResponse }) {
 }
 
 export function AircraftProfilePage() {
+  useUnitPreferences()
   const { pathname } = useLocation()
   const icao = pathname.split('/').at(-1)?.toLowerCase() ?? ''
   const [detail, setDetail] = useState<AircraftDetail | null>(null)

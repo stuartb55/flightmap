@@ -30,7 +30,7 @@ export const columnDefinitions: readonly ColumnDefinition[] = [
   { key: 'altitude', label: 'Altitude', sortKey: 'altitude', description: 'Barometric altitude with climb or descent' },
   { key: 'speed', label: 'Speed', sortKey: 'speed', description: 'Ground speed' },
   { key: 'distance', label: 'Range', sortKey: 'distance', description: 'Distance from the receiver' },
-  { key: 'verticalRate', label: 'V/S', sortKey: 'verticalRate', description: 'Vertical rate in feet per minute' },
+  { key: 'verticalRate', label: 'V/S', sortKey: 'verticalRate', description: 'Climb or descent rate' },
   { key: 'track', label: 'Track', sortKey: 'track', description: 'Ground track in degrees' },
   { key: 'squawk', label: 'Squawk', sortKey: 'squawk', description: 'Transponder code' },
   { key: 'operator', label: 'Operator', sortKey: 'operator', description: 'Airline or owner' },

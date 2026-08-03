@@ -1,6 +1,13 @@
 import { useMemo, useState, type PointerEvent } from 'react'
 import { Activity, Gauge, MapPin, MoveVertical } from 'lucide-react'
-import { formatAltitude, formatDistance, formatSpeed, formatTime } from '../lib/format'
+import {
+  formatAltitude,
+  formatDistance,
+  formatSpeed,
+  formatTime,
+  formatVerticalRateValue,
+} from '../lib/format'
+import { useUnitPreferences } from '../lib/unit-preferences'
 import type { TrackPoint, TrackResponse } from '../types'
 
 type Metric = 'altitude' | 'speed' | 'verticalRate' | 'distance'
@@ -27,7 +34,7 @@ const metrics: Record<Metric, {
     label: 'Vertical rate',
     icon: MoveVertical,
     value: (point) => point.verticalRateFpm ?? null,
-    format: (value) => value == null ? '—' : `${Math.round(value).toLocaleString('en-GB')} ft/min`,
+    format: formatVerticalRateValue,
   },
   distance: {
     label: 'Receiver distance',
@@ -62,6 +69,7 @@ export function FlightProfile({
   replayTime: number | null
   onReplayTime: (time: number) => void
 }) {
+  useUnitPreferences()
   const [metric, setMetric] = useState<Metric>('altitude')
   const definition = metrics[metric]
   const bounds = useMemo(() => {

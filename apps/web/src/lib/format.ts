@@ -1,5 +1,14 @@
 import type { Altitude } from '../types'
 import { displayTimeZone } from '../config'
+import {
+  convertAltitude,
+  convertDistance,
+  convertSpeed,
+  convertVerticalRate,
+  unitLabels,
+  unitPreferences,
+  type UnitPreferences,
+} from './unit-preferences'
 
 // Formatters are cached per time zone rather than per module load, so a time
 // zone changed in Settings applies without a page reload.
@@ -35,24 +44,75 @@ const displayTime = () =>
     hour12: false,
   })
 
-export function formatAltitude(value: Altitude | undefined): string {
+/**
+ * Every value below arrives in canonical aviation units — feet, knots,
+ * nautical miles, feet per minute — and is converted here against the
+ * browser's unit preference. Passing `units` explicitly is for tests and for
+ * callers that already hold the preference; everything else reads the store.
+ */
+export function altitudeDisplayValue(
+  value: number,
+  units: UnitPreferences = unitPreferences(),
+): number {
+  const converted = convertAltitude(value, units.altitude)
+  // Altitude is reported to 25 ft, so metres are rounded to the nearest ten
+  // rather than implying a precision the receiver never had.
+  return units.altitude === 'm' ? Math.round(converted / 10) * 10 : Math.round(converted)
+}
+
+export function formatAltitude(
+  value: Altitude | undefined,
+  units: UnitPreferences = unitPreferences(),
+): string {
   if (value === 'ground') return 'GND'
   if (value == null || !Number.isFinite(value)) return '—'
-  return `${Math.round(value).toLocaleString('en-GB')} ft`
+  return `${altitudeDisplayValue(value, units).toLocaleString('en-GB')} ${unitLabels.altitude[units.altitude]}`
 }
 
-export function formatSpeed(value: number | null | undefined): string {
-  return value == null ? '—' : `${Math.round(value)} kt`
+export function formatSpeed(
+  value: number | null | undefined,
+  units: UnitPreferences = unitPreferences(),
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const converted = Math.round(convertSpeed(value, units.speed))
+  return `${converted.toLocaleString('en-GB')} ${unitLabels.speed[units.speed]}`
 }
 
-export function formatDistance(value: number | null | undefined): string {
-  return value == null ? '—' : `${value.toFixed(value < 10 ? 1 : 0)} nm`
+export function formatDistance(
+  value: number | null | undefined,
+  units: UnitPreferences = unitPreferences(),
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const converted = convertDistance(value, units.distance)
+  return `${converted.toFixed(converted < 10 ? 1 : 0)} ${unitLabels.distance[units.distance]}`
 }
 
-export function formatVerticalRate(value: number | null | undefined): string {
-  if (value == null) return '—'
+/** Signed rate without the trend arrow, for charts and readouts. */
+export function formatVerticalRateValue(
+  value: number | null | undefined,
+  units: UnitPreferences = unitPreferences(),
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const label = unitLabels.verticalRate[units.verticalRate]
+  if (units.verticalRate === 'ms') return `${convertVerticalRate(value, 'ms').toFixed(1)} ${label}`
+  return `${Math.round(value).toLocaleString('en-GB')} ${label}`
+}
+
+export function formatVerticalRate(
+  value: number | null | undefined,
+  units: UnitPreferences = unitPreferences(),
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  // The 100 ft/min deadband is applied to the canonical value so the arrow
+  // never disagrees with verticalTrend, whatever the display unit.
   const arrow = value > 100 ? '↑' : value < -100 ? '↓' : '→'
-  return `${arrow} ${Math.abs(Math.round(value / 100) * 100).toLocaleString('en-GB')} ft/min`
+  const magnitude = Math.abs(value)
+  const label = unitLabels.verticalRate[units.verticalRate]
+  const rate =
+    units.verticalRate === 'ms'
+      ? convertVerticalRate(magnitude, 'ms').toFixed(1)
+      : (Math.round(magnitude / 100) * 100).toLocaleString('en-GB')
+  return `${arrow} ${rate} ${label}`
 }
 
 /**

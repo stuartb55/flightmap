@@ -4,7 +4,7 @@ import { Layers3, X } from 'lucide-react'
 
 const options: Array<{ key: keyof MapLayerPreferences; label: string; hint: string }> = [
   { key: 'coverage', label: 'Coverage', hint: 'Last 30 days of aggregated positions' },
-  { key: 'rangeRings', label: 'Range rings', hint: 'Receiver-relative nautical miles' },
+  { key: 'rangeRings', label: 'Range rings', hint: 'Distance bands around the receiver' },
   { key: 'aircraftLabels', label: 'Aircraft labels', hint: 'Identity and altitude on the map' },
   { key: 'trails', label: 'Trails', hint: 'Live and historical track lines' },
   { key: 'allTrails', label: 'All trails', hint: 'Recent path of every aircraft on the map' },

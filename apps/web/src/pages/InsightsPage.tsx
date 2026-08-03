@@ -37,6 +37,12 @@ import {
   formatDateTimeInput,
   formatDistance,
 } from '../lib/format'
+import {
+  convertAltitude,
+  convertDistance,
+  unitLabels,
+  useUnitPreferences,
+} from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
 import { displayTimeZone } from '../config'
 
@@ -238,22 +244,39 @@ function signedChange(value: number | null, unit = '', fractionDigits = 0) {
 }
 
 function ComparisonPanel({ overview }: { overview: InsightOverview }) {
+  const units = useUnitPreferences()
   const comparison = overview.comparison
   if (!comparison) return null
+  // Absolute changes are differences in canonical units, so they convert by
+  // scale alone — no offset to worry about.
+  const identity = (value: number) => value
   const entries = [
-    ['Unique aircraft', 'uniqueAircraft', '', 0],
-    ['Sessions', 'sessions', '', 0],
-    ['Reports', 'reports', '', 0],
-    ['Positioned reports', 'positionedReports', '', 0],
-    ['Maximum range', 'maximumRangeNm', ' nm', 1],
-    ['Maximum altitude', 'maximumAltitudeFt', ' ft', 0],
+    ['Unique aircraft', 'uniqueAircraft', '', 0, identity],
+    ['Sessions', 'sessions', '', 0, identity],
+    ['Reports', 'reports', '', 0, identity],
+    ['Positioned reports', 'positionedReports', '', 0, identity],
+    [
+      'Maximum range',
+      'maximumRangeNm',
+      ` ${unitLabels.distance[units.distance]}`,
+      1,
+      (value: number) => convertDistance(value, units.distance),
+    ],
+    [
+      'Maximum altitude',
+      'maximumAltitudeFt',
+      ` ${unitLabels.altitude[units.altitude]}`,
+      0,
+      (value: number) => convertAltitude(value, units.altitude),
+    ],
   ] as const
   return (
     <section className="comparison-panel" aria-label="Period comparison">
       <header><div><span className="eyebrow">PERIOD COMPARISON</span><h2>Compared with the preceding period</h2></div><small>{formatDateTime(comparison.from)} — {formatDateTime(comparison.to)}</small></header>
-      <div>{entries.map(([label, key, unit, fractionDigits]) => {
+      <div>{entries.map(([label, key, unit, fractionDigits, convert]) => {
         const change = comparison.changes[key]
-        return <article key={key} className={(change?.absolute ?? 0) < 0 ? 'negative' : (change?.absolute ?? 0) > 0 ? 'positive' : ''}><small>{label}</small><strong>{signedChange(change?.absolute ?? null, unit, fractionDigits)}</strong><span>{change?.percent == null ? 'No percentage baseline' : `${signedChange(change.percent, '%', 1)} vs previous`}</span></article>
+        const absolute = change?.absolute == null ? null : convert(change.absolute)
+        return <article key={key} className={(change?.absolute ?? 0) < 0 ? 'negative' : (change?.absolute ?? 0) > 0 ? 'positive' : ''}><small>{label}</small><strong>{signedChange(absolute, unit, fractionDigits)}</strong><span>{change?.percent == null ? 'No percentage baseline' : `${signedChange(change.percent, '%', 1)} vs previous`}</span></article>
       })}</div>
     </section>
   )
@@ -294,6 +317,7 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
 }
 
 export function InsightsPage() {
+  useUnitPreferences()
   const initial = useMemo(() => insightRangeForPreset('today'), [])
   const [preset, setPreset] = useState<Preset>('today')
   const [range, setRange] = useState<InsightRange>(initial)
@@ -430,6 +454,7 @@ export function InsightsPage() {
           />
           <a className="secondary-button" download href={exportHref('insights', { ...range, compare })}><Download size={15} /> CSV</a>
           <a className="secondary-button" download href={exportHref('coverage', { from: range.from, to: range.to })}><Download size={15} /> GeoJSON</a>
+          <small className="export-units-note">Exports use ft, kt and nm</small>
           <button
             type="button"
             className="secondary-button"
@@ -552,7 +577,7 @@ export function InsightsPage() {
       ) : null}
 
       <section className="insight-panel coverage-panel">
-        <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under 1,000 ft</option><option value="low">1,000–10,000 ft</option><option value="medium">10,000–25,000 ft</option><option value="high">25,000 ft and above</option></select></label></header>
+        <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under {formatAltitude(1_000)}</option><option value="low">{formatAltitude(1_000)}–{formatAltitude(10_000)}</option><option value="medium">{formatAltitude(10_000)}–{formatAltitude(25_000)}</option><option value="high">{formatAltitude(25_000)} and above</option></select></label></header>
         {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? <RangeProfile profile={rangeProfile} /> : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
       </section>
 

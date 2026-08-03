@@ -1,5 +1,6 @@
 import type { RangeProfileResponse } from '@flightmap/shared'
 import { formatDistance } from '../lib/format'
+import { convertDistance, unitLabels, useUnitPreferences } from '../lib/unit-preferences'
 
 function polarPoints(values: Array<number | null>, maximum: number, radius: number, centre: number) {
   return values.map((value, index) => {
@@ -10,6 +11,7 @@ function polarPoints(values: Array<number | null>, maximum: number, radius: numb
 }
 
 export function RangeProfile({ profile }: { profile: RangeProfileResponse }) {
+  const units = useUnitPreferences()
   const values = profile.sectors.map((sector) => sector.p95RangeNm)
   const medians = profile.sectors.map((sector) => sector.medianRangeNm)
   const maximum = Math.max(10, ...profile.sectors.map((sector) => sector.maximumRangeNm ?? 0))
@@ -25,12 +27,12 @@ export function RangeProfile({ profile }: { profile: RangeProfileResponse }) {
         })}
         <polygon points={polarPoints(values, maximum, radius, centre)} className="range-p95" />
         <polygon points={polarPoints(medians, maximum, radius, centre)} className="range-median" />
-        <text x={centre} y={centre + 4} textAnchor="middle" className="range-scale-label">{Math.round(maximum)} nm</text>
+        <text x={centre} y={centre + 4} textAnchor="middle" className="range-scale-label">{formatDistance(maximum, units)}</text>
       </svg>
       <div className="range-profile-summary">
         <p><i className="p95" /> 95th-percentile range</p><p><i className="median" /> Median range</p>
         <strong>Sector changes</strong>
-        <ol>{profile.sectors.filter((sector) => sector.p95ChangeNm != null).sort((left, right) => Math.abs(right.p95ChangeNm!) - Math.abs(left.p95ChangeNm!)).slice(0, 8).map((sector) => <li key={sector.bearingStartDeg}><span>{sector.bearingStartDeg}–{sector.bearingEndDeg}°</span><strong className={sector.p95ChangeNm! >= 0 ? 'positive' : 'negative'}>{sector.p95ChangeNm! > 0 ? '+' : ''}{sector.p95ChangeNm!.toFixed(1)} nm</strong></li>)}</ol>
+        <ol>{profile.sectors.filter((sector) => sector.p95ChangeNm != null).sort((left, right) => Math.abs(right.p95ChangeNm!) - Math.abs(left.p95ChangeNm!)).slice(0, 8).map((sector) => <li key={sector.bearingStartDeg}><span>{sector.bearingStartDeg}–{sector.bearingEndDeg}°</span><strong className={sector.p95ChangeNm! >= 0 ? 'positive' : 'negative'}>{sector.p95ChangeNm! > 0 ? '+' : ''}{convertDistance(sector.p95ChangeNm!, units.distance).toFixed(1)} {unitLabels.distance[units.distance]}</strong></li>)}</ol>
         {profile.availableFrom ? <small>Range profiles available from {profile.availableFrom}.</small> : <small>Range profile aggregation begins with new positioned reports.</small>}
       </div>
     </div>

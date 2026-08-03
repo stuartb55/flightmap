@@ -37,7 +37,8 @@ import {
   type AircraftSort,
   type SelectionMove,
 } from '../lib/aircraft-filter'
-import { aircraftLabel } from '../lib/format'
+import { aircraftLabel, formatAltitude } from '../lib/format'
+import { useUnitPreferences } from '../lib/unit-preferences'
 import { useSearchParams } from '../lib/router'
 import { mobileColumns, useAircraftColumns } from '../lib/table-columns'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
@@ -116,6 +117,7 @@ function useModalFocus(
 }
 
 export function LivePage() {
+  const units = useUnitPreferences()
   const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
   const dispatch = useLiveDispatch()
@@ -532,7 +534,7 @@ export function LivePage() {
             </button>
             <Plane size={16} />
             <strong>{aircraftLabel(selected)}</strong>
-            <span>{selected.altitudeBaro === 'ground' ? 'GND' : selected.altitudeBaro ? `${selected.altitudeBaro.toLocaleString()} ft` : 'Altitude —'}</span>
+            <span>{selected.altitudeBaro == null ? 'Altitude —' : formatAltitude(selected.altitudeBaro, units)}</span>
           </div>
         ) : null}
       </section>
