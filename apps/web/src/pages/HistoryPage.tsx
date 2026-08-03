@@ -543,17 +543,50 @@ export function HistoryPage() {
     }
   }, [playing, speed, replayBounds])
 
-  useEffect(() => {
+  const replayTimeRef = useRef(replayTime)
+  replayTimeRef.current = replayTime
+  const writeUrl = useCallback(() => {
     if (restoringUrlRef.current) return
-    const timer = window.setTimeout(() => {
-      window.history.replaceState(
-        null,
-        '',
-        historyUrl(appliedFilters, selectedTracks.map((track) => track.session.id), replayTime, resolution),
-      )
-    }, 300)
+    window.history.replaceState(
+      null,
+      '',
+      historyUrl(
+        appliedFilters,
+        selectedTracks.map((track) => track.session.id),
+        replayTimeRef.current,
+        resolution,
+      ),
+    )
+  }, [appliedFilters, resolution, selectedTracks])
+  const writeUrlRef = useRef(writeUrl)
+  writeUrlRef.current = writeUrl
+
+  // Filters, selection and resolution settle on their own debounce. Replay is
+  // deliberately not a dependency: it advances every animation frame, and a
+  // shared dependency would clear this timer before it could ever fire.
+  useEffect(() => {
+    const timer = window.setTimeout(() => writeUrlRef.current(), 300)
     return () => window.clearTimeout(timer)
-  }, [appliedFilters, replayTime, resolution, selectedTracks])
+  }, [appliedFilters, resolution, selectedTracks])
+
+  // A playing replay is persisted on a fixed interval, and once more when it
+  // stops, so the address bar stays close to the visible position without
+  // rewriting it sixty times a second.
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setInterval(() => writeUrlRef.current(), 1_000)
+    return () => {
+      window.clearInterval(timer)
+      writeUrlRef.current()
+    }
+  }, [playing])
+
+  // Scrubbing while paused is a burst of changes that does settle.
+  useEffect(() => {
+    if (playing) return
+    const timer = window.setTimeout(() => writeUrlRef.current(), 300)
+    return () => window.clearTimeout(timer)
+  }, [playing, replayTime])
 
   const clearTracks = () => {
     setTracks({})
