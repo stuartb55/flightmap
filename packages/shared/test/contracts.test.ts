@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   icaoSchema,
   dismissAlertsInputSchema,
+  customAlertRuleInputSchema,
+  customAlertRulePatchSchema,
   insightCoverageQuerySchema,
   insightQuerySchema,
   receiverAircraftSchema,
@@ -86,6 +88,22 @@ describe("shared contracts", () => {
     expect(() =>
       dismissAlertsInputSchema.parse({ ids: Array(201).fill(id) })
     ).toThrow();
+  });
+
+  it("validates custom alert predicates and permits operational patches", () => {
+    expect(customAlertRuleInputSchema.parse({
+      name: "Nearby cargo",
+      operator: "Cargo",
+      maximumDistanceNm: 25,
+      severity: "warning"
+    })).toMatchObject({ operator: "Cargo", maximumDistanceNm: 25, cooldownMinutes: 0 });
+    expect(() => customAlertRuleInputSchema.parse({ name: "No conditions" })).toThrow();
+    expect(() => customAlertRuleInputSchema.parse({
+      name: "Reversed altitude",
+      minimumAltitudeFt: 20_000,
+      maximumAltitudeFt: 10_000
+    })).toThrow();
+    expect(customAlertRulePatchSchema.parse({ enabled: false })).toEqual({ enabled: false });
   });
 
   it("requires ordered UTC insight ranges and an explicit bucket", () => {

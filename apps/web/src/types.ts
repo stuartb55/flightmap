@@ -89,7 +89,7 @@ export interface LiveSnapshot {
   aircraft: Aircraft[]
 }
 
-export type AlertKind = 'emergency' | 'watchlist'
+export type AlertKind = 'emergency' | 'watchlist' | 'custom'
 
 export interface AlertEvent {
   id: string
@@ -142,12 +142,24 @@ export interface TrackPoint {
   altitudeFt: number | null
   groundSpeedKt: number | null
   trackDegrees: number | null
+  verticalRateFpm?: number | null
+  distanceNm?: number | null
+  bearingDegrees?: number | null
+}
+
+export interface TrackEvent {
+  type: 'session_start' | 'session_end' | 'callsign' | 'squawk' | 'emergency' | 'alert' | 'closest_approach'
+  occurredAt: string
+  label: string
+  value: string | null
+  severity: 'info' | 'warning' | 'critical'
 }
 
 export interface TrackResponse {
   session: SessionSummary
   resolution: 'auto' | '1s' | '5s' | '15s' | '60s'
   points: TrackPoint[]
+  events: TrackEvent[]
   truncated: boolean
 }
 
@@ -253,6 +265,11 @@ export interface AppSettingsResponse {
 
 export interface HistoryFilters {
   query: string
+  icao: string
+  callsign: string
+  registration: string
+  type: string
+  operator: string
   from: string
   to: string
   alert: '' | 'emergency_squawk' | 'emergency_state' | 'watchlist'

@@ -22,7 +22,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     connection === 'live' ? (receiver?.status ?? 'connecting') : connection === 'connecting' ? 'connecting' : connection
 
   useEffect(() => {
-    const page = navigation.find((item) => item.to === pathname)?.label ?? 'Live'
+    const page = pathname.startsWith('/aircraft/')
+      ? 'Aircraft'
+      : navigation.find((item) => item.to === pathname)?.label ?? 'Live'
     document.title = `${page} · Flightmap`
     mainRef.current?.focus({ preventScroll: true })
   }, [pathname])

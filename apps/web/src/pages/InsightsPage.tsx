@@ -1,8 +1,12 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  CoverageCell,
+  CoverageCellDetailResponse,
   InsightCoverageResponse,
   InsightLeader,
   InsightOverview,
+  InsightPatternsResponse,
+  RangeProfileResponse,
   InsightSeriesPoint,
   SavedViewConfiguration,
 } from '@flightmap/shared'
@@ -20,6 +24,8 @@ import {
   Route,
 } from 'lucide-react'
 import { CoverageMap } from '../components/CoverageMap'
+import { ActivityPattern } from '../components/ActivityPattern'
+import { RangeProfile } from '../components/RangeProfile'
 import type { CoverageMapHandle } from '../components/CoverageMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { api } from '../lib/api'
@@ -32,6 +38,7 @@ import {
   formatDistance,
 } from '../lib/format'
 import { useMapLayers } from '../lib/map-preferences'
+import { DISPLAY_TIME_ZONE } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
 type InsightRange = { from: string; to: string; bucket: 'hour' | 'day' }
@@ -63,7 +70,7 @@ function seriesLabel(point: InsightSeriesPoint, bucket: 'hour' | 'day') {
       )
 }
 
-function ActivityChart({ overview }: { overview: InsightOverview }) {
+function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSelect: (point: InsightSeriesPoint) => void }) {
   const width = 760
   const height = 220
   const chartTop = 18
@@ -114,6 +121,12 @@ function ActivityChart({ overview }: { overview: InsightOverview }) {
                 height={barHeight}
                 rx="2"
                 className="chart-bar"
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelect(point)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                }}
               >
                 <title>{`${seriesLabel(point, overview.bucket)}: ${point.reports.toLocaleString('en-GB')} reports, ${point.uniqueAircraft.toLocaleString('en-GB')} aircraft`}</title>
               </rect>
@@ -250,7 +263,7 @@ function exportHref(path: string, values: Record<string, string | boolean>) {
   return `/api/v1/exports/${path}?${params.toString()}`
 }
 
-function LeaderList({ title, leaders }: { title: string; leaders: InsightLeader[] }) {
+function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightLeader[]; kind: 'aircraft' | 'type' | 'operator' }) {
   const maximum = Math.max(1, ...leaders.map((leader) => leader.reports))
   return (
     <section className="leader-card">
@@ -260,13 +273,13 @@ function LeaderList({ title, leaders }: { title: string; leaders: InsightLeader[
           {leaders.map((leader) => (
             <li key={leader.key}>
               <span className="leader-rank" aria-hidden="true" />
-              <span className="leader-copy">
+              <a className="leader-copy" href={kind === 'aircraft' ? `/aircraft/${leader.key}` : `/history?${kind}=${encodeURIComponent(leader.label)}`}>
                 <strong>{leader.label}</strong>
                 <small>{leader.secondary ?? `${leader.sessions.toLocaleString('en-GB')} sessions`}</small>
                 <span className="leader-meter" aria-hidden="true">
                   <i style={{ width: `${Math.max(3, (leader.reports / maximum) * 100)}%` }} />
                 </span>
-              </span>
+              </a>
               <span className="leader-value">{compactNumber(leader.reports)}</span>
             </li>
           ))}
@@ -286,6 +299,11 @@ export function InsightsPage() {
   const [customTo, setCustomTo] = useState(formatDateTimeInput(new Date(initial.to)))
   const [overview, setOverview] = useState<InsightOverview | null>(null)
   const [coverage, setCoverage] = useState<InsightCoverageResponse | null>(null)
+  const [patterns, setPatterns] = useState<InsightPatternsResponse | null>(null)
+  const [rangeProfile, setRangeProfile] = useState<RangeProfileResponse | null>(null)
+  const [altitudeBand, setAltitudeBand] = useState<'all' | 'ground' | 'low' | 'medium' | 'high'>('all')
+  const [selectedCoverage, setSelectedCoverage] = useState<CoverageCellDetailResponse | null>(null)
+  const [coverageDetailLoading, setCoverageDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [coverageError, setCoverageError] = useState<string | null>(null)
@@ -302,7 +320,9 @@ export function InsightsPage() {
     void Promise.allSettled([
       api.insightsOverview({ ...range, compare }, controller.signal),
       api.insightsCoverage(range, controller.signal),
-    ]).then(([overviewResult, coverageResult]) => {
+      api.insightPatterns({ from: range.from, to: range.to, timeZone: DISPLAY_TIME_ZONE, compare }, controller.signal),
+      api.rangeProfile({ from: range.from, to: range.to, altitudeBand, compare }, controller.signal),
+    ]).then(([overviewResult, coverageResult, patternsResult, rangeProfileResult]) => {
       if (controller.signal.aborted) return
       if (overviewResult.status === 'fulfilled') setOverview(overviewResult.value)
       else {
@@ -322,10 +342,12 @@ export function InsightsPage() {
             : 'Coverage is unavailable.',
         )
       }
+      setPatterns(patternsResult.status === 'fulfilled' ? patternsResult.value : null)
+      setRangeProfile(rangeProfileResult.status === 'fulfilled' ? rangeProfileResult.value : null)
       setLoading(false)
     })
     return () => controller.abort()
-  }, [range, compare, refreshKey])
+  }, [range, compare, altitudeBand, refreshKey])
 
   const choosePreset = (value: Exclude<Preset, 'custom'>) => {
     const next = insightRangeForPreset(value)
@@ -356,6 +378,15 @@ export function InsightsPage() {
     ? Math.min(100, (backfill.processedDays / backfill.totalDays) * 100)
     : 0
   const activityEmpty = !loading && overview?.metrics.reports === 0
+
+  const selectCoverageCell = (cell: CoverageCell) => {
+    setCoverageDetailLoading(true)
+    setSelectedCoverage(null)
+    void api.coverageCellDetail({ from: range.from, to: range.to, latitude: cell.latitude, longitude: cell.longitude })
+      .then(setSelectedCoverage)
+      .catch((reason) => setCoverageError(reason instanceof Error ? reason.message : 'Coverage cell details are unavailable.'))
+      .finally(() => setCoverageDetailLoading(false))
+  }
 
   const applySavedView = (configuration: SavedViewConfiguration) => {
     if (configuration.surface !== 'insights') return
@@ -501,21 +532,27 @@ export function InsightsPage() {
               <section className="insight-panel activity-panel">
                 <header><div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div><small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small></header>
                 <ReceiverContext series={overview.series} />
-                <ActivityChart overview={overview} />
+                <ActivityChart overview={overview} onSelect={(point) => { window.location.href = `/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}` }} />
               </section>
 
               <section className="insight-panel">
                 <header><div><span className="eyebrow">FREQUENCY</span><h2>Most observed</h2></div><small>Ranked by receiver reports</small></header>
                 <div className="leader-grid">
-                  <LeaderList title="Aircraft" leaders={overview.leaders.aircraft} />
-                  <LeaderList title="Types" leaders={overview.leaders.types} />
-                  <LeaderList title="Operators" leaders={overview.leaders.operators} />
+                  <LeaderList title="Aircraft" leaders={overview.leaders.aircraft} kind="aircraft" />
+                  <LeaderList title="Types" leaders={overview.leaders.types} kind="type" />
+                  <LeaderList title="Operators" leaders={overview.leaders.operators} kind="operator" />
                 </div>
               </section>
+              {patterns?.cells.length ? <ActivityPattern patterns={patterns} /> : null}
             </>
           )}
         </>
       ) : null}
+
+      <section className="insight-panel coverage-panel">
+        <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under 1,000 ft</option><option value="low">1,000–10,000 ft</option><option value="medium">10,000–25,000 ft</option><option value="high">25,000 ft and above</option></select></label></header>
+        {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? <RangeProfile profile={rangeProfile} /> : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
+      </section>
 
       <section className="insight-panel coverage-panel">
         <header>
@@ -526,7 +563,7 @@ export function InsightsPage() {
           <div className="coverage-empty" role="status"><AlertTriangle size={21} /><strong>Coverage unavailable</strong><span>{coverageError}</span></div>
         ) : coverage?.cells.length ? (
           <>
-            <CoverageMap ref={coverageMapRef} cells={coverage.cells} />
+            <CoverageMap ref={coverageMapRef} cells={coverage.cells} onSelectCell={selectCoverageCell} />
             <p className="coverage-summary">
               {coverage.cells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
               {Math.max(...coverage.cells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
@@ -538,7 +575,7 @@ export function InsightsPage() {
                 <table>
                   <caption>Top coverage heatmap cells</caption>
                   <thead><tr><th scope="col">Centre</th><th scope="col">Reports</th><th scope="col">Aircraft</th><th scope="col">Maximum altitude</th></tr></thead>
-                  <tbody>{coverage.cells.slice(0, 50).map((cell) => <tr key={`${cell.latitude}:${cell.longitude}`}><th scope="row">{cell.latitude.toFixed(3)}, {cell.longitude.toFixed(3)}</th><td>{cell.reports.toLocaleString('en-GB')}</td><td>{cell.uniqueAircraft.toLocaleString('en-GB')}</td><td>{formatAltitude(cell.maximumAltitudeFt)}</td></tr>)}</tbody>
+                  <tbody>{coverage.cells.slice(0, 50).map((cell) => <tr key={`${cell.latitude}:${cell.longitude}`}><th scope="row"><button type="button" className="text-button" onClick={() => selectCoverageCell(cell)}>{cell.latitude.toFixed(3)}, {cell.longitude.toFixed(3)}</button></th><td>{cell.reports.toLocaleString('en-GB')}</td><td>{cell.uniqueAircraft.toLocaleString('en-GB')}</td><td>{formatAltitude(cell.maximumAltitudeFt)}</td></tr>)}</tbody>
                 </table>
               </div>
             </details>
@@ -546,6 +583,14 @@ export function InsightsPage() {
         ) : (
           <div className="coverage-empty"><MapPinned size={21} /><strong>No aggregated coverage yet</strong><span>Coverage is populated by positioned reports and can still be backfilling even when activity summaries are available.</span></div>
         )}
+        {coverageDetailLoading ? <p className="coverage-summary" role="status">Loading selected coverage cell…</p> : null}
+        {selectedCoverage ? (
+          <aside className="coverage-cell-detail" aria-label="Selected coverage cell details">
+            <header><div><span className="eyebrow">SELECTED CELL</span><h3>{selectedCoverage.cell.latitude.toFixed(3)}, {selectedCoverage.cell.longitude.toFixed(3)}</h3></div><button type="button" className="text-button" onClick={() => setSelectedCoverage(null)}>Close</button></header>
+            <dl><div><dt>Reports</dt><dd>{selectedCoverage.cell.reports.toLocaleString('en-GB')}</dd></div><div><dt>Aircraft</dt><dd>{selectedCoverage.cell.uniqueAircraft.toLocaleString('en-GB')}</dd></div><div><dt>Maximum altitude</dt><dd>{formatAltitude(selectedCoverage.cell.maximumAltitudeFt)}</dd></div></dl>
+            <div className="coverage-aircraft-links">{selectedCoverage.aircraft.slice(0, 50).map((aircraft) => <a key={aircraft.icao} href={`/aircraft/${aircraft.icao}`}><strong>{aircraft.registration || aircraft.icao.toUpperCase()}</strong><small>{aircraft.typeCode || aircraft.operator || 'Aircraft profile'}</small></a>)}</div>
+          </aside>
+        ) : null}
       </section>
     </div>
   )

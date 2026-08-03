@@ -34,7 +34,7 @@ describe("live aircraft alerts", () => {
       expect.stringContaining("a.rule = ANY($2::text[])"),
       [
         expect.any(Date),
-        ["emergency_squawk", "emergency_state", "watchlist"]
+        ["emergency_squawk", "emergency_state", "watchlist", "custom"]
       ]
     );
   });

@@ -272,6 +272,31 @@ export class InsightBackfillService {
         [day]
       );
       await client.query(
+        "DELETE FROM daily_range_histogram WHERE profile_date = $1",
+        [day]
+      );
+      await client.query(
+        `INSERT INTO daily_range_histogram (
+           profile_date, bearing_bucket, altitude_band, range_bucket_nm,
+           reports, aircraft_icaos
+         )
+         WITH ${validatedPositionCtes()}
+         SELECT $1::date,
+                floor(mod(bearing_deg + 360, 360) / 5)::smallint,
+                CASE
+                  WHEN on_ground THEN 'ground'
+                  WHEN trusted_altitude_ft IS NULL OR trusted_altitude_ft < 10000 THEN 'low'
+                  WHEN trusted_altitude_ft < 25000 THEN 'medium'
+                  ELSE 'high'
+                END,
+                least(500, floor(greatest(0, distance_nm) / 5) * 5)::smallint,
+                count(*), array_agg(DISTINCT trim(icao))
+         FROM validated_positions
+         WHERE bearing_deg IS NOT NULL AND distance_nm IS NOT NULL
+         GROUP BY 1, 2, 3, 4`,
+        [day]
+      );
+      await client.query(
         `UPDATE daily_aircraft_summary
          SET minimum_altitude_ft = NULL, maximum_altitude_ft = NULL
          WHERE summary_date = $1`,

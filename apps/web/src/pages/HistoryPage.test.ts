@@ -20,6 +20,11 @@ describe('history URL restoration', () => {
     const url = historyUrl(
       {
         query: 'G-TEST',
+        icao: '',
+        callsign: '',
+        registration: '',
+        type: '',
+        operator: '',
         from: '2026-08-01T10:00',
         to: '2026-08-01T14:00',
         alert: 'watchlist',

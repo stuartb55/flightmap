@@ -28,6 +28,15 @@ function dependencies() {
       sessions: vi.fn(),
       insightsOverview: vi.fn().mockResolvedValue({}),
       insightsCoverage: vi.fn().mockResolvedValue({}),
+      insightPatterns: vi.fn().mockResolvedValue({}),
+      rangeProfile: vi.fn().mockResolvedValue({}),
+      coverageCellDetail: vi.fn().mockResolvedValue({}),
+      aircraftActivity: vi.fn().mockResolvedValue({}),
+      customAlertRules: vi.fn().mockResolvedValue([]),
+      previewCustomAlertRule: vi.fn().mockResolvedValue({ matches: [] }),
+      createCustomAlertRule: vi.fn(),
+      updateCustomAlertRule: vi.fn(),
+      deleteCustomAlertRule: vi.fn(),
       savedViews: vi.fn().mockResolvedValue([]),
       createSavedView: vi.fn(),
       updateSavedView: vi.fn(),
@@ -180,6 +189,33 @@ describe("structured route errors", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(deps.repository.createSavedView).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("validates and previews custom alert rules without persisting them", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const invalid = await server.inject({
+      method: "POST",
+      url: "/api/v1/alerts/rules/preview",
+      payload: { name: "No predicate" }
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(deps.repository.previewCustomAlertRule).not.toHaveBeenCalled();
+
+    const valid = await server.inject({
+      method: "POST",
+      url: "/api/v1/alerts/rules/preview",
+      payload: { name: "Nearby", maximumDistanceNm: 20 }
+    });
+    expect(valid.statusCode).toBe(200);
+    expect(deps.repository.previewCustomAlertRule).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Nearby", maximumDistanceNm: 20 })
+    );
     await server.close();
   });
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MapLayerPreferences } from '@flightmap/shared'
+import type { MapDisplayPreferences, MapLayerPreferences } from '@flightmap/shared'
 import { Layers3, X } from 'lucide-react'
 
 const options: Array<{ key: keyof MapLayerPreferences; label: string; hint: string }> = [
@@ -13,9 +13,13 @@ const options: Array<{ key: keyof MapLayerPreferences; label: string; hint: stri
 export function MapLayerMenu({
   layers,
   onChange,
+  display,
+  onDisplayChange,
 }: {
   layers: MapLayerPreferences
   onChange: (layers: MapLayerPreferences) => void
+  display?: MapDisplayPreferences
+  onDisplayChange?: (display: MapDisplayPreferences) => void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -56,6 +60,12 @@ export function MapLayerMenu({
               </label>
             ))}
           </div>
+          {display && onDisplayChange ? (
+            <div className="map-display-options">
+              <label><span><strong>Trail length</strong><small>Selected live aircraft</small></span><select value={display.trailMinutes} onChange={(event) => onDisplayChange({ ...display, trailMinutes: Number(event.target.value) as MapDisplayPreferences['trailMinutes'] })}><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option></select></label>
+              <label><span><strong>Label density</strong><small>Emergency and selected labels remain visible</small></span><select value={display.labelDensity} onChange={(event) => onDisplayChange({ ...display, labelDensity: event.target.value as MapDisplayPreferences['labelDensity'] })}><option value="auto">Automatic</option><option value="reduced">Reduced</option><option value="full">Full</option></select></label>
+            </div>
+          ) : null}
           <p>Choices are stored in this browser. Named saved views can carry them to another device.</p>
         </div>
       ) : null}

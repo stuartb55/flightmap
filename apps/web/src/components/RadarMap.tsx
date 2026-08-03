@@ -6,17 +6,17 @@ import {
   useState,
 } from 'react'
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
-import type { CoverageCell, MapLayerPreferences, MapViewport } from '@flightmap/shared'
+import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
+import { Focus, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { DEFAULT_RECEIVER, MAP_STYLE_URL, RANGE_RINGS_NM } from '../config'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import { manchesterWaypointData } from './manchester-waypoints'
 import { MapLayerMenu } from './MapLayerMenu'
-import { defaultMapLayers } from '../lib/map-preferences'
+import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
@@ -38,6 +38,8 @@ interface Props {
   className?: string
   mapLayers?: MapLayerPreferences
   onMapLayersChange?: (layers: MapLayerPreferences) => void
+  mapDisplay?: MapDisplayPreferences
+  onMapDisplayChange?: (display: MapDisplayPreferences) => void
   coverageCells?: CoverageCell[]
 }
 
@@ -393,6 +395,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     className,
     mapLayers = defaultMapLayers,
     onMapLayersChange,
+    mapDisplay = defaultMapDisplay,
+    onMapDisplayChange,
     coverageCells = [],
   },
   forwardedRef,
@@ -410,6 +414,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const lastFollowAtRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
+  const [followSelected, setFollowSelected] = useState(false)
+  const [hoveredIcao, setHoveredIcao] = useState<string | null>(null)
 
   aircraftRef.current = aircraft
   receiverRef.current = receiver
@@ -794,8 +800,13 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       map.on('mouseenter', 'aircraft-icons', () => {
         map.getCanvas().style.cursor = 'pointer'
       })
+      map.on('mousemove', 'aircraft-icons', (event) => {
+        const icao = event.features?.[0]?.properties?.icao
+        setHoveredIcao(typeof icao === 'string' ? icao : null)
+      })
       map.on('mouseleave', 'aircraft-icons', () => {
         map.getCanvas().style.cursor = ''
+        setHoveredIcao(null)
       })
       applyLayerVisibility(map, mapLayersRef.current)
       setMapError(null)
@@ -835,6 +846,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   }, [mapLayers, mapReady])
 
   useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.getLayer('aircraft-labels')) return
+    map.setLayerZoomRange('aircraft-labels', mapDisplay.labelDensity === 'full' ? 0 : mapDisplay.labelDensity === 'reduced' ? 8.5 : 7.2, 24)
+    map.setLayoutProperty('aircraft-labels', 'text-allow-overlap', mapDisplay.labelDensity === 'full')
+    map.setFilter('aircraft-labels', mapDisplay.labelDensity === 'reduced'
+      ? ['any', ['==', ['get', 'selected'], 1], ['==', ['get', 'emergency'], 1], ['==', ['get', 'watched'], 1]]
+      : null)
+  }, [mapDisplay.labelDensity, mapReady])
+
+  useEffect(() => {
     if (!mapReady || !mapRef.current) return
     setSourceData(mapRef.current, REPLAY_SOURCE, replayData(tracks, replayTime))
   }, [tracks, replayTime, mapReady])
@@ -850,6 +871,18 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       })
     }
   }, [selectedIcao, mapReady])
+
+  useEffect(() => {
+    if (!selectedIcao) setFollowSelected(false)
+  }, [selectedIcao])
+
+  useEffect(() => {
+    if (!followSelected || !selectedIcao || !mapRef.current) return
+    const selected = aircraft.find((item) => item.icao === selectedIcao)
+    if (selected?.longitude != null && selected.latitude != null) {
+      mapRef.current.easeTo({ center: [selected.longitude, selected.latitude], duration: motionDuration(250) })
+    }
+  }, [aircraft, followSelected, selectedIcao])
 
   useEffect(() => {
     if (!followReplay || replayTime == null || !mapRef.current || !tracks.length) return
@@ -886,8 +919,13 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         <button type="button" title="Fit active aircraft" aria-label="Fit active aircraft" onClick={fitAircraft}>
           <Maximize2 size={20} />
         </button>
+        {selectedIcao ? <button type="button" className={followSelected ? 'active' : ''} title="Follow selected aircraft" aria-label="Follow selected aircraft" aria-pressed={followSelected} onClick={() => setFollowSelected((value) => !value)}><Focus size={20} /></button> : null}
       </div>
-      {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} /> : null}
+      {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} display={onMapDisplayChange ? mapDisplay : undefined} onDisplayChange={onMapDisplayChange} /> : null}
+      {hoveredIcao ? (() => {
+        const hovered = aircraft.find((item) => item.icao === hoveredIcao)
+        return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : `${hovered.altitudeBaro.toLocaleString('en-GB')} ft`} · {hovered.groundSpeed == null ? 'Speed —' : `${Math.round(hovered.groundSpeed)} kt`}</small></div> : null
+      })() : null}
       <div className="map-legend" aria-label="Map legend">
         <div className="map-altitude-scale" aria-label="Altitude colour scale">
           <span>GND</span>

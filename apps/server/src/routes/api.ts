@@ -1,11 +1,17 @@
 import {
   alertQuerySchema,
+  aircraftActivityQuerySchema,
+  coverageCellDetailQuerySchema,
+  customAlertRuleInputSchema,
+  customAlertRulePatchSchema,
   dismissAlertsInputSchema,
   icaoSchema,
   insightCoverageQuerySchema,
   insightQuerySchema,
+  insightPatternsQuerySchema,
   savedViewInputSchema,
   savedViewPatchSchema,
+  rangeProfileQuerySchema,
   sessionExportQuerySchema,
   sessionQuerySchema,
   summaryQuerySchema,
@@ -103,6 +109,12 @@ export async function registerApiRoutes(
     return detail;
   });
 
+  app.get("/api/v1/aircraft/:icao/activity", async (request) => {
+    const { icao } = icaoParamsSchema.parse(request.params);
+    const query = aircraftActivityQuerySchema.parse(request.query);
+    return repository.aircraftActivity(icao, query);
+  });
+
   app.get("/api/v1/sessions", async (request) => {
     const query = sessionQuerySchema.parse(request.query);
     return repository.sessions(query);
@@ -142,6 +154,21 @@ export async function registerApiRoutes(
   app.get("/api/v1/insights/coverage", async (request) => {
     const query = insightCoverageQuerySchema.parse(request.query);
     return repository.insightsCoverage(query);
+  });
+
+  app.get("/api/v1/insights/patterns", async (request) => {
+    const query = insightPatternsQuerySchema.parse(request.query);
+    return repository.insightPatterns(query);
+  });
+
+  app.get("/api/v1/insights/range-profile", async (request) => {
+    const query = rangeProfileQuerySchema.parse(request.query);
+    return repository.rangeProfile(query);
+  });
+
+  app.get("/api/v1/insights/coverage-cell", async (request) => {
+    const query = coverageCellDetailQuerySchema.parse(request.query);
+    return repository.coverageCellDetail(query);
   });
 
   app.get("/api/v1/exports/insights", async (request, reply) => {
@@ -199,6 +226,32 @@ export async function registerApiRoutes(
   app.get("/api/v1/alerts", async (request) => {
     const query = alertQuerySchema.parse(request.query);
     return repository.alerts(query);
+  });
+
+  app.get("/api/v1/alerts/rules", async () => ({ items: await repository.customAlertRules() }));
+
+  app.post("/api/v1/alerts/rules/preview", async (request) => {
+    const input = customAlertRuleInputSchema.parse(request.body ?? {});
+    return repository.previewCustomAlertRule(input);
+  });
+
+  app.post("/api/v1/alerts/rules", async (request, reply) => {
+    const input = customAlertRuleInputSchema.parse(request.body ?? {});
+    return reply.code(201).send(await repository.createCustomAlertRule(input));
+  });
+
+  app.patch("/api/v1/alerts/rules/:id", async (request, reply) => {
+    const { id } = uuidParamsSchema.parse(request.params);
+    const patch = customAlertRulePatchSchema.parse(request.body ?? {});
+    const rule = await repository.updateCustomAlertRule(id, patch);
+    return rule ?? reply.code(404).send({ error: { code: "ALERT_RULE_NOT_FOUND", message: `Alert rule ${id} was not found` } });
+  });
+
+  app.delete("/api/v1/alerts/rules/:id", async (request, reply) => {
+    const { id } = uuidParamsSchema.parse(request.params);
+    return await repository.deleteCustomAlertRule(id)
+      ? reply.code(204).send()
+      : reply.code(404).send({ error: { code: "ALERT_RULE_NOT_FOUND", message: `Alert rule ${id} was not found` } });
   });
 
   app.post("/api/v1/alerts/:id/dismiss", async (request, reply) => {

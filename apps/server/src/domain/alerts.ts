@@ -20,7 +20,8 @@ const emergencySquawks = new Set(["7500", "7600", "7700"]);
 export const activeAircraftAlertRules = [
   "emergency_squawk",
   "emergency_state",
-  "watchlist"
+  "watchlist",
+  "custom"
 ] as const satisfies readonly AlertRule[];
 
 export function isActiveAircraftAlert(rule: AlertRule): boolean {

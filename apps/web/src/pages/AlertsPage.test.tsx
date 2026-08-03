@@ -15,6 +15,11 @@ vi.mock('../lib/api', () => ({
     removeWatchlist: vi.fn(),
     dismissAlert: vi.fn(),
     dismissAlerts: vi.fn(),
+    customAlertRules: vi.fn(),
+    previewCustomAlertRule: vi.fn(),
+    createCustomAlertRule: vi.fn(),
+    updateCustomAlertRule: vi.fn(),
+    deleteCustomAlertRule: vi.fn(),
   },
 }))
 
@@ -37,6 +42,7 @@ describe('AlertsPage watchlist editing', () => {
     vi.clearAllMocks()
     vi.mocked(api.alertsPage).mockResolvedValue({ items: [], nextCursor: null })
     vi.mocked(api.watchlist).mockResolvedValue([watched])
+    vi.mocked(api.customAlertRules).mockResolvedValue([])
   })
 
   it('offers direct links and rolls an optimistic edit back after failure', async () => {

@@ -27,6 +27,9 @@ const SystemPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 )
+const AircraftProfilePage = lazy(() =>
+  import('./pages/AircraftProfilePage').then((module) => ({ default: module.AircraftProfilePage })),
+)
 
 function PageLoading() {
   return (
@@ -39,14 +42,17 @@ function PageLoading() {
 
 function AppRoutes() {
   const { pathname, navigate } = useLocation()
-  const knownPath = ['/', '/history', '/insights', '/alerts', '/system', '/settings'].includes(pathname)
+  const aircraftProfile = /^\/aircraft\/[0-9a-f]{6}$/i.test(pathname)
+  const knownPath = aircraftProfile || ['/', '/history', '/insights', '/alerts', '/system', '/settings'].includes(pathname)
 
   useEffect(() => {
     if (!knownPath) navigate('/', true)
   }, [knownPath, navigate])
 
   const Page =
-    pathname === '/history'
+    aircraftProfile
+      ? AircraftProfilePage
+      : pathname === '/history'
       ? HistoryPage
       : pathname === '/insights'
         ? InsightsPage
