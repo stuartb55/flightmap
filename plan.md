@@ -236,41 +236,9 @@ shortcut list.
 
 ## Tier 1 — Substantial improvements
 
-### 7. Local alert notifications and sound — **M**
+### 7. Live list virtualisation and render budget — **M**
 
-- [ ] Implement
-
-**Problem.** Alerts are in-app only. If the tab is in the background — the
-normal state for a wall-mounted or second-monitor dashboard — an emergency
-squawk or watchlist arrival is missed entirely. v1 deliberately excluded
-external notification services; the browser Notification API is local and does
-not reintroduce that dependency.
-
-**Approach.** Opt-in, off by default, configured in Settings:
-- Browser notifications via the existing service worker, for chosen alert kinds
-  and severities.
-- An optional short audio cue with a distinct tone per severity, generated with
-  the Web Audio API so no asset is shipped or fetched.
-- Respect the page's visibility state — no notification while the tab is
-  focused and the alert is already on screen.
-- Rate-limit to avoid a burst during a receiver recovery.
-
-**Files.** New `apps/web/src/lib/notifications.ts`, `LiveContext.tsx` (alert
-subscription), `SettingsPage.tsx`, service worker registration in
-`apps/web/src/main.tsx`.
-
-**Acceptance.**
-- No permission is requested until the user enables the feature.
-- Clicking a notification focuses the tab and opens that alert's aircraft.
-- Sound respects an explicit mute and never plays before a user gesture has
-  unlocked audio.
-- Disabled by default; existing in-app banner behaviour is unchanged.
-
----
-
-### 8. Live list virtualisation and render budget — **M**
-
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `AircraftTable` renders every filtered row into the DOM. Rows are
 memoised (`AircraftTable.tsx:30`) so updates are cheap, but with the 250+
@@ -358,35 +326,6 @@ needs server support.
 - Sort choice is captured in the URL and in saved views, so a shared link
   reproduces the same ordering.
 - Colour-by choice applies to both the map and the flight profile chart.
-
----
-
-### 11. First-run onboarding — **S**
-
-- [ ] Implement
-
-**Problem.** A fresh install shows an empty dark map and "The latest receiver
-snapshot contains no current aircraft" (`LivePage.tsx:415`) until someone
-discovers that Settings needs a receiver URL. The README explains this; the
-application does not.
-
-**Approach.** When the receiver URL is unset or has never produced a snapshot,
-show a guided panel over the Live page: set the receiver URL, confirm
-coordinates, verify the connection, and a link to the fake receiver for anyone
-evaluating without hardware. Add a "Test connection" action to Settings that
-fetches the configured endpoint and reports what it found (aircraft count,
-receiver version, coordinates) before saving.
-
-**Files.** New `apps/web/src/components/SetupGuide.tsx`, `LivePage.tsx`,
-`SettingsPage.tsx`, a validation endpoint in `apps/server/src/routes/api.ts`
-backed by the existing collector fetch logic.
-
-**Acceptance.**
-- The guide appears only when the receiver has genuinely never delivered data,
-  never during a transient outage (which keeps the existing connection banner).
-- "Test connection" reports actionable failures — DNS, timeout, non-JSON,
-  missing fields — not a generic error.
-- Dismissible, and does not reappear once data has flowed.
 
 ---
 
@@ -517,13 +456,6 @@ glossary; the page works offline from the PWA shell.
 Worth doing, but each is a project rather than a feature. Scope properly before
 starting.
 
-### 19. Multiple receivers — **L**
-
-The data model, collector, and status view assume one receiver
-(`docs/v1-build-plan.md`, "Assumptions"). Supporting two or more means a
-receiver dimension through ingestion, storage, aggregates, and the UI, plus
-per-receiver coverage comparison. High value if a second receiver is ever added;
-no value until then.
 
 ### 20. Aircraft photographs — **M**
 
@@ -549,6 +481,7 @@ offline, but it is a modelling exercise with an accuracy contract to define.
 - External notification transports (email, push services, Discord, webhooks).
 - Public/internet-facing hosting affordances.
 - Any runtime dependency on a third-party API in the default configuration.
+- Notifications
 
 ---
 

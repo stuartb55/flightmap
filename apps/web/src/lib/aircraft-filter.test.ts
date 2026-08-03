@@ -4,8 +4,12 @@ import {
   aircraftFilterErrors,
   defaultAircraftFilters,
   filterAircraft,
+  membershipKey,
   nextSelectionIndex,
+  orderAircraft,
+  reorderIntervalMs,
   sortAircraft,
+  type AircraftSort,
 } from './aircraft-filter'
 import { aircraft } from '../test/fixtures'
 
@@ -181,5 +185,68 @@ describe('nextSelectionIndex', () => {
   it('has nowhere to move in an empty list', () => {
     expect(nextSelectionIndex(-1, 0, 1)).toBeNull()
     expect(nextSelectionIndex(-1, 0, 'first')).toBeNull()
+  })
+})
+
+describe('orderAircraft', () => {
+  const filters = { ...defaultAircraftFilters }
+  const sort: AircraftSort = { key: 'distance', direction: 'asc' }
+  const near = aircraft({ icao: '406b90', distanceNm: 10 })
+  const far = aircraft({ icao: '4ca123', distanceNm: 40 })
+  const snapshot = [far, near]
+
+  it('filters and sorts on the first pass', () => {
+    const order = orderAircraft(snapshot, filters, sort, null, 0)
+    expect(order.list.map((item) => item.icao)).toEqual(['406b90', '4ca123'])
+  })
+
+  it('reapplies the order to fresh telemetry without re-sorting', () => {
+    const first = orderAircraft(snapshot, filters, sort, null, 0)
+    // The two have swapped places in reality, but a change of telemetry alone
+    // must not reshuffle the list under the pointer.
+    const moved = [aircraft({ icao: '4ca123', distanceNm: 5 }), aircraft({ icao: '406b90', distanceNm: 45 })]
+    const second = orderAircraft(moved, filters, sort, first, 1_000)
+
+    expect(second.list.map((item) => item.icao)).toEqual(['406b90', '4ca123'])
+    expect(second.list[0]?.distanceNm).toBe(45)
+    expect(second.orderedAt).toBe(first.orderedAt)
+  })
+
+  it('re-sorts once the order has been held longer than the ceiling', () => {
+    const first = orderAircraft(snapshot, filters, sort, null, 0)
+    const moved = [aircraft({ icao: '4ca123', distanceNm: 5 }), aircraft({ icao: '406b90', distanceNm: 45 })]
+    const second = orderAircraft(moved, filters, sort, first, reorderIntervalMs)
+
+    expect(second.list.map((item) => item.icao)).toEqual(['4ca123', '406b90'])
+    expect(second.orderedAt).toBe(reorderIntervalMs)
+  })
+
+  it('re-sorts as soon as an aircraft joins or leaves', () => {
+    const first = orderAircraft(snapshot, filters, sort, null, 0)
+    const joined = [...snapshot, aircraft({ icao: '3c6444', distanceNm: 1 })]
+    const second = orderAircraft(joined, filters, sort, first, 10)
+    expect(second.list.map((item) => item.icao)).toEqual(['3c6444', '406b90', '4ca123'])
+
+    const left = orderAircraft([near], filters, sort, second, 20)
+    expect(left.list.map((item) => item.icao)).toEqual(['406b90'])
+  })
+
+  it('re-filters as soon as the filters or the sort change', () => {
+    const first = orderAircraft(snapshot, filters, sort, null, 0)
+    const narrowed = orderAircraft(
+      snapshot,
+      { ...defaultAircraftFilters, maximumDistance: '20' },
+      sort,
+      first,
+      10,
+    )
+    expect(narrowed.list.map((item) => item.icao)).toEqual(['406b90'])
+
+    const descending = orderAircraft(snapshot, filters, { key: 'distance', direction: 'desc' }, first, 20)
+    expect(descending.list.map((item) => item.icao)).toEqual(['4ca123', '406b90'])
+  })
+
+  it('distinguishes a different live set of the same size', () => {
+    expect(membershipKey(snapshot)).not.toBe(membershipKey([far, aircraft({ icao: '3c6444' })]))
   })
 })

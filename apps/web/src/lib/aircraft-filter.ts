@@ -137,6 +137,77 @@ export function sortAircraft(aircraft: Aircraft[], sort: AircraftSort): Aircraft
   })
 }
 
+/**
+ * A filtered and sorted view of the live set, plus enough state to decide
+ * whether the next snapshot can reuse it.
+ */
+export interface AircraftOrder {
+  list: Aircraft[]
+  /** The order itself, kept apart from the objects so it can be reapplied. */
+  icaos: string[]
+  filters: AircraftFilters
+  sort: AircraftSort
+  membership: string
+  orderedAt: number
+}
+
+/**
+ * Identity of the live set, ignoring telemetry. ICAO addresses are fixed width,
+ * so concatenation is unambiguous without a separator.
+ */
+export function membershipKey(aircraft: Aircraft[]): string {
+  let key = ''
+  for (const item of aircraft) key += item.icao
+  return key
+}
+
+/**
+ * Ceiling on how stale an order may become. Telemetry alone does not trigger a
+ * re-sort — otherwise every row would change place each second — so this bounds
+ * the drift between, say, the distance column and the distance ordering.
+ */
+export const reorderIntervalMs = 5_000
+
+/**
+ * Filter and sort only when the answer can have changed: a different filter set
+ * or sort key, an aircraft joining or leaving, or the staleness ceiling above.
+ * Otherwise the previous order is reapplied to the current objects, which keeps
+ * the values on screen fresh at 1 Hz for the cost of one map lookup per row.
+ */
+export function orderAircraft(
+  aircraft: Aircraft[],
+  filters: AircraftFilters,
+  sort: AircraftSort,
+  previous: AircraftOrder | null,
+  now: number,
+): AircraftOrder {
+  const membership = membershipKey(aircraft)
+  const reusable =
+    previous != null &&
+    previous.filters === filters &&
+    previous.sort === sort &&
+    previous.membership === membership &&
+    now - previous.orderedAt < reorderIntervalMs
+  if (reusable) {
+    const byIcao = new Map(aircraft.map((item) => [item.icao, item]))
+    return {
+      ...previous,
+      list: previous.icaos
+        .map((icao) => byIcao.get(icao))
+        .filter((item): item is Aircraft => item != null),
+    }
+  }
+  const list = sortAircraft(filterAircraft(aircraft, filters), sort)
+  return {
+    list,
+    icaos: list.map((item) => item.icao),
+    filters,
+    sort,
+    membership,
+    orderedAt: now,
+  }
+}
+
 export type SelectionMove = number | 'first' | 'last'
 
 /**
