@@ -152,20 +152,26 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(page.getByRole('button', { name: /Receiver distance/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('previews, creates, toggles, and removes a custom alert rule', async ({ page }, testInfo) => {
+test('previews, creates, toggles, and removes a custom alert rule', async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'Installation-wide alert rule mutation is exercised once')
+  // Rules are installation-wide, so a retry must not inherit the rule a failed attempt left behind.
+  const existing = await (await request.get('/api/v1/alerts/rules')).json() as { items: { id: string, name: string }[] }
+  for (const rule of existing.items.filter((item) => item.name === 'E2E nearby aircraft')) {
+    await request.delete(`/api/v1/alerts/rules/${rule.id}`)
+  }
+
   await page.goto('/alerts')
   await page.getByLabel('Rule name').fill('E2E nearby aircraft')
   await page.getByLabel('Maximum distance (nm)').fill('100')
   await page.getByRole('button', { name: 'Preview matches' }).click()
   await expect(page.getByText(/current aircraft match|No current aircraft match/)).toBeVisible()
   await page.getByRole('button', { name: 'Create rule' }).click()
-  await expect(page.getByText('E2E nearby aircraft')).toBeVisible()
   const rule = page.locator('.custom-rule-list article').filter({ hasText: 'E2E nearby aircraft' })
+  await expect(rule).toHaveCount(1)
   await rule.getByRole('checkbox').uncheck()
   await expect(rule).toContainText('Disabled')
   await rule.getByRole('button', { name: 'Delete E2E nearby aircraft' }).click()
-  await expect(page.getByText('E2E nearby aircraft')).not.toBeVisible()
+  await expect(rule).toHaveCount(0)
 })
 
 test('restores selected history tracks, replay position, and exports after refresh', async ({ page }, testInfo) => {

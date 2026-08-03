@@ -216,6 +216,19 @@ export function AlertsPage() {
     })
   }
 
+  const toggleRule = async (rule: CustomAlertRule) => {
+    const enabled = !rule.enabled
+    setError(null)
+    setCustomRules((current) => current.map((item) => item.id === rule.id ? { ...item, enabled } : item))
+    try {
+      const updated = await api.updateCustomAlertRule(rule.id, { enabled })
+      setCustomRules((current) => current.map((item) => item.id === updated.id ? updated : item))
+    } catch (requestError) {
+      setCustomRules((current) => current.map((item) => item.id === rule.id ? { ...item, enabled: rule.enabled } : item))
+      setError(requestError instanceof Error ? requestError.message : 'Rule could not be updated')
+    }
+  }
+
   const deleteRule = async (id: string) => {
     setRulePending(true)
     try { await api.deleteCustomAlertRule(id); setCustomRules((current) => current.filter((rule) => rule.id !== id)) }
@@ -475,7 +488,7 @@ export function AlertsPage() {
             <div className="custom-rule-actions"><button type="button" className="secondary-button small" disabled={rulePending} onClick={() => void previewRule()}>Preview matches</button><button type="submit" className="primary-button small" disabled={rulePending}>{editingRuleId ? 'Update rule' : 'Create rule'}</button></div>
           </form>
           {rulePreview ? <p className="rule-preview" role="status">{rulePreview.matches.length ? `${rulePreview.matches.length} current aircraft match: ${rulePreview.matches.slice(0, 5).map((match) => match.callsign || match.registration || match.icao.toUpperCase()).join(', ')}` : 'No current aircraft match this rule.'}</p> : null}
-          <div className="custom-rule-list">{customRules.map((rule) => <article key={rule.id}><div><strong>{rule.name}</strong><small>{rule.severity} · {rule.cooldownMinutes ? `${rule.cooldownMinutes} min cooldown` : 'once per encounter'}</small></div><label className="rule-enabled"><span>{rule.enabled ? 'Enabled' : 'Disabled'}</span><input type="checkbox" checked={rule.enabled} disabled={rulePending} onChange={() => void api.updateCustomAlertRule(rule.id, { enabled: !rule.enabled }).then((updated) => setCustomRules((current) => current.map((item) => item.id === updated.id ? updated : item))).catch((reason) => setError(reason instanceof Error ? reason.message : 'Rule could not be updated'))} /></label><button type="button" className="icon-button" aria-label={`Edit ${rule.name}`} onClick={() => editRule(rule)}><Pencil size={14} /></button><button type="button" className="icon-button" aria-label={`Delete ${rule.name}`} onClick={() => void deleteRule(rule.id)}><Trash2 size={14} /></button></article>)}</div>
+          <div className="custom-rule-list">{customRules.map((rule) => <article key={rule.id}><div><strong>{rule.name}</strong><small>{rule.severity} · {rule.cooldownMinutes ? `${rule.cooldownMinutes} min cooldown` : 'once per encounter'}</small></div><label className="rule-enabled"><span>{rule.enabled ? 'Enabled' : 'Disabled'}</span><input type="checkbox" checked={rule.enabled} disabled={rulePending} onChange={() => void toggleRule(rule)} /></label><button type="button" className="icon-button" aria-label={`Edit ${rule.name}`} onClick={() => editRule(rule)}><Pencil size={14} /></button><button type="button" className="icon-button" aria-label={`Delete ${rule.name}`} onClick={() => void deleteRule(rule.id)}><Trash2 size={14} /></button></article>)}</div>
         </section>
 
         <section className="watchlist-manager">
