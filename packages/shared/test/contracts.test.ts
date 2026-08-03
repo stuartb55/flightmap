@@ -197,6 +197,35 @@ describe("shared contracts", () => {
       }
     };
     expect(savedViewInputSchema.parse(live)).toEqual(live);
+    // Every column the live table can sort by must round-trip, or saving a view
+    // fails for a sort the interface happily offers.
+    for (const key of [
+      "identity",
+      "altitude",
+      "distance",
+      "speed",
+      "freshness",
+      "verticalRate",
+      "track",
+      "squawk",
+      "operator",
+      "typeCode"
+    ]) {
+      const sorted = {
+        ...live,
+        configuration: { ...live.configuration, sort: { key, direction: "desc" } }
+      };
+      expect(savedViewInputSchema.parse(sorted)).toEqual(sorted);
+    }
+    expect(() =>
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: {
+          ...live.configuration,
+          sort: { key: "not-a-column", direction: "asc" }
+        }
+      })
+    ).toThrow();
     expect(() =>
       savedViewInputSchema.parse({
         ...live,

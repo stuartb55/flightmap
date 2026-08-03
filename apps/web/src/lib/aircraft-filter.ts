@@ -1,6 +1,16 @@
 import type { Aircraft } from '../types'
 
-export type AircraftSortKey = 'identity' | 'altitude' | 'distance' | 'speed' | 'freshness'
+export type AircraftSortKey =
+  | 'identity'
+  | 'altitude'
+  | 'distance'
+  | 'speed'
+  | 'freshness'
+  | 'verticalRate'
+  | 'track'
+  | 'squawk'
+  | 'operator'
+  | 'typeCode'
 export type PositionFilter = 'all' | 'positioned' | 'unpositioned'
 
 export interface AircraftFilters {
@@ -101,6 +111,21 @@ export function sortAircraft(aircraft: Aircraft[], sort: AircraftSort): Aircraft
     } else if (sort.key === 'speed') {
       leftValue = left.groundSpeed
       rightValue = right.groundSpeed
+    } else if (sort.key === 'verticalRate') {
+      leftValue = left.verticalRate
+      rightValue = right.verticalRate
+    } else if (sort.key === 'track') {
+      leftValue = left.track ?? left.trueHeading
+      rightValue = right.track ?? right.trueHeading
+    } else if (sort.key === 'squawk') {
+      leftValue = left.squawk
+      rightValue = right.squawk
+    } else if (sort.key === 'operator') {
+      leftValue = left.operator
+      rightValue = right.operator
+    } else if (sort.key === 'typeCode') {
+      leftValue = left.typeCode
+      rightValue = right.typeCode
     } else {
       leftValue = left.seenSeconds
       rightValue = right.seenSeconds

@@ -55,6 +55,19 @@ export function formatVerticalRate(value: number | null | undefined): string {
   return `${arrow} ${Math.abs(Math.round(value / 100) * 100).toLocaleString('en-GB')} ft/min`
 }
 
+/**
+ * Climb state at a glance. The same 100 ft/min deadband as formatVerticalRate,
+ * so the arrow beside the altitude and the vertical-rate column never disagree.
+ */
+export function verticalTrend(
+  value: number | null | undefined,
+): 'climb' | 'descent' | 'level' | null {
+  if (value == null || !Number.isFinite(value)) return null
+  if (value > 100) return 'climb'
+  if (value < -100) return 'descent'
+  return 'level'
+}
+
 export function formatBearing(value: number | null | undefined): string {
   return value == null ? '—' : `${Math.round(value).toString().padStart(3, '0')}°`
 }
