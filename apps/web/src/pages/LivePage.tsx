@@ -35,6 +35,7 @@ import {
   type SelectionMove,
 } from '../lib/aircraft-filter'
 import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
+import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-bands'
 import { aircraftLabel, formatAltitude } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useSearchParams } from '../lib/router'
@@ -277,6 +278,23 @@ export function LivePage() {
     return true
   })
 
+  // The legend and the filter drawer are two views of one altitude filter:
+  // isolating a band writes through here, and a range typed into the drawer
+  // that matches a band lights that band up.
+  const altitudeBand = bandForRange({
+    minimum: filters.minimumAltitude,
+    maximum: filters.maximumAltitude,
+  })
+  const isolateAltitudeBand = useCallback((band: AltitudeBand) => {
+    setFilters((current) => {
+      const range = toggleBand(band, {
+        minimum: current.minimumAltitude,
+        maximum: current.maximumAltitude,
+      })
+      return { ...current, minimumAltitude: range.minimum, maximumAltitude: range.maximum }
+    })
+  }, [])
+
   const moveSelection = useCallback(
     (move: SelectionMove) => {
       const index = nextSelectionIndex(
@@ -478,6 +496,9 @@ export function LivePage() {
           receiver={receiver}
           selectedIcao={selectedIcao}
           onSelectAircraft={selectAircraft}
+          onClearSelection={closeDetails}
+          altitudeBand={altitudeBand?.key ?? null}
+          onAltitudeBandChange={isolateAltitudeBand}
           tracks={trail}
           mapLayers={mapLayers}
           onMapLayersChange={setMapLayers}

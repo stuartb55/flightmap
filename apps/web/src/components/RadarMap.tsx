@@ -5,14 +5,18 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react'
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { Focus, Info, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Focus, Info, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
 import { defaultReceiver, useRuntimeConfig } from '../config'
+import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
+import { Link } from '../lib/router'
 import {
   aircraftShape,
   aircraftShapes,
@@ -26,6 +30,7 @@ import { unitLabels, useUnitPreferences, type UnitPreferences } from '../lib/uni
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import type { TrailPoint } from '../state/live-reducer'
 import { waypointData } from './waypoints'
+import { isTextEntryTarget } from './KeyboardShortcuts'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
 
@@ -46,6 +51,12 @@ interface Props {
   receiver?: Receiver | null
   selectedIcao?: string | null
   onSelectAircraft?: (icao: string) => void
+  /** Clicking empty map space, or dismissing the pinned popup. */
+  onClearSelection?: () => void
+  /** The altitude band the surrounding page is filtered to, if any. */
+  altitudeBand?: string | null
+  /** Supplied only where an altitude filter exists to write through to. */
+  onAltitudeBandChange?: (band: AltitudeBand) => void
   tracks?: TrackResponse[]
   replayTime?: number | null
   followReplay?: boolean
@@ -66,6 +77,7 @@ const TRACK_SOURCE = 'history-tracks'
 const ALL_TRAILS_SOURCE = 'all-aircraft-trails'
 const REPLAY_SOURCE = 'replay-aircraft'
 const COVERAGE_SOURCE = 'map-coverage'
+const RULER_SOURCE = 'map-ruler'
 
 const layerIds = {
   coverage: ['map-coverage-heat'],
@@ -297,6 +309,48 @@ function destinationPoint(
   return [(lon2 * 180) / Math.PI, (lat2 * 180) / Math.PI]
 }
 
+/**
+ * Great-circle distance and initial bearing between two points, the inverse of
+ * `destinationPoint` above and the same spherical model the server measures
+ * ranges with (`domain/geo.ts`).
+ */
+export function greatCircle(
+  from: [number, number],
+  to: [number, number],
+): { distanceNm: number; bearingDegrees: number } {
+  const radiusNm = 3_440.065
+  const toRadians = (value: number) => (value * Math.PI) / 180
+  const lat1 = toRadians(from[1])
+  const lat2 = toRadians(to[1])
+  const deltaLat = lat2 - lat1
+  const deltaLon = toRadians(to[0] - from[0])
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2
+  const distanceNm = 2 * radiusNm * Math.asin(Math.min(1, Math.sqrt(haversine)))
+  const bearing = Math.atan2(
+    Math.sin(deltaLon) * Math.cos(lat2),
+    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon),
+  )
+  return { distanceNm, bearingDegrees: ((bearing * 180) / Math.PI + 360) % 360 }
+}
+
+/** The measured line and its endpoints, for the ruler layers. */
+export function rulerData(points: Array<[number, number]>): FeatureCollection {
+  const features: Feature[] = points.map((point, index) => ({
+    type: 'Feature',
+    properties: { index },
+    geometry: { type: 'Point', coordinates: point },
+  }))
+  if (points.length === 2) {
+    features.push({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: points },
+    })
+  }
+  return { type: 'FeatureCollection', features }
+}
+
 function ringData(
   receiver: Receiver | null | undefined,
   rings: readonly number[],
@@ -492,6 +546,20 @@ export function scaleLabel(feet: number, units: UnitPreferences): string {
   return `${units.altitude === 'm' ? thousands.toFixed(1) : thousands.toFixed(0)}k`
 }
 
+/** Legend segment label: the band's floor, so the segments read as a scale. */
+export function bandLabel(band: AltitudeBand, units: UnitPreferences): string {
+  if (band.key === 'ground') return 'GND'
+  if (band.minimumFt === 0) return '0'
+  return `${scaleLabel(band.minimumFt, units)}${band.maximumFt == null ? '+' : ''}`
+}
+
+/** What isolating a band would show, spoken in the reader's own units. */
+export function bandDescription(band: AltitudeBand, units: UnitPreferences): string {
+  if (band.key === 'ground') return 'on the ground'
+  if (band.maximumFt == null) return `above ${formatAltitude(band.minimumFt, units)}`
+  return `from ${formatAltitude(band.minimumFt, units)} to ${formatAltitude(band.maximumFt, units)}`
+}
+
 /** MapLibre's scale bar offers three unit families; map ours onto them. */
 function scaleUnit(unit: UnitPreferences['distance']): 'nautical' | 'metric' | 'imperial' {
   if (unit === 'km') return 'metric'
@@ -508,6 +576,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     receiver,
     selectedIcao,
     onSelectAircraft,
+    onClearSelection,
+    altitudeBand,
+    onAltitudeBandChange,
     tracks = [],
     replayTime,
     followReplay,
@@ -533,6 +604,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const aircraftRef = useRef(aircraft)
   const receiverRef = useRef(receiver)
   const onSelectRef = useRef(onSelectAircraft)
+  const onClearSelectionRef = useRef(onClearSelection)
   const tracksRef = useRef(tracks)
   const replayTimeRef = useRef(replayTime)
   const selectedIcaoRef = useRef(selectedIcao)
@@ -545,11 +617,19 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [followSelected, setFollowSelected] = useState(false)
   const [hoveredIcao, setHoveredIcao] = useState<string | null>(null)
   const [legendOpen, setLegendOpen] = useState(false)
+  const [rulerActive, setRulerActive] = useState(false)
+  const [rulerPoints, setRulerPoints] = useState<Array<[number, number]>>([])
+  const rulerActiveRef = useRef(rulerActive)
+  const popupRef = useRef<maplibregl.Popup | null>(null)
+  const popupHostRef = useRef<HTMLDivElement | null>(null)
+  popupHostRef.current ??= typeof document === 'undefined' ? null : document.createElement('div')
   const legendBodyId = useId()
 
   aircraftRef.current = aircraft
   receiverRef.current = receiver
   onSelectRef.current = onSelectAircraft
+  onClearSelectionRef.current = onClearSelection
+  rulerActiveRef.current = rulerActive
   tracksRef.current = tracks
   replayTimeRef.current = replayTime
   selectedIcaoRef.current = selectedIcao
@@ -942,21 +1022,63 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
+      map.addSource(RULER_SOURCE, { type: 'geojson', data: rulerData([]) })
+      map.addLayer({
+        id: 'map-ruler-line',
+        type: 'line',
+        source: RULER_SOURCE,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: { 'line-cap': 'round' },
+        paint: {
+          'line-color': '#f2e9a0',
+          'line-width': 1.6,
+          'line-dasharray': [2.5, 1.6],
+        },
+      })
+      map.addLayer({
+        id: 'map-ruler-points',
+        type: 'circle',
+        source: RULER_SOURCE,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 4.5,
+          'circle-color': '#111a1f',
+          'circle-stroke-color': '#f2e9a0',
+          'circle-stroke-width': 1.6,
+        },
+      })
+
       const selectAircraft = (event: maplibregl.MapMouseEvent) => {
+        // While measuring, a click is a ruler point and nothing else.
+        if (rulerActiveRef.current) return
         const feature = map.queryRenderedFeatures(event.point, { layers: ['aircraft-icons'] })[0]
         const icao = feature?.properties?.icao
         if (typeof icao === 'string') onSelectRef.current?.(icao)
       }
       map.on('click', 'aircraft-icons', selectAircraft)
+      map.on('click', (event) => {
+        if (rulerActiveRef.current) {
+          const point: [number, number] = [event.lngLat.lng, event.lngLat.lat]
+          // A third click starts a fresh measurement rather than extending one.
+          setRulerPoints((current) => (current.length >= 2 ? [point] : [...current, point]))
+          return
+        }
+        // Clicking the map itself, rather than an aircraft on it, is the
+        // ordinary way to say "never mind".
+        if (!map.queryRenderedFeatures(event.point, { layers: ['aircraft-icons'] }).length) {
+          onClearSelectionRef.current?.()
+        }
+      })
       map.on('mouseenter', 'aircraft-icons', () => {
-        map.getCanvas().style.cursor = 'pointer'
+        if (!rulerActiveRef.current) map.getCanvas().style.cursor = 'pointer'
       })
       map.on('mousemove', 'aircraft-icons', (event) => {
+        if (rulerActiveRef.current) return
         const icao = event.features?.[0]?.properties?.icao
         setHoveredIcao(typeof icao === 'string' ? icao : null)
       })
       map.on('mouseleave', 'aircraft-icons', () => {
-        map.getCanvas().style.cursor = ''
+        if (!rulerActiveRef.current) map.getCanvas().style.cursor = ''
         setHoveredIcao(null)
       })
       applyLayerVisibility(map, mapLayersRef.current)
@@ -967,6 +1089,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     return () => {
       map.remove()
       mapRef.current = null
+      popupRef.current = null
       setMapReady(false)
     }
     // A style change replaces every layer, so the map is rebuilt rather than
@@ -1066,6 +1189,71 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   }, [selectedIcao, mapReady])
 
   useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    setSourceData(mapRef.current, RULER_SOURCE, rulerData(rulerPoints))
+  }, [rulerPoints, mapReady])
+
+  // The ruler owns the pointer while it is armed: a crosshair, and no hover
+  // card competing with the measurement readout for the same corner.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    map.getCanvas().style.cursor = rulerActive ? 'crosshair' : ''
+    if (rulerActive) setHoveredIcao(null)
+  }, [rulerActive, mapReady])
+
+  const rulerMeasurement =
+    rulerPoints.length === 2 ? greatCircle(rulerPoints[0]!, rulerPoints[1]!) : null
+  const pinned = selectedIcao ? aircraft.find((item) => item.icao === selectedIcao) ?? null : null
+  const pinnedLongitude = pinned?.longitude ?? null
+  const pinnedLatitude = pinned?.latitude ?? null
+
+  // A popup anchored to the aircraft, rather than a card in a corner, is the
+  // one place that answers "which of these is it?" without moving the camera.
+  useEffect(() => {
+    const map = mapRef.current
+    const host = popupHostRef.current
+    if (!mapReady || !map || !host) return
+    if (pinnedLongitude == null || pinnedLatitude == null) {
+      popupRef.current?.remove()
+      return
+    }
+    popupRef.current ??= new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      // Taking focus on every 1 Hz reselection would fight the keyboard user
+      // walking the list.
+      focusAfterOpen: false,
+      offset: 20,
+      maxWidth: '272px',
+      className: 'map-aircraft-popup',
+    }).setDOMContent(host)
+    popupRef.current.setLngLat([pinnedLongitude, pinnedLatitude])
+    if (!popupRef.current.isOpen()) popupRef.current.addTo(map)
+  }, [mapReady, pinnedLatitude, pinnedLongitude])
+
+  // One Escape handler for the map's own affordances, so their precedence is
+  // written down: a measurement unwinds before the popup closes. Anything with
+  // its own overlay semantics — a dialog, a text field — keeps its Escape.
+  useEffect(() => {
+    const canClosePopup = Boolean(pinned) && Boolean(onClearSelection)
+    if (!rulerActive && !canClosePopup) return
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if (isTextEntryTarget(target) || target?.closest('[role="dialog"]')) return
+      if (rulerActive) {
+        if (rulerPoints.length) setRulerPoints([])
+        else setRulerActive(false)
+        return
+      }
+      onClearSelectionRef.current?.()
+    }
+    document.addEventListener('keydown', keydown)
+    return () => document.removeEventListener('keydown', keydown)
+  }, [onClearSelection, pinned, rulerActive, rulerPoints.length])
+
+  useEffect(() => {
     if (!selectedIcao) setFollowSelected(false)
   }, [selectedIcao])
 
@@ -1113,9 +1301,79 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <Maximize2 size={20} />
         </button>
         {selectedIcao ? <button type="button" className={followSelected ? 'active' : ''} title="Follow selected aircraft" aria-label="Follow selected aircraft" aria-pressed={followSelected} onClick={() => setFollowSelected((value) => !value)}><Focus size={20} /></button> : null}
+        <button
+          type="button"
+          className={rulerActive ? 'active' : ''}
+          title="Measure distance and bearing"
+          aria-label="Measure distance and bearing"
+          aria-pressed={rulerActive}
+          onClick={() => {
+            setRulerPoints([])
+            setRulerActive((value) => !value)
+          }}
+        >
+          <Ruler size={20} />
+        </button>
       </div>
+      {rulerActive ? (
+        <div className="map-ruler-readout" role="status">
+          <Ruler size={14} aria-hidden="true" />
+          {rulerMeasurement ? (
+            <>
+              <strong>{formatDistance(rulerMeasurement.distanceNm, units)}</strong>
+              <span>{Math.round(rulerMeasurement.bearingDegrees).toString().padStart(3, '0')}°</span>
+            </>
+          ) : (
+            <span>{rulerPoints.length ? 'Click the second point' : 'Click two points to measure'}</span>
+          )}
+          <button type="button" onClick={() => { setRulerPoints([]); setRulerActive(false) }} aria-label="Close the ruler">
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+      {popupHostRef.current && pinned
+        ? createPortal(
+            <div className="map-popup-card">
+              <div className="map-popup-head">
+                <strong>{aircraftLabel(pinned)}</strong>
+                {onClearSelection ? (
+                  <button type="button" onClick={onClearSelection} aria-label="Close aircraft popup">
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+              <small>
+                {pinned.registration || pinned.icao.toUpperCase()}
+                {pinned.typeCode ? ` · ${pinned.typeCode}` : ''}
+              </small>
+              <dl>
+                <div>
+                  <dt>Altitude</dt>
+                  <dd>{pinned.altitudeBaro === 'ground' ? 'Ground' : pinned.altitudeBaro == null ? '—' : formatAltitude(pinned.altitudeBaro, units)}</dd>
+                </div>
+                <div>
+                  <dt>Speed</dt>
+                  <dd>{pinned.groundSpeed == null ? '—' : formatSpeed(pinned.groundSpeed, units)}</dd>
+                </div>
+                <div>
+                  <dt>Range</dt>
+                  <dd>{pinned.distanceNm == null ? '—' : formatDistance(pinned.distanceNm, units)}</dd>
+                </div>
+                <div>
+                  <dt>Squawk</dt>
+                  <dd>{pinned.squawk ?? '—'}</dd>
+                </div>
+              </dl>
+              <div className="map-popup-links">
+                <Link to={`/aircraft/${encodeURIComponent(pinned.icao)}`}>Profile</Link>
+                <Link to={`/history?aircraft=${encodeURIComponent(pinned.icao)}`}>History</Link>
+              </div>
+            </div>,
+            popupHostRef.current,
+          )
+        : null}
       {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} display={onMapDisplayChange ? mapDisplay : undefined} onDisplayChange={onMapDisplayChange} /> : null}
-      {hoveredIcao ? (() => {
+      {hoveredIcao && !rulerActive ? (() => {
         const hovered = aircraft.find((item) => item.icao === hoveredIcao)
         return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : formatAltitude(hovered.altitudeBaro, units)} · {hovered.groundSpeed == null ? 'Speed —' : formatSpeed(hovered.groundSpeed, units)}</small></div> : null
       })() : null}
@@ -1133,16 +1391,40 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           Map key
         </button>
         <div className="map-legend-body" id={legendBodyId}>
+          {/* One segment per colour band. Where the surrounding page has an
+              altitude filter, each is a button that isolates its band so the
+              list and the map never disagree about what is on screen. */}
           <div
             className="map-altitude-scale"
             aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
           >
-            <span>GND</span>
-            <i />
-            <span>{scaleLabel(10_000, units)}</span>
-            <span>{scaleLabel(20_000, units)}</span>
-            <span>{scaleLabel(30_000, units)}</span>
-            <span>{scaleLabel(40_000, units)}+ {unitLabels.altitude[units.altitude]}</span>
+            {altitudeBands.map((band) => {
+              const description = bandDescription(band, units)
+              return onAltitudeBandChange ? (
+                <button
+                  key={band.key}
+                  type="button"
+                  data-band={band.key}
+                  className={altitudeBand === band.key ? 'active' : ''}
+                  style={{ '--band': band.colour } as CSSProperties}
+                  aria-pressed={altitudeBand === band.key}
+                  aria-label={
+                    altitudeBand === band.key
+                      ? `Show every altitude again instead of only aircraft ${description}`
+                      : `Show only aircraft ${description}`
+                  }
+                  onClick={() => onAltitudeBandChange(band)}
+                >
+                  <i />
+                  {bandLabel(band, units)}
+                </button>
+              ) : (
+                <span key={band.key} style={{ '--band': band.colour } as CSSProperties} title={description}>
+                  <i />
+                  {bandLabel(band, units)}
+                </span>
+              )
+            })}
           </div>
           <ul className="map-shape-key">
             {aircraftShapes.map((shape) => (

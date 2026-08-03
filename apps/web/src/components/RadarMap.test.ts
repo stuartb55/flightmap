@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   aircraftIconId,
+  bandDescription,
+  bandLabel,
+  greatCircle,
   needsRecentre,
   interpolateTrack,
   isEmergencyAircraft,
   replayPointAtTime,
   resolveStyleImageAlias,
+  rulerData,
 } from './RadarMap'
+import { altitudeBands } from '../lib/altitude-bands'
+import { aviationUnits, metricUnits } from '../lib/unit-preferences'
 import type { TrackPoint } from '../types'
 
 describe('track interpolation', () => {
@@ -141,5 +147,63 @@ describe('resolveStyleImageAlias', () => {
     expect(map.hasImage).not.toHaveBeenCalled()
     expect(map.getImage).not.toHaveBeenCalled()
     expect(map.addImage).not.toHaveBeenCalled()
+  })
+})
+
+describe('greatCircle', () => {
+  it('measures a known leg in nautical miles and degrees', () => {
+    // Manchester to Heathrow, roughly 131 nm on a south-south-east track.
+    const result = greatCircle([-2.275, 53.3537], [-0.4543, 51.47])
+    expect(result.distanceNm).toBeCloseTo(131.3, 1)
+    expect(result.bearingDegrees).toBeCloseTo(148.8, 1)
+  })
+
+  it('measures a degree of latitude as sixty nautical miles either way round', () => {
+    expect(greatCircle([-2, 53], [-2, 54]).distanceNm).toBeCloseTo(60, 0)
+    expect(greatCircle([-2, 54], [-2, 53]).distanceNm).toBeCloseTo(60, 0)
+  })
+
+  it('reports the cardinal bearings', () => {
+    expect(greatCircle([-2, 53], [-2, 54]).bearingDegrees).toBeCloseTo(0, 6)
+    expect(greatCircle([-2, 54], [-2, 53]).bearingDegrees).toBeCloseTo(180, 6)
+    expect(greatCircle([0, 0], [1, 0]).bearingDegrees).toBeCloseTo(90, 6)
+    expect(greatCircle([0, 0], [-1, 0]).bearingDegrees).toBeCloseTo(270, 6)
+  })
+
+  it('reports no distance between a point and itself', () => {
+    expect(greatCircle([-2, 53], [-2, 53]).distanceNm).toBe(0)
+  })
+})
+
+describe('rulerData', () => {
+  it('draws the endpoints on their own until the line is complete', () => {
+    expect(rulerData([]).features).toHaveLength(0)
+    expect(rulerData([[-2, 53]]).features.map((feature) => feature.geometry.type)).toEqual(['Point'])
+    expect(rulerData([[-2, 53], [-1, 54]]).features.map((feature) => feature.geometry.type)).toEqual([
+      'Point',
+      'Point',
+      'LineString',
+    ])
+  })
+})
+
+describe('altitude legend labels', () => {
+  const band = (key: string) => altitudeBands.find((item) => item.key === key)!
+
+  it('labels each segment with the floor of its band', () => {
+    expect(bandLabel(band('ground'), aviationUnits)).toBe('GND')
+    expect(bandLabel(band('low'), aviationUnits)).toBe('0')
+    expect(bandLabel(band('middle'), aviationUnits)).toBe('10k')
+    expect(bandLabel(band('extreme'), aviationUnits)).toBe('40k+')
+  })
+
+  it('follows the unit preference into metres', () => {
+    expect(bandLabel(band('middle'), metricUnits)).toBe('3.0k')
+  })
+
+  it('describes what isolating a band would show', () => {
+    expect(bandDescription(band('ground'), aviationUnits)).toBe('on the ground')
+    expect(bandDescription(band('high'), aviationUnits)).toBe('from 20,000 ft to 30,000 ft')
+    expect(bandDescription(band('extreme'), aviationUnits)).toBe('above 40,000 ft')
   })
 })

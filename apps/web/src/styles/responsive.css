@@ -87,6 +87,12 @@
     min-height: 100%;
   }
 
+  /* The bottom sheet and the map card already carry the selected aircraft here,
+     and a popup this size would cover most of a phone's map. */
+  .maplibregl-popup.map-aircraft-popup {
+    display: none;
+  }
+
   .app-header {
     grid-template-columns: 1fr auto;
     height: var(--header-height);
