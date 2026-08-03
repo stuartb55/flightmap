@@ -8,6 +8,7 @@ import {
   Clock3,
   Database,
   FastForward,
+  ListFilter,
   MapPinned,
   Pause,
   Play,
@@ -139,6 +140,11 @@ export function shouldShowSummarySection(
   return visibleSummaryCount > 0 || nextCursor !== null
 }
 
+// Matches the breakpoint where the page shows one pane at a time.
+function narrowLayout() {
+  return window.matchMedia('(max-width: 800px)').matches
+}
+
 function SessionCard({
   session,
   selected,
@@ -243,6 +249,15 @@ export function HistoryPage() {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
   const [follow, setFollow] = useState(false)
+  /*
+   * A phone cannot show the results list and a usable map at once: sharing the
+   * height left the map shorter than the replay controls that sit over it. The
+   * narrow layout shows one at a time and follows the user to the map as soon
+   * as a track is loaded. Wider layouts ignore this and keep both panes.
+   */
+  const [mobileView, setMobileView] = useState<'results' | 'map'>(() =>
+    restoredTrackState(routeSearch).selectedSessionIds.length ? 'map' : 'results',
+  )
   const animationRef = useRef<number | null>(null)
   const historyMapRef = useRef<RadarMapHandle>(null)
   const historySearchRef = useRef<HTMLInputElement>(null)
@@ -416,7 +431,7 @@ export function HistoryPage() {
           result.status === 'fulfilled' ? [[result.value.session.id, result.value] as const] : [],
         )
         setTracks(Object.fromEntries(restoredTracks))
-        setFocusedTrackId(restoredTracks[0]?.[0] ?? null)
+        setFocusedTrackId(narrowLayout() ? null : restoredTracks[0]?.[0] ?? null)
         setReplayTime(restored.replayTime)
         if (restoredTracks.length !== restored.selectedSessionIds.length) {
           setTrackError('One or more shared tracks have expired or are no longer available.')
@@ -463,7 +478,10 @@ export function HistoryPage() {
     try {
       const track = await api.track(session.id, resolution)
       setTracks((current) => ({ ...current, [session.id]: track }))
-      setFocusedTrackId(session.id)
+      // The profile panel takes a third of a phone screen, so the narrow layout
+      // leaves it closed and offers it per track in the selection tray.
+      if (!narrowLayout()) setFocusedTrackId(session.id)
+      setMobileView('map')
     } catch (requestError) {
       setTrackError(requestError instanceof Error ? requestError.message : 'Track could not be loaded')
     } finally {
@@ -671,7 +689,27 @@ export function HistoryPage() {
   }
 
   return (
-    <div className="history-page">
+    <div className={`history-page ${mobileView === 'map' ? 'show-map' : 'show-results'}`}>
+      <div className="history-view-switch" role="group" aria-label="History view">
+        <button
+          type="button"
+          className={mobileView === 'results' ? 'active' : ''}
+          aria-pressed={mobileView === 'results'}
+          onClick={() => setMobileView('results')}
+        >
+          <ListFilter size={15} /> Results
+          <span>{sessions.length}</span>
+        </button>
+        <button
+          type="button"
+          className={mobileView === 'map' ? 'active' : ''}
+          aria-pressed={mobileView === 'map'}
+          onClick={() => setMobileView('map')}
+        >
+          <MapPinned size={15} /> Map
+          {selectedTracks.length ? <span>{selectedTracks.length}</span> : null}
+        </button>
+      </div>
       <aside className="history-sidebar">
         <div className="page-heading">
           <span className="eyebrow">DETAILED ARCHIVE</span>
@@ -887,120 +925,124 @@ export function HistoryPage() {
           </p>
         ) : null}
 
-        {selectedTracks.length ? (
-          <section className="selected-track-tray" aria-label="Selected tracks">
-            <header>
-              <div><span className="eyebrow">SELECTED</span><strong>{selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}</strong></div>
-              <button type="button" className="text-button" onClick={clearTracks}><Trash2 size={14} /> Clear all</button>
-            </header>
-            <div className="selected-track-chips">
-              {selectedTracks.map((track) => (
-                <article key={track.session.id}>
-                  <button type="button" onClick={() => void loadTrack(track.session)} aria-label={`Remove ${track.session.callsigns[0] || track.session.icao} track`}>
-                    <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
-                  </button>
-                  <span className="track-export-links">
-                    <button type="button" aria-pressed={focusedTrackId === track.session.id} onClick={() => setFocusedTrackId((current) => current === track.session.id ? null : track.session.id)}>Profile</button>
-                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=csv&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} telemetry as CSV`}>CSV</a>
-                    <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=geojson&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} track as GeoJSON`}>GeoJSON</a>
-                  </span>
-                </article>
-              ))}
-            </div>
-            <p className="export-units-note">Exports always use aviation units: feet, knots and nautical miles.</p>
-            <dl>
-              <div><dt>Aircraft</dt><dd>{selectedMetrics.uniqueAircraft}</dd></div>
-              <div><dt>Displayed points</dt><dd>{selectedMetrics.samples.toLocaleString('en-GB')}</dd></div>
-              <div><dt>Highest</dt><dd>{formatAltitude(selectedMetrics.maximumAltitude)}</dd></div>
-            </dl>
-            {selectedMetrics.overlapping ? <p>Tracks overlap in time and can be replayed together.</p> : null}
-          </section>
-        ) : null}
-
-        {focusedTrack ? (
-          <FlightProfile
-            track={focusedTrack}
-            replayTime={replayTime}
-            onReplayTime={(time) => {
-              setPlaying(false)
-              setReplayTime(time)
-            }}
-          />
-        ) : null}
-
-        {replayBounds && replayTime != null ? (
-          <div className="replay-panel">
-            <div className="replay-topline">
-              <div>
-                <span className="eyebrow">REPLAY</span>
-                <strong>{formatDate(new Date(replayTime).toISOString())} · {formatTime(new Date(replayTime).toISOString())}</strong>
-              </div>
-              <div className="replay-track-count">
-                <PlaneIcon />
-                {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
-              </div>
-            </div>
-            <input
-              className="time-slider"
-              type="range"
-              min={replayBounds.start}
-              max={replayBounds.end}
-              step={1000}
-              value={replayTime}
-              onChange={(event) => {
-                setPlaying(false)
-                setReplayTime(Number(event.target.value))
-              }}
-              aria-label="Replay position"
-            />
-            <div className="replay-ticks">
-              <span>{formatTime(new Date(replayBounds.start).toISOString())}</span>
-              <span>{formatTime(new Date(replayBounds.end).toISOString())}</span>
-            </div>
-            <div className="replay-controls">
-              <button
-                className="play-button"
-                type="button"
-                onClick={() => {
-                  if (replayTime >= replayBounds.end) setReplayTime(replayBounds.start)
-                  setPlaying((value) => !value)
-                }}
-                aria-label={playing ? 'Pause replay' : 'Play replay'}
-              >
-                {playing ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" />}
-              </button>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => {
-                  setPlaying(false)
-                  setReplayTime(replayBounds.start)
-                }}
-                aria-label="Reset replay"
-              >
-                <CircleStop size={17} />
-              </button>
-              <div className="speed-control" aria-label="Replay speed">
-                <FastForward size={15} />
-                {SPEEDS.map((option) => (
-                  <button
-                    type="button"
-                    key={option}
-                    className={speed === option ? 'active' : ''}
-                    onClick={() => setSpeed(option)}
-                    aria-pressed={speed === option}
-                  >
-                    {option}×
-                  </button>
+        {/* Grouped so the narrow layout can stack and scroll these together
+            below the map instead of floating them over it. */}
+        <div className="history-map-overlays">
+          {selectedTracks.length ? (
+            <section className="selected-track-tray" aria-label="Selected tracks">
+              <header>
+                <div><span className="eyebrow">SELECTED</span><strong>{selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}</strong></div>
+                <button type="button" className="text-button" onClick={clearTracks}><Trash2 size={14} /> Clear all</button>
+              </header>
+              <div className="selected-track-chips">
+                {selectedTracks.map((track) => (
+                  <article key={track.session.id}>
+                    <button type="button" onClick={() => void loadTrack(track.session)} aria-label={`Remove ${track.session.callsigns[0] || track.session.icao} track`}>
+                      <span><strong>{track.session.callsigns[0] || track.session.icao.toUpperCase()}</strong><small>{track.session.endedAt ? track.truncated ? 'Truncated' : formatDuration(track.session.startedAt, track.session.endedAt) : 'Active'}</small></span><span aria-hidden="true">×</span>
+                    </button>
+                    <span className="track-export-links">
+                      <button type="button" aria-pressed={focusedTrackId === track.session.id} onClick={() => setFocusedTrackId((current) => current === track.session.id ? null : track.session.id)}>Profile</button>
+                      <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=csv&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} telemetry as CSV`}>CSV</a>
+                      <a download href={`/api/v1/exports/sessions/${encodeURIComponent(track.session.id)}?format=geojson&resolution=${resolution}`} aria-label={`Export ${track.session.callsigns[0] || track.session.icao} track as GeoJSON`}>GeoJSON</a>
+                    </span>
+                  </article>
                 ))}
               </div>
-              <label className="follow-toggle">
-                <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
-                <span>Follow aircraft</span>
-              </label>
+              <p className="export-units-note">Exports always use aviation units: feet, knots and nautical miles.</p>
+              <dl>
+                <div><dt>Aircraft</dt><dd>{selectedMetrics.uniqueAircraft}</dd></div>
+                <div><dt>Displayed points</dt><dd>{selectedMetrics.samples.toLocaleString('en-GB')}</dd></div>
+                <div><dt>Highest</dt><dd>{formatAltitude(selectedMetrics.maximumAltitude)}</dd></div>
+              </dl>
+              {selectedMetrics.overlapping ? <p>Tracks overlap in time and can be replayed together.</p> : null}
+            </section>
+          ) : null}
+
+          {focusedTrack ? (
+            <FlightProfile
+              track={focusedTrack}
+              replayTime={replayTime}
+              onReplayTime={(time) => {
+                setPlaying(false)
+                setReplayTime(time)
+              }}
+            />
+          ) : null}
+
+          {replayBounds && replayTime != null ? (
+            <div className="replay-panel">
+              <div className="replay-topline">
+                <div>
+                  <span className="eyebrow">REPLAY</span>
+                  <strong>{formatDate(new Date(replayTime).toISOString())} · {formatTime(new Date(replayTime).toISOString())}</strong>
+                </div>
+                <div className="replay-track-count">
+                  <PlaneIcon />
+                  {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <input
+                className="time-slider"
+                type="range"
+                min={replayBounds.start}
+                max={replayBounds.end}
+                step={1000}
+                value={replayTime}
+                onChange={(event) => {
+                  setPlaying(false)
+                  setReplayTime(Number(event.target.value))
+                }}
+                aria-label="Replay position"
+              />
+              <div className="replay-ticks">
+                <span>{formatTime(new Date(replayBounds.start).toISOString())}</span>
+                <span>{formatTime(new Date(replayBounds.end).toISOString())}</span>
+              </div>
+              <div className="replay-controls">
+                <button
+                  className="play-button"
+                  type="button"
+                  onClick={() => {
+                    if (replayTime >= replayBounds.end) setReplayTime(replayBounds.start)
+                    setPlaying((value) => !value)
+                  }}
+                  aria-label={playing ? 'Pause replay' : 'Play replay'}
+                >
+                  {playing ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" />}
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => {
+                    setPlaying(false)
+                    setReplayTime(replayBounds.start)
+                  }}
+                  aria-label="Reset replay"
+                >
+                  <CircleStop size={17} />
+                </button>
+                <div className="speed-control" aria-label="Replay speed">
+                  <FastForward size={15} />
+                  {SPEEDS.map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      className={speed === option ? 'active' : ''}
+                      onClick={() => setSpeed(option)}
+                      aria-pressed={speed === option}
+                    >
+                      {option}×
+                    </button>
+                  ))}
+                </div>
+                <label className="follow-toggle">
+                  <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+                  <span>Follow aircraft</span>
+                </label>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </section>
     </div>
   )

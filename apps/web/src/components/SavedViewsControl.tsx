@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SavedView, SavedViewConfiguration } from '@flightmap/shared'
 import { Bookmark, Check, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { api } from '../lib/api'
@@ -15,6 +15,7 @@ export function SavedViewsControl({
   className?: string
 }) {
   const [open, setOpen] = useState(false)
+  const controlRef = useRef<HTMLDivElement>(null)
   const [views, setViews] = useState<SavedView[]>([])
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(true)
@@ -38,6 +39,27 @@ export function SavedViewsControl({
       })
     return () => controller.abort()
   }, [])
+
+  /*
+   * The menu floats over the map beside the layer menu, which closes the same
+   * way. Dismissing on an outside press keeps at most one of the two panels
+   * covering a phone-sized map.
+   */
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!controlRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsidePress)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsidePress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
 
   const create = async () => {
     const cleanName = name.trim()
@@ -95,7 +117,7 @@ export function SavedViewsControl({
   }
 
   return (
-    <div className={`saved-view-control ${className}`}>
+    <div className={`saved-view-control ${className}`} ref={controlRef}>
       <button type="button" className="saved-view-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         <Bookmark size={16} /> Saved views
         {surfaceViews.length ? <span>{surfaceViews.length}</span> : null}

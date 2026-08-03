@@ -10,6 +10,44 @@
   background: #070b10;
 }
 
+/* Both panes are visible side by side here, so the narrow-layout switch that
+   chooses between them has nothing to do. */
+.history-view-switch {
+  display: none;
+}
+
+/* One bottom-anchored column over the map. Positioning the track tray, the
+   flight profile and the replay controls independently laid all three across
+   each other once a profile was open. The gap at the bottom keeps the map
+   scale and attribution readable. */
+.history-map-overlays {
+  position: absolute;
+  z-index: 7;
+  /* Its own lane, left of the zoom controls, so a tall column cannot reach
+     across them. */
+  right: 76px;
+  bottom: 84px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Stops below the map layer and saved-view buttons on a short window; the
+     profile gives up its height first and the column scrolls after that. */
+  max-height: calc(100% - 190px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.history-map-overlays > * {
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+.history-map-overlays > .flight-profile {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
 .history-sidebar {
   position: relative;
   z-index: 10;
@@ -358,6 +396,12 @@
   overflow: hidden;
 }
 
+/* The replay column owns the bottom of this map, where the key sits, and the
+   flight profile already reads out altitude for the selected track. */
+.history-map-stage .map-legend {
+  display: none;
+}
+
 .history-map-empty {
   position: absolute;
   z-index: 5;
@@ -402,11 +446,7 @@
 }
 
 .replay-panel {
-  position: absolute;
-  z-index: 7;
-  right: 18px;
-  bottom: 18px;
-  left: 18px;
+  position: relative;
   padding: 13px 15px 12px;
   border: 1px solid rgba(51, 70, 83, 0.78);
   border-radius: 11px;
@@ -416,11 +456,9 @@
 }
 
 .selected-track-tray {
-  position: absolute;
-  z-index: 6;
-  right: 18px;
-  bottom: 154px;
-  width: min(520px, calc(100% - 36px));
+  position: relative;
+  align-self: flex-end;
+  width: min(520px, 100%);
   padding: 11px 12px;
   border: 1px solid rgba(51, 70, 83, 0.78);
   border-radius: 10px;
