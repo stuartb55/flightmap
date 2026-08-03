@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  aircraftActivityQuerySchema,
   icaoSchema,
+  coverageCellDetailQuerySchema,
   dismissAlertsInputSchema,
   customAlertRuleInputSchema,
   customAlertRulePatchSchema,
   insightCoverageQuerySchema,
+  insightPatternsQuerySchema,
   insightQuerySchema,
+  rangeProfileQuerySchema,
   receiverAircraftSchema,
   alertQuerySchema,
   savedViewInputSchema,
@@ -128,6 +132,39 @@ describe("shared contracts", () => {
         to: "2026-08-02"
       })
     ).toThrow();
+  });
+
+  it("validates the extended insight and aircraft activity queries", () => {
+    const from = "2026-07-31T00:00:00.000Z";
+    const to = "2026-08-01T00:00:00.000Z";
+
+    expect(insightPatternsQuerySchema.parse({
+      from,
+      to,
+      timeZone: "Europe/London",
+      compare: "true"
+    })).toMatchObject({ timeZone: "Europe/London", compare: true });
+    expect(rangeProfileQuerySchema.parse({ from, to })).toMatchObject({
+      altitudeBand: "all",
+      compare: false
+    });
+    expect(aircraftActivityQuerySchema.parse({ from, to })).toMatchObject({
+      bucket: "day"
+    });
+    expect(coverageCellDetailQuerySchema.parse({
+      from,
+      to,
+      latitude: "53.35",
+      longitude: "-2.27"
+    })).toMatchObject({ latitude: 53.35, longitude: -2.27 });
+
+    const reversed = { from: to, to: from };
+    expect(() => insightPatternsQuerySchema.parse({
+      ...reversed,
+      timeZone: "Europe/London"
+    })).toThrow();
+    expect(() => rangeProfileQuerySchema.parse(reversed)).toThrow();
+    expect(() => aircraftActivityQuerySchema.parse(reversed)).toThrow();
   });
 
   it("strictly validates surface-specific saved views", () => {
