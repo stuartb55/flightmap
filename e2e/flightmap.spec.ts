@@ -169,6 +169,99 @@ test('windows the live list instead of rendering every aircraft', async ({ page 
   expect(await rows.count()).toBeLessThan(40)
 })
 
+test('isolates an altitude band from the map legend', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The legend is expanded by default on desktop only')
+  await openFlightmap(page)
+  const table = page.locator('.desktop-aircraft-panel .aircraft-table')
+  // Wait for a whole snapshot: a partial first render would make any later
+  // count look like a filtered one.
+  await expect
+    .poll(async () => Number(await table.getAttribute('aria-rowcount')), { timeout: 15_000 })
+    .toBeGreaterThan(100)
+  const everything = Number(await table.getAttribute('aria-rowcount'))
+
+  const band = page.locator('.map-altitude-scale button[data-band="middle"]')
+  await expect(band).toHaveAccessibleName('Show only aircraft from 10,000 ft to 20,000 ft')
+  await band.click()
+  await expect(band).toHaveAttribute('aria-pressed', 'true')
+  await expect(band).toHaveAccessibleName(
+    'Show every altitude again instead of only aircraft from 10,000 ft to 20,000 ft',
+  )
+  await expect
+    .poll(async () => Number(await table.getAttribute('aria-rowcount')))
+    .toBeLessThan(everything)
+
+  // The legend and the drawer are two views of the same filter.
+  await page.getByRole('button', { name: /Filters/ }).first().click()
+  const drawer = page.getByRole('dialog', { name: 'Aircraft filters' })
+  await expect(drawer.getByLabel('Minimum altitude')).toHaveValue('10000')
+  await expect(drawer.getByLabel('Maximum altitude')).toHaveValue('20000')
+  await drawer.getByLabel('Maximum altitude').fill('30000')
+  await expect(band).toHaveAttribute('aria-pressed', 'false')
+  await page.keyboard.press('Escape')
+
+  // Pressing the isolated band again puts every altitude back.
+  await band.click()
+  await expect(band).toHaveAttribute('aria-pressed', 'true')
+  await band.click()
+  await expect
+    .poll(async () => Number(await table.getAttribute('aria-rowcount')))
+    .toBe(everything)
+})
+
+test('pins a popup to the selected aircraft and dismisses it', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The pinned popup is a wide-screen affordance')
+  await openFlightmap(page)
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
+  const popup = page.locator('.map-popup-card')
+  await expect(popup).toBeVisible()
+  await expect(popup.getByRole('link', { name: 'Profile' })).toHaveAttribute(
+    'href',
+    '/aircraft/400001',
+  )
+  const violations = await new AxeBuilder({ page }).include('.maplibregl-popup').analyze()
+  expect(violations.violations.filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
+
+  // The popup must not hold focus hostage: Escape reaches the page.
+  await page.keyboard.press('Escape')
+  await expect(popup).toBeHidden()
+  await expect(page).toHaveURL(/\/(\?.*)?$/)
+
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
+  await popup.getByRole('button', { name: 'Close aircraft popup' }).click()
+  await expect(popup).toBeHidden()
+
+  // Clicking the map itself, away from any aircraft, also clears the selection.
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
+  const canvas = (await page.locator('.map-stage .radar-map-canvas').boundingBox())!
+  await page.mouse.click(canvas.x + 30, canvas.y + canvas.height * 0.75)
+  await expect(popup).toBeHidden()
+  await expect(page.locator('.detail-panel')).toBeHidden()
+})
+
+test('measures distance and bearing with the ruler', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'One pass over the ruler is enough')
+  await openFlightmap(page)
+  await page.getByRole('button', { name: 'Measure distance and bearing' }).click()
+  const readout = page.locator('.map-ruler-readout')
+  await expect(readout).toContainText('Click two points to measure')
+
+  const canvas = (await page.locator('.map-stage .radar-map-canvas').boundingBox())!
+  await page.mouse.click(canvas.x + canvas.width * 0.3, canvas.y + canvas.height * 0.35)
+  await expect(readout).toContainText('Click the second point')
+  await page.mouse.click(canvas.x + canvas.width * 0.6, canvas.y + canvas.height * 0.7)
+  await expect(readout).toContainText(/\d+(\.\d+)? nm/)
+  await expect(readout).toContainText(/\d{3}°/)
+  // Measuring must not select whatever happened to be under the pointer.
+  await expect(page).toHaveURL(/\/(\?.*)?$/)
+  await expect(page.locator('.detail-panel')).toBeHidden()
+
+  await page.keyboard.press('Escape')
+  await expect(readout).toContainText('Click two points to measure')
+  await page.keyboard.press('Escape')
+  await expect(readout).toBeHidden()
+})
+
 test('opens aircraft profiles and synchronised flight analysis', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The analysis workflow is exercised once on desktop Chromium')
   await openFlightmap(page)

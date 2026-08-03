@@ -849,6 +849,136 @@
   left: 0;
 }
 
+/* Anchored to the aircraft itself, unlike the detail panel, which is why it
+   earns its place beside one. Narrow layouts hide it — see responsive.css. */
+.maplibregl-popup.map-aircraft-popup {
+  z-index: 4;
+  max-width: 272px;
+}
+
+.map-aircraft-popup .maplibregl-popup-content {
+  padding: 0;
+  border: 1px solid var(--line-bright);
+  border-radius: 9px;
+  background: rgb(9 16 21 / 94%);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.map-aircraft-popup .maplibregl-popup-tip {
+  border-top-color: rgb(9 16 21 / 94%);
+  border-bottom-color: rgb(9 16 21 / 94%);
+}
+
+.map-popup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px 10px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+}
+
+.map-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-popup-head button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.map-popup-head button:hover {
+  color: var(--text);
+}
+
+.map-popup-card > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.map-popup-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 10px;
+  margin: 6px 0 0;
+}
+
+.map-popup-card dt {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.map-popup-card dd {
+  margin: 0;
+  color: var(--muted-bright);
+}
+
+.map-popup-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(53, 70, 82, 0.6);
+}
+
+.map-popup-links a {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* Bottom centre, clear of the alert banner that floats over the top of the map
+   and of the legend in the opposite corner. */
+.map-ruler-readout {
+  position: absolute;
+  z-index: 8;
+  bottom: 28px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px 7px 11px;
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+  border-radius: 9px;
+  transform: translateX(-50%);
+  background: rgb(9 16 21 / 92%);
+  box-shadow: var(--shadow);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+}
+
+.map-ruler-readout span {
+  color: var(--muted-bright);
+}
+
+.map-ruler-readout button {
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.map-ruler-readout button:hover {
+  color: var(--text);
+}
+
 .map-legend {
   position: absolute;
   z-index: 3;
@@ -871,22 +1001,51 @@
   display: none;
 }
 
+/* One column per altitude band. The segments read as a scale left to right and,
+   where the page has an altitude filter, each one is a button that isolates its
+   band — which is why they are sized as targets rather than as a hairline. */
 .map-altitude-scale {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
 }
 
-.map-altitude-scale > i {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  height: 3px;
+.map-altitude-scale > * {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 0 2px;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+}
+
+.map-altitude-scale > i,
+.map-altitude-scale > * > i {
+  width: 100%;
+  height: 4px;
   border-radius: 3px;
-  background: linear-gradient(90deg, #aeb9c3, #67dda9, #52d5df, #5a9ff5, #a987f0, #e57bd4, #ff7684);
+  background: var(--band);
 }
 
-.map-altitude-scale > span {
-  grid-row: 2;
+.map-altitude-scale > button {
+  cursor: pointer;
+}
+
+.map-altitude-scale > button:hover {
+  color: var(--text);
+  border-color: rgba(88, 213, 177, 0.45);
+}
+
+.map-altitude-scale > button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(88, 213, 177, 0.12);
 }
 
 /* Three minmax(0, 1fr) tracks fit the longest label ("Rotorcraft") at every

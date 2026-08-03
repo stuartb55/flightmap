@@ -268,7 +268,7 @@ a large tree, and `filterAircraft`/`sortAircraft` re-run on each 1 Hz snapshot.
 
 ### 9. Map interaction depth — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The map supports hover (a transient card, `RadarMap.tsx:942`) and
 click-to-select, and nothing else. There is no way to interrogate the map
