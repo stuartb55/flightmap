@@ -76,7 +76,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Deliberately not --with-deps: the runner image already ships Chromium's
+      # shared libraries, and the apt payload is font packages these tests never
+      # render. A degraded Azure mirror once made that step take 10m38s of a
+      # 12m47s job, against ~10s for the browser download alone.
+      - run: npx playwright install chromium
       - run: docker compose --profile testing up --build --detach
       - name: Wait for readiness
         run: |
