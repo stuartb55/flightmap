@@ -31,9 +31,11 @@ import {
   activeFilterCount,
   defaultAircraftFilters,
   filterAircraft,
+  nextSelectionIndex,
   sortAircraft,
   type AircraftFilters as AircraftFilterState,
   type AircraftSort,
+  type SelectionMove,
 } from '../lib/aircraft-filter'
 import { aircraftLabel } from '../lib/format'
 import { useSearchParams } from '../lib/router'
@@ -271,9 +273,10 @@ export function LivePage() {
     [setSearchParams],
   )
 
-  const closeDetails = () => {
+  // Stable so the keyboard listener below is not rebuilt on every render.
+  const closeDetails = useCallback(() => {
     setSearchParams({})
-  }
+  }, [setSearchParams])
 
   const dismissBanner = async () => {
     if (!bannerAlert) return
@@ -298,6 +301,21 @@ export function LivePage() {
     if (configuration.viewport) mapRef.current?.applyViewport(configuration.viewport)
   }
 
+  const moveSelection = useCallback(
+    (move: SelectionMove) => {
+      const index = nextSelectionIndex(
+        filtered.findIndex((item) => item.icao === selectedIcao),
+        filtered.length,
+        move,
+      )
+      const next = index == null ? null : filtered[index]
+      if (next) selectAircraft(next.icao)
+    },
+    [filtered, selectAircraft, selectedIcao],
+  )
+
+  // Every dependency is listed so the listener is installed once per change
+  // rather than being torn down and rebuilt on each 1 Hz snapshot render.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (isFormTarget(event.target)) return
@@ -309,6 +327,18 @@ export function LivePage() {
         event.preventDefault()
         setListCollapsed(false)
         document.querySelector<HTMLButtonElement>('.desktop-aircraft-panel .aircraft-identity')?.focus()
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        moveSelection(1)
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        moveSelection(-1)
+      } else if (event.key === 'Home' && filtered.length) {
+        event.preventDefault()
+        moveSelection('first')
+      } else if (event.key === 'End' && filtered.length) {
+        event.preventDefault()
+        moveSelection('last')
       } else if (event.key === 'Escape') {
         setShowFilters(false)
         setMobilePanel(null)
@@ -317,7 +347,7 @@ export function LivePage() {
     }
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
-  })
+  }, [closeDetails, filtered.length, moveSelection, selectedIcao])
 
   return (
     <div

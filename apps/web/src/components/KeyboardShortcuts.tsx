@@ -11,6 +11,8 @@ export function isFormTarget(target: EventTarget | null): boolean {
 const shortcuts = [
   ['/', 'Focus search'],
   ['A', 'Focus aircraft list'],
+  ['↑ ↓', 'Select the previous or next aircraft'],
+  ['Home / End', 'Select the first or last aircraft'],
   ['Esc', 'Close the active panel'],
   ['Space', 'Play or pause history replay'],
   ['C', 'Clear selected history tracks'],

@@ -109,6 +109,28 @@ function motionDuration(milliseconds: number) {
   return prefersReducedMotion ? 0 : milliseconds
 }
 
+/**
+ * Whether a selected aircraft sits far enough from the centre of the view to be
+ * worth moving the camera for. The margin keeps an aircraft hard against an
+ * edge from counting as visible, and is clamped so it can never exceed a third
+ * of a small container - otherwise a narrow map would always recentre.
+ */
+export function needsRecentre(
+  point: { x: number; y: number },
+  width: number,
+  height: number,
+  marginPx = 90,
+): boolean {
+  if (width <= 0 || height <= 0) return true
+  const margin = Math.min(marginPx, width / 3, height / 3)
+  return (
+    point.x < margin ||
+    point.x > width - margin ||
+    point.y < margin ||
+    point.y > height - margin
+  )
+}
+
 export function isEmergencyAircraft(
   aircraft: Pick<Aircraft, 'squawk' | 'emergency'>,
 ): boolean {
@@ -917,15 +939,29 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   }, [tracks, replayTime, mapReady])
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !selectedIcao) return
+    const map = mapRef.current
+    if (!mapReady || !map || !selectedIcao) return
     const selected = aircraftRef.current.find((item) => item.icao === selectedIcao)
-    if (selected?.longitude != null && selected.latitude != null) {
-      mapRef.current.easeTo({
-        center: [selected.longitude, selected.latitude],
-        zoom: Math.max(mapRef.current.getZoom(), 9),
-        duration: motionDuration(450),
-      })
+    if (selected?.longitude == null || selected.latitude == null) return
+    // Recentring on an aircraft that is already comfortably on screen throws
+    // the whole view about for no gain, which made picking through the table
+    // feel violent. Only move the camera when the aircraft is off screen or
+    // crowding an edge.
+    const canvas = map.getCanvas()
+    if (
+      !needsRecentre(
+        map.project([selected.longitude, selected.latitude]),
+        canvas.clientWidth,
+        canvas.clientHeight,
+      )
+    ) {
+      return
     }
+    map.easeTo({
+      center: [selected.longitude, selected.latitude],
+      zoom: Math.max(map.getZoom(), 9),
+      duration: motionDuration(450),
+    })
   }, [selectedIcao, mapReady])
 
   useEffect(() => {

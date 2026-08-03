@@ -137,6 +137,25 @@ export function sortAircraft(aircraft: Aircraft[], sort: AircraftSort): Aircraft
   })
 }
 
+export type SelectionMove = number | 'first' | 'last'
+
+/**
+ * Index the keyboard should move to within the visible list. Stops at both ends
+ * rather than wrapping, so holding an arrow key settles somewhere predictable,
+ * and starts from the appropriate end when nothing is selected yet.
+ */
+export function nextSelectionIndex(
+  currentIndex: number,
+  length: number,
+  move: SelectionMove,
+): number | null {
+  if (length <= 0) return null
+  if (move === 'first') return 0
+  if (move === 'last') return length - 1
+  if (currentIndex < 0) return move > 0 ? 0 : length - 1
+  return Math.min(length - 1, Math.max(0, currentIndex + move))
+}
+
 export function aircraftFilterErrors(filters: AircraftFilters): Partial<
   Record<keyof AircraftFilters, string>
 > {
