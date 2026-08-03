@@ -438,7 +438,10 @@
   min-height: 44px;
   height: auto;
   padding: 0 13px;
-  color: #657581;
+  /* 5.8:1 on the footer background; the literal it replaces was 3.98:1, which
+     only escaped the accessibility pass while the row count pushed the footer
+     off screen. */
+  color: var(--muted);
   border-top: 1px solid var(--line);
   background: #0b1117;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
