@@ -3,11 +3,13 @@ import type { Database } from "../../src/db/database.js";
 import { InsightBackfillService } from "../../src/services/insight-backfill.js";
 import { MaintenanceService } from "../../src/services/maintenance.js";
 import {
+  atMinutes,
   createTestDatabase,
   describeDatabase,
   repository,
   resetDatabase,
-  snapshot
+  snapshot,
+  testDay
 } from "./harness.js";
 
 const logger = { info: vi.fn(), error: vi.fn() };
@@ -74,7 +76,7 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
   });
 
   it("deletes expired rows in batches and records the run", async () => {
-    const now = new Date("2026-08-01T00:00:00.000Z");
+    const now = atMinutes(0);
     const expired = new Date(now.getTime() - 40 * 86_400_000);
     // More rows than one delete batch, so the ctid loop has to iterate.
     await database.query(
@@ -114,7 +116,7 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
   });
 
   it("closes sessions that stopped reporting and detaches the live row", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     const flights = repository(database, { sessionGapSeconds: 300 });
     await flights.ingestSnapshot(snapshot(at, [{}]));
 
@@ -136,11 +138,11 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
   });
 
   it("rebuilds a day of insights from retained position samples", async () => {
-    const day = "2026-08-01";
+    const day = testDay.toISOString().slice(0, 10);
     const flights = repository(database);
     for (let index = 0; index < 5; index += 1) {
       await flights.ingestSnapshot(
-        snapshot(new Date(`2026-08-01T10:00:0${index}.000Z`), [
+        snapshot(new Date(atMinutes(600).getTime() + index * 1_000), [
           { hex: "400001" },
           { hex: "400002" }
         ])
