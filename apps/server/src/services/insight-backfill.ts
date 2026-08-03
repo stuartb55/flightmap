@@ -282,7 +282,7 @@ export class InsightBackfillService {
          )
          WITH ${validatedPositionCtes()}
          SELECT $1::date,
-                floor(mod(bearing_deg + 360, 360) / 5)::smallint,
+                floor(mod(mod(bearing_deg::numeric, 360) + 360, 360) / 5)::smallint,
                 CASE
                   WHEN on_ground THEN 'ground'
                   WHEN trusted_altitude_ft IS NULL OR trusted_altitude_ft < 10000 THEN 'low'
