@@ -12,6 +12,14 @@ import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Focus, LocateFixed, Maximize2, Minus, Plus } from 'lucide-react'
 import { defaultReceiver, useRuntimeConfig } from '../config'
+import {
+  aircraftShape,
+  aircraftShapes,
+  shapeLabels,
+  shapeOutlines,
+  shapePoints,
+  type AircraftShape,
+} from '../lib/aircraft-category'
 import { aircraftLabel, altitudeColour } from '../lib/format'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import { waypointData } from './waypoints'
@@ -122,7 +130,43 @@ function altitudeBand(altitude: Aircraft['altitudeBaro'] | number | null) {
   return 'extreme'
 }
 
-function planeImage(colour: string): ImageData {
+function fillOutline(context: CanvasRenderingContext2D, shape: AircraftShape) {
+  const points = shapeOutlines[shape]
+  const start = points[0]
+  if (!start) return
+  context.beginPath()
+  context.moveTo(start[0], start[1])
+  for (const [x, y] of points.slice(1)) context.lineTo(x, y)
+  context.closePath()
+  context.fill()
+}
+
+/**
+ * Decoration drawn on top of the shared body outline. Only the shapes that need
+ * more than a silhouette to be recognisable have an entry.
+ */
+const shapeDecorations: Partial<Record<AircraftShape, (context: CanvasRenderingContext2D) => void>> = {
+  // Four nacelles read as "heavy" faster than wingspan alone at low zoom.
+  heavy: (context) => {
+    for (const [x, y] of [[7.4, 21], [11.4, 18.6], [20.6, 18.6], [24.6, 21]]) {
+      context.fillRect(x!, y!, 2.2, 3.4)
+    }
+  },
+  // A faint rotor disc is what actually distinguishes a helicopter in traffic.
+  rotorcraft: (context) => {
+    const alpha = context.globalAlpha
+    context.globalAlpha = alpha * 0.5
+    context.beginPath()
+    context.arc(17, 16, 12.5, 0, Math.PI * 2)
+    context.lineWidth = 1.3
+    context.strokeStyle = context.fillStyle
+    context.stroke()
+    context.globalAlpha = alpha
+    context.fillRect(13.4, 29.6, 7.2, 1.6)
+  },
+}
+
+function aircraftImage(shape: AircraftShape, colour: string): ImageData {
   const canvas = document.createElement('canvas')
   canvas.width = 34
   canvas.height = 34
@@ -131,26 +175,17 @@ function planeImage(colour: string): ImageData {
   context.fillStyle = colour
   context.shadowColor = 'rgba(0,0,0,.8)'
   context.shadowBlur = 3
-  context.beginPath()
-  context.moveTo(17, 1)
-  context.lineTo(19, 12)
-  context.lineTo(31, 18)
-  context.lineTo(31, 21)
-  context.lineTo(19.5, 18.5)
-  context.lineTo(20.5, 27)
-  context.lineTo(25, 31)
-  context.lineTo(24.5, 33)
-  context.lineTo(17, 30)
-  context.lineTo(9.5, 33)
-  context.lineTo(9, 31)
-  context.lineTo(13.5, 27)
-  context.lineTo(14.5, 18.5)
-  context.lineTo(3, 21)
-  context.lineTo(3, 18)
-  context.lineTo(15, 12)
-  context.closePath()
-  context.fill()
+  fillOutline(context, shape)
+  shapeDecorations[shape]?.(context)
   return context.getImageData(0, 0, 34, 34)
+}
+
+/**
+ * Surface vehicles never report a useful altitude, so they always take the
+ * ground colour rather than the "unknown" grey.
+ */
+export function aircraftIconId(shape: AircraftShape, band: string): string {
+  return `aircraft-${shape}-${shape === 'ground' ? 'ground' : band}`
 }
 
 type StyleImageMap = Pick<MapLibreMap, 'addImage' | 'getImage' | 'hasImage'>
@@ -247,7 +282,7 @@ function liveAircraftData(aircraft: Aircraft[], selectedIcao?: string | null): F
           label: aircraftLabel(item),
           secondary: item.altitudeBaro === 'ground' ? 'GND' : item.altitudeBaro?.toLocaleString() ?? '',
           rotation: item.track ?? item.trueHeading ?? 0,
-          icon: `aircraft-${altitudeBand(item.altitudeBaro)}`,
+          icon: aircraftIconId(aircraftShape(item), altitudeBand(item.altitudeBaro)),
           selected: item.icao === selectedIcao ? 1 : 0,
           emergency: isEmergencyAircraft(item) ? 1 : 0,
           watched: item.watched ? 1 : 0,
@@ -370,7 +405,9 @@ function replayData(tracks: TrackResponse[], replayTime?: number | null): Featur
             icao: track.session.icao,
             label: track.session.callsigns[0] || track.session.icao.toUpperCase(),
             rotation: point.trackDegrees ?? 0,
-            icon: `aircraft-${altitudeBand(point.altitudeFt)}`,
+            // Historical points carry no emitter category, so replay always
+            // uses the neutral airliner glyph.
+            icon: aircraftIconId('standard', altitudeBand(point.altitudeFt)),
           },
           geometry: {
             type: 'Point' as const,
@@ -534,9 +571,11 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       if (!map.isStyleLoaded()) setMapError(event.error?.message ?? 'Map tiles are unavailable')
     })
     map.on('style.load', () => {
-      for (const [name, colour] of Object.entries(AIRCRAFT_COLOURS)) {
-        const id = `aircraft-${name}`
-        if (!map.hasImage(id)) map.addImage(id, planeImage(colour), { pixelRatio: 2 })
+      for (const shape of aircraftShapes) {
+        for (const [band, colour] of Object.entries(AIRCRAFT_COLOURS)) {
+          const id = aircraftIconId(shape, band)
+          if (!map.hasImage(id)) map.addImage(id, aircraftImage(shape, colour), { pixelRatio: 2 })
+        }
       }
 
       map.addSource(COVERAGE_SOURCE, {
@@ -952,6 +991,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <span>30k</span>
           <span>40k+</span>
         </div>
+        <ul className="map-shape-key">
+          {aircraftShapes.map((shape) => (
+            <li key={shape}>
+              <svg viewBox="0 0 34 34" aria-hidden="true" focusable="false">
+                <polygon points={shapePoints(shape)} />
+              </svg>
+              {shapeLabels[shape]}
+            </li>
+          ))}
+        </ul>
         <div className="map-waypoint-key">
           <span><i className="arrival" />Arrival fix</span>
           <span><i className="departure" />Departure fix</span>

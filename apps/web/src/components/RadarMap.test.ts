@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  aircraftIconId,
   interpolateTrack,
   isEmergencyAircraft,
   replayPointAtTime,
@@ -54,6 +55,17 @@ describe('track interpolation', () => {
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no_emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'general' })).toBe(true)
+  })
+})
+
+describe('aircraftIconId', () => {
+  it('pairs a shape with its altitude band', () => {
+    expect(aircraftIconId('heavy', 'middle')).toBe('aircraft-heavy-middle')
+  })
+
+  it('keeps surface vehicles on the ground colour whatever the altitude band', () => {
+    expect(aircraftIconId('ground', 'unknown')).toBe('aircraft-ground-ground')
+    expect(aircraftIconId('ground', 'high')).toBe('aircraft-ground-ground')
   })
 })
 

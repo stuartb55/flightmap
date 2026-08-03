@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { categoryOptionLabel } from '../lib/aircraft-category'
 import { Link } from '../lib/router'
 import {
   aircraftLabel,
@@ -269,6 +270,7 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
               {inferredOperator ? <small className="identity-inference">{inferredOperator.designator} callsign</small> : null}
             </dd>
           </div>
+          <div><dt>Category</dt><dd>{aircraft.category ? categoryOptionLabel(aircraft.category) : '—'}</dd></div>
           <div><dt>Owner</dt><dd>{metadata?.owner ?? '—'}</dd></div>
           <div><dt>Country</dt><dd>{metadata?.country ?? aircraft.country ?? '—'}</dd></div>
         </dl>
