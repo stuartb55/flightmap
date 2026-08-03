@@ -38,7 +38,7 @@ items assume the documented trusted-LAN model.
       *Fix:* one transaction per step; batched deletes (`LIMIT`ed `ctid` loops);
       partition drops first and committed separately; a short retry on failure.
 
-- [ ] **3. Unbounded `aircraft_icaos[]` arrays rewritten every second.**
+- [x] **3. Unbounded `aircraft_icaos[]` arrays rewritten every second.**
       `db/repository.ts:1216-1219` (coverage cells) and `1263-1264` (range
       histogram) read, concatenate, `DISTINCT`, and rewrite the entire array on
       every snapshot. A busy 0.05° cell accumulates hundreds to thousands of

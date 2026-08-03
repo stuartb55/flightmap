@@ -257,18 +257,35 @@ export class InsightBackfillService {
         [day]
       );
       await client.query(
+        "DELETE FROM daily_coverage_cell_aircraft WHERE coverage_date = $1",
+        [day]
+      );
+      await client.query(
         `INSERT INTO daily_coverage_cells (
            coverage_date, latitude_index, longitude_index, reports,
-           aircraft_icaos, maximum_altitude_ft
+           maximum_altitude_ft
          )
          WITH ${validatedPositionCtes()}
          SELECT $1::date,
                 least(3599, greatest(0, floor((latitude + 90) / 0.05)::integer)),
                 least(7199, greatest(0, floor((longitude + 180) / 0.05)::integer)),
-                count(*), array_agg(DISTINCT trim(icao)),
+                count(*),
                 max(trusted_altitude_ft)
          FROM validated_positions
          GROUP BY 1, 2, 3`,
+        [day]
+      );
+      await client.query(
+        `INSERT INTO daily_coverage_cell_aircraft (
+           coverage_date, latitude_index, longitude_index, icao
+         )
+         WITH ${validatedPositionCtes()}
+         SELECT DISTINCT $1::date,
+                least(3599, greatest(0, floor((latitude + 90) / 0.05)::integer)),
+                least(7199, greatest(0, floor((longitude + 180) / 0.05)::integer)),
+                trim(icao)
+         FROM validated_positions
+         ON CONFLICT DO NOTHING`,
         [day]
       );
       await client.query(
@@ -276,9 +293,13 @@ export class InsightBackfillService {
         [day]
       );
       await client.query(
+        "DELETE FROM daily_range_histogram_aircraft WHERE profile_date = $1",
+        [day]
+      );
+      await client.query(
         `INSERT INTO daily_range_histogram (
            profile_date, bearing_bucket, altitude_band, range_bucket_nm,
-           reports, aircraft_icaos
+           reports
          )
          WITH ${validatedPositionCtes()}
          SELECT $1::date,
@@ -290,10 +311,30 @@ export class InsightBackfillService {
                   ELSE 'high'
                 END,
                 least(500, floor(greatest(0, distance_nm) / 5) * 5)::smallint,
-                count(*), array_agg(DISTINCT trim(icao))
+                count(*)
          FROM validated_positions
          WHERE bearing_deg IS NOT NULL AND distance_nm IS NOT NULL
          GROUP BY 1, 2, 3, 4`,
+        [day]
+      );
+      await client.query(
+        `INSERT INTO daily_range_histogram_aircraft (
+           profile_date, bearing_bucket, altitude_band, range_bucket_nm, icao
+         )
+         WITH ${validatedPositionCtes()}
+         SELECT DISTINCT $1::date,
+                floor(mod(mod(bearing_deg::numeric, 360) + 360, 360) / 5)::smallint,
+                CASE
+                  WHEN on_ground THEN 'ground'
+                  WHEN trusted_altitude_ft IS NULL OR trusted_altitude_ft < 10000 THEN 'low'
+                  WHEN trusted_altitude_ft < 25000 THEN 'medium'
+                  ELSE 'high'
+                END,
+                least(500, floor(greatest(0, distance_nm) / 5) * 5)::smallint,
+                trim(icao)
+         FROM validated_positions
+         WHERE bearing_deg IS NOT NULL AND distance_nm IS NOT NULL
+         ON CONFLICT DO NOTHING`,
         [day]
       );
       await client.query(

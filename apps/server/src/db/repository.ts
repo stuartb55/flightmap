@@ -1200,40 +1200,50 @@ export class FlightRepository {
     }>
   ): Promise<void> {
     if (rows.length === 0) return;
+    const payload = json(
+      rows.map((row) => ({
+        coverage_date: row.coverageDate,
+        latitude_index: row.latitudeIndex,
+        longitude_index: row.longitudeIndex,
+        reports: row.reports,
+        aircraft_icaos: row.aircraftIcaos,
+        maximum_altitude_ft: row.maximumAltitudeFt
+      }))
+    );
     await client.query(
       `INSERT INTO daily_coverage_cells (
          coverage_date, latitude_index, longitude_index, reports,
-         aircraft_icaos, maximum_altitude_ft
+         maximum_altitude_ft
        )
        SELECT x.coverage_date, x.latitude_index, x.longitude_index, x.reports,
-              x.aircraft_icaos, x.maximum_altitude_ft
+              x.maximum_altitude_ft
        FROM jsonb_to_recordset($1::jsonb) AS x(
          coverage_date date, latitude_index smallint, longitude_index smallint,
-         reports bigint, aircraft_icaos text[], maximum_altitude_ft double precision
+         reports bigint, maximum_altitude_ft double precision
        )
        ON CONFLICT (coverage_date, latitude_index, longitude_index) DO UPDATE SET
          reports = daily_coverage_cells.reports + EXCLUDED.reports,
-         aircraft_icaos = ARRAY(
-           SELECT DISTINCT value
-           FROM unnest(daily_coverage_cells.aircraft_icaos || EXCLUDED.aircraft_icaos) value
-         ),
          maximum_altitude_ft = CASE
            WHEN EXCLUDED.maximum_altitude_ft IS NULL THEN daily_coverage_cells.maximum_altitude_ft
            WHEN daily_coverage_cells.maximum_altitude_ft IS NULL THEN EXCLUDED.maximum_altitude_ft
            ELSE greatest(daily_coverage_cells.maximum_altitude_ft, EXCLUDED.maximum_altitude_ft)
          END`,
-      [
-        json(
-          rows.map((row) => ({
-            coverage_date: row.coverageDate,
-            latitude_index: row.latitudeIndex,
-            longitude_index: row.longitudeIndex,
-            reports: row.reports,
-            aircraft_icaos: row.aircraftIcaos,
-            maximum_altitude_ft: row.maximumAltitudeFt
-          }))
-        )
-      ]
+      [payload]
+    );
+    // Membership is one small row per aircraft per cell per day; the previous
+    // array column was rewritten in full on every snapshot.
+    await client.query(
+      `INSERT INTO daily_coverage_cell_aircraft (
+         coverage_date, latitude_index, longitude_index, icao
+       )
+       SELECT DISTINCT x.coverage_date, x.latitude_index, x.longitude_index, icao
+       FROM jsonb_to_recordset($1::jsonb) AS x(
+         coverage_date date, latitude_index smallint, longitude_index smallint,
+         aircraft_icaos text[]
+       )
+       CROSS JOIN LATERAL unnest(x.aircraft_icaos) AS icao
+       ON CONFLICT DO NOTHING`,
+      [payload]
     );
   }
 
@@ -1249,28 +1259,40 @@ export class FlightRepository {
     }>
   ): Promise<void> {
     if (!rows.length) return;
+    const payload = json(rows.map((row) => ({
+      profile_date: row.profileDate,
+      bearing_bucket: row.bearingBucket,
+      altitude_band: row.altitudeBand,
+      range_bucket_nm: row.rangeBucketNm,
+      reports: row.reports,
+      aircraft_icaos: row.aircraftIcaos
+    })));
     await client.query(
       `INSERT INTO daily_range_histogram (
-         profile_date, bearing_bucket, altitude_band, range_bucket_nm, reports, aircraft_icaos
+         profile_date, bearing_bucket, altitude_band, range_bucket_nm, reports
        )
-       SELECT x.profile_date, x.bearing_bucket, x.altitude_band, x.range_bucket_nm, x.reports, x.aircraft_icaos
+       SELECT x.profile_date, x.bearing_bucket, x.altitude_band, x.range_bucket_nm, x.reports
        FROM jsonb_to_recordset($1::jsonb) AS x(
          profile_date date, bearing_bucket smallint, altitude_band text,
-         range_bucket_nm smallint, reports bigint, aircraft_icaos text[]
+         range_bucket_nm smallint, reports bigint
        )
        ON CONFLICT (profile_date, bearing_bucket, altitude_band, range_bucket_nm) DO UPDATE SET
-         reports = daily_range_histogram.reports + EXCLUDED.reports,
-         aircraft_icaos = ARRAY(
-           SELECT DISTINCT value FROM unnest(daily_range_histogram.aircraft_icaos || EXCLUDED.aircraft_icaos) value
-         )`,
-      [json(rows.map((row) => ({
-        profile_date: row.profileDate,
-        bearing_bucket: row.bearingBucket,
-        altitude_band: row.altitudeBand,
-        range_bucket_nm: row.rangeBucketNm,
-        reports: row.reports,
-        aircraft_icaos: row.aircraftIcaos
-      })))]
+         reports = daily_range_histogram.reports + EXCLUDED.reports`,
+      [payload]
+    );
+    await client.query(
+      `INSERT INTO daily_range_histogram_aircraft (
+         profile_date, bearing_bucket, altitude_band, range_bucket_nm, icao
+       )
+       SELECT DISTINCT x.profile_date, x.bearing_bucket, x.altitude_band,
+              x.range_bucket_nm, icao
+       FROM jsonb_to_recordset($1::jsonb) AS x(
+         profile_date date, bearing_bucket smallint, altitude_band text,
+         range_bucket_nm smallint, aircraft_icaos text[]
+       )
+       CROSS JOIN LATERAL unnest(x.aircraft_icaos) AS icao
+       ON CONFLICT DO NOTHING`,
+      [payload]
     );
   }
 
@@ -2489,21 +2511,33 @@ export class FlightRepository {
         unique_aircraft: number | string;
         maximum_altitude_ft: number | string | null;
       }>(
-        `WITH filtered AS (
-           SELECT * FROM daily_coverage_cells
-           WHERE coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
-             AND coverage_date < ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1)
+        `WITH bounds AS (
+           SELECT ($1::timestamptz AT TIME ZONE 'UTC')::date AS from_date,
+                  ((($2::timestamptz - interval '1 microsecond') AT TIME ZONE 'UTC')::date + 1) AS to_date
+         ),
+         filtered AS (
+           SELECT c.latitude_index, c.longitude_index,
+                  sum(c.reports) AS reports,
+                  max(c.maximum_altitude_ft) AS maximum_altitude_ft
+           FROM daily_coverage_cells c, bounds b
+           WHERE c.coverage_date >= b.from_date AND c.coverage_date < b.to_date
+           GROUP BY c.latitude_index, c.longitude_index
+         ),
+         distinct_aircraft AS (
+           SELECT a.latitude_index, a.longitude_index,
+                  count(DISTINCT a.icao) AS unique_aircraft
+           FROM daily_coverage_cell_aircraft a, bounds b
+           WHERE a.coverage_date >= b.from_date AND a.coverage_date < b.to_date
+           GROUP BY a.latitude_index, a.longitude_index
          )
-         SELECT f.latitude_index, f.longitude_index, sum(f.reports) AS reports,
-                (SELECT count(DISTINCT icao)
-                 FROM filtered f2
-                 CROSS JOIN LATERAL unnest(f2.aircraft_icaos) AS icao
-                 WHERE f2.latitude_index = f.latitude_index
-                   AND f2.longitude_index = f.longitude_index) AS unique_aircraft,
-                max(f.maximum_altitude_ft) AS maximum_altitude_ft
+         SELECT f.latitude_index, f.longitude_index, f.reports,
+                coalesce(d.unique_aircraft, 0) AS unique_aircraft,
+                f.maximum_altitude_ft
          FROM filtered f
-         GROUP BY f.latitude_index, f.longitude_index
-         ORDER BY reports DESC, f.latitude_index, f.longitude_index
+         LEFT JOIN distinct_aircraft d
+           ON d.latitude_index = f.latitude_index
+          AND d.longitude_index = f.longitude_index
+         ORDER BY f.reports DESC, f.latitude_index, f.longitude_index
          LIMIT $3`,
         [from, to, limit + 1]
       ),
@@ -2548,14 +2582,13 @@ export class FlightRepository {
     }>(
       `SELECT coalesce(sum(reports), 0) AS reports,
               max(maximum_altitude_ft) AS maximum_altitude_ft,
-              ARRAY(SELECT DISTINCT icao
-                    FROM daily_coverage_cells nested
-                    CROSS JOIN LATERAL unnest(nested.aircraft_icaos) AS icao
+              ARRAY(SELECT DISTINCT nested.icao
+                    FROM daily_coverage_cell_aircraft nested
                     WHERE nested.coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
                       AND nested.coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)
                       AND nested.latitude_index = $3
                       AND nested.longitude_index = $4
-                    ORDER BY icao) AS aircraft_icaos
+                    ORDER BY nested.icao) AS aircraft_icaos
        FROM daily_coverage_cells
        WHERE coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
          AND coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)

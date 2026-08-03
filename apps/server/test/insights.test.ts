@@ -175,6 +175,35 @@ describe("insight rollup boundaries", () => {
     expect(repairedSummaries).toContain("last_altitude_ft");
   });
 
+  it("rebuilds distinct-aircraft membership rows instead of array columns", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const database = {
+      transaction: async (callback: (client: { query: typeof query }) => Promise<void>) =>
+        callback({ query })
+    };
+    const service = new InsightBackfillService(
+      database as never,
+      { info: vi.fn(), error: vi.fn() }
+    );
+
+    await (service as unknown as { backfillDay: (day: string) => Promise<void> })
+      .backfillDay("2026-08-01");
+
+    const statements = query.mock.calls.map(([sql]) => String(sql));
+    expect(statements.some((sql) => sql.includes("aircraft_icaos"))).toBe(false);
+    for (const table of [
+      "daily_coverage_cell_aircraft",
+      "daily_range_histogram_aircraft"
+    ]) {
+      expect(
+        statements.some((sql) => sql.includes(`DELETE FROM ${table}`))
+      ).toBe(true);
+      expect(
+        statements.some((sql) => sql.includes(`INSERT INTO ${table}`))
+      ).toBe(true);
+    }
+  });
+
   it("calculates absolute and percentage comparison changes", () => {
     expect(
       insightMetricChanges(
