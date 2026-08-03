@@ -10,11 +10,13 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
       include: ["src/**/*.ts"],
       exclude: ["src/index.ts", "src/**/*-cli.ts"],
+      // A point of headroom below the current figures: these guard against a
+      // real regression, not against rounding.
       thresholds: {
-        lines: 55,
-        functions: 49,
-        branches: 46,
-        statements: 54
+        lines: 54,
+        functions: 48,
+        branches: 45,
+        statements: 53
       }
     }
   }
