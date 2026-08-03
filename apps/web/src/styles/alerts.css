@@ -1,0 +1,339 @@
+/* Alerts page and the shared standard-page scaffolding. */
+
+/* Alerts and standard pages */
+
+.standard-page {
+  height: 100%;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(36, 72, 67, 0.09), transparent 30%),
+    var(--bg);
+}
+
+.standard-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  max-width: 1250px;
+  margin: 0 auto;
+  padding: 17px 28px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.standard-page-header .page-heading {
+  padding: 0;
+}
+
+.alert-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 130px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0d141b;
+}
+
+.stat-icon {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border-radius: 7px;
+  background: #131d25;
+}
+
+.stat-icon.critical,
+.stat-icon.emergency {
+  color: var(--red);
+  background: rgba(255, 97, 113, 0.08);
+}
+
+.stat-icon.watched {
+  color: var(--amber);
+  background: rgba(242, 184, 94, 0.08);
+}
+
+.stat-card > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat-card strong {
+  margin-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 20px;
+}
+
+.alerts-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.alerts-page .standard-page-header {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.alerts-toolbar {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 9px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #090f14;
+}
+
+.segmented-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1117;
+}
+
+.segmented-control button {
+  min-width: 70px;
+  height: 40px;
+  padding: 0 10px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmented-control button.active {
+  color: #e1faf3;
+  background: #16251f;
+  box-shadow: inset 0 0 0 1px rgba(88, 213, 177, 0.13);
+}
+
+.alert-kind-select {
+  height: 40px;
+}
+
+.alert-kind-select select {
+  max-width: 140px;
+}
+
+.alert-list {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 22px 28px;
+}
+
+.alert-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto 9px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d141b;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+}
+
+.alert-card.alert-critical {
+  border-color: rgba(255, 97, 113, 0.28);
+  background: linear-gradient(90deg, rgba(255, 97, 113, 0.055), #0d141b 22%);
+}
+
+.alert-card.alert-warning {
+  border-color: rgba(242, 184, 94, 0.24);
+  background: linear-gradient(90deg, rgba(242, 184, 94, 0.045), #0d141b 22%);
+}
+
+.alert-card.dismissed {
+  opacity: 0.58;
+  background: #0b1117;
+}
+
+.alert-card-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--blue);
+  border-radius: 9px;
+  background: rgba(98, 169, 255, 0.08);
+}
+
+.alert-critical .alert-card-icon {
+  color: var(--red);
+  background: rgba(255, 97, 113, 0.1);
+}
+
+.alert-warning .alert-card-icon {
+  color: var(--amber);
+  background: rgba(242, 184, 94, 0.1);
+}
+
+.alert-card-body {
+  min-width: 0;
+}
+
+.alert-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.alert-kind {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.alert-time {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+.alert-card h2 {
+  margin: 5px 0 3px;
+  font-size: 18px;
+}
+
+.alert-card p {
+  margin: 0;
+  color: var(--muted-bright);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.alert-aircraft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.alert-aircraft strong {
+  color: #cbd5dc;
+  font-size: 14px;
+}
+
+.alert-aircraft span {
+  font-size: 12px;
+}
+
+.alert-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.dismissed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.alert-card-skeleton {
+  max-width: 900px;
+  min-height: 125px;
+  margin: 0 auto 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.alert-rules {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  padding: 21px 20px;
+  border-left: 1px solid var(--line);
+  background: #0a1016;
+}
+
+.alert-rules h2 {
+  margin: 5px 0 15px;
+  font-size: 20px;
+}
+
+.alert-rules article {
+  display: flex;
+  gap: 9px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.alert-rules article > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 31px;
+  height: 31px;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #101820;
+}
+
+.alert-rules article strong {
+  font-size: 14px;
+}
+
+.alert-rules article p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rules-note {
+  margin: 15px 0 0;
+  color: #687984;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.empty-state.large {
+  min-height: 300px;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 12px !important;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #101820;
+}
+
+.page-error {
+  grid-column: 1;
+  margin: 10px 22px 0;
+}

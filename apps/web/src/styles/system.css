@@ -1,0 +1,357 @@
+/* System page: health cards and status rows. */
+
+/* System */
+
+.system-page {
+  padding-bottom: 30px;
+}
+
+.system-header {
+  align-items: center;
+}
+
+.system-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--muted-bright);
+  background: #0c1319;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.status-pill .status-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.status-pill-good {
+  color: #a4e9d5;
+  border-color: rgba(88, 213, 177, 0.22);
+  background: rgba(88, 213, 177, 0.07);
+}
+
+.status-pill-good .status-dot {
+  background: var(--accent);
+}
+
+.status-pill-warn {
+  color: #e4c48d;
+  border-color: rgba(242, 184, 94, 0.22);
+  background: rgba(242, 184, 94, 0.06);
+}
+
+.status-pill-warn .status-dot {
+  background: var(--amber);
+}
+
+.status-pill-bad {
+  color: #f09ba4;
+  border-color: rgba(255, 97, 113, 0.22);
+  background: rgba(255, 97, 113, 0.06);
+}
+
+.status-pill-bad .status-dot {
+  background: var(--red);
+}
+
+.system-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 1194px;
+  margin: 15px auto 0;
+  padding: 11px 13px;
+  color: var(--red);
+  border: 1px solid rgba(255, 97, 113, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 97, 113, 0.06);
+}
+
+.system-error span {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-error strong {
+  font-size: 14px;
+}
+
+.system-error small {
+  margin-top: 2px;
+  color: #bd858b;
+  font-size: 12px;
+}
+
+.system-error .secondary-button {
+  margin-left: auto;
+}
+
+.retry-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.retry-error button {
+  padding: 4px 8px;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.health-overview {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(3, 1fr);
+  align-items: center;
+  max-width: 1194px;
+  margin: 18px auto 0;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d141b;
+}
+
+.health-overview > div {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 17px;
+  border-right: 1px solid var(--line);
+}
+
+.health-overview > div:last-child {
+  border-right: 0;
+}
+
+.health-overview small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.health-overview strong {
+  margin-top: 3px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 15px;
+  text-transform: capitalize;
+}
+
+.health-overview .health-score {
+  flex-direction: row;
+  align-items: center;
+  gap: 11px;
+  padding-left: 0;
+}
+
+.health-score > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.health-ring {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--accent);
+  border: 1px solid rgba(88, 213, 177, 0.25);
+  border-radius: 50%;
+  background: rgba(88, 213, 177, 0.07);
+  box-shadow: inset 0 0 0 5px rgba(88, 213, 177, 0.025);
+}
+
+.health-degraded {
+  color: var(--amber);
+  border-color: rgba(242, 184, 94, 0.25);
+  background: rgba(242, 184, 94, 0.07);
+}
+
+.health-offline {
+  color: var(--red);
+  border-color: rgba(255, 97, 113, 0.25);
+  background: rgba(255, 97, 113, 0.07);
+}
+
+.system-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  max-width: 1194px;
+  margin: 14px auto 0;
+}
+
+.system-card {
+  position: relative;
+  min-height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d141b;
+}
+
+.system-card > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 67px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  background: #0e161d;
+}
+
+.system-card > header > div {
+  flex: 1;
+}
+
+.system-card h2 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.system-card-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 39px;
+  height: 39px;
+  color: var(--accent);
+  border: 1px solid rgba(88, 213, 177, 0.17);
+  border-radius: 9px;
+  background: rgba(88, 213, 177, 0.06);
+}
+
+.system-card-icon.collector {
+  color: var(--blue);
+  border-color: rgba(98, 169, 255, 0.17);
+  background: rgba(98, 169, 255, 0.06);
+}
+
+.system-card-icon.database {
+  color: #ae90ef;
+  border-color: rgba(174, 144, 239, 0.17);
+  background: rgba(174, 144, 239, 0.06);
+}
+
+.system-card-icon.metadata {
+  color: var(--amber);
+  border-color: rgba(242, 184, 94, 0.17);
+  background: rgba(242, 184, 94, 0.06);
+}
+
+.system-card-body {
+  padding: 6px 14px 12px;
+}
+
+.system-progress {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--blue);
+}
+
+.system-data-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  min-height: 50px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(29, 42, 53, 0.72);
+}
+
+.system-data-row > span {
+  display: flex;
+  flex-direction: column;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.system-data-row small {
+  margin-top: 2px;
+  color: #596a76;
+  font-size: 12px;
+}
+
+.system-data-row strong {
+  overflow: hidden;
+  max-width: 60%;
+  color: #c2cdd5;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 11px;
+  color: #ae90ef;
+  border: 1px solid rgba(174, 144, 239, 0.13);
+  border-radius: 8px;
+  background: rgba(174, 144, 239, 0.04);
+}
+
+.database-size span {
+  display: flex;
+  flex-direction: column;
+}
+
+.database-size small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.database-size strong {
+  margin-top: 2px;
+  color: #d7c9f3;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 18px;
+}
+
+.retention-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 9px;
+  color: #78aa9c;
+  border-radius: 7px;
+  background: rgba(88, 213, 177, 0.05);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.retention-note svg {
+  flex: 0 0 auto;
+}
+
+.system-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 1194px;
+  margin: 17px auto 0;
+  color: #647581;
+  font-size: 12px;
+}

@@ -172,7 +172,7 @@ items assume the documented trusted-LAN model.
       otherwise receiver-agnostic application. Make waypoints a config or data
       concern.
 
-- [ ] **22. `styles.css` is 5,714 lines** in a single file.
+- [x] **22. `styles.css` is 5,714 lines** in a single file.
 
 - [x] **23. `icao char(6)` forces `.trim()` at roughly 20 call sites**; one
       missed trim is a silent mismatch bug. Migrate the column to `text`.
