@@ -34,9 +34,42 @@ describe("live aircraft alerts", () => {
       expect.stringContaining("a.rule = ANY($2::text[])"),
       [
         expect.any(Date),
-        ["emergency_squawk", "emergency_state", "watchlist", "custom"]
+        ["emergency_squawk", "emergency_state", "watchlist", "custom"],
+        null
       ]
     );
+  });
+
+  it("reads a single aircraft with a predicate instead of the whole table", async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [] })
+    };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+
+    await repository.aircraftDetail("ABC001");
+
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining("c.icao = ANY($3::text[])"),
+      [expect.any(Date), expect.any(Array), ["abc001"]]
+    );
+  });
+
+  it("does not query at all for an empty set of aircraft", async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [] })
+    };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+
+    expect(await repository.liveAircraft(new Date(), [])).toEqual([]);
+    expect(database.query).not.toHaveBeenCalled();
   });
 });
 

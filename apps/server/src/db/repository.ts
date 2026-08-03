@@ -1370,7 +1370,16 @@ export class FlightRepository {
     });
   }
 
-  async liveAircraft(now = new Date()): Promise<LiveAircraft[]> {
+  /**
+   * `icaos` restricts the read to specific aircraft. The per-row `EXISTS`
+   * against `alert_events` makes the unrestricted form expensive, so callers
+   * that want one aircraft must not scan the whole live table.
+   */
+  async liveAircraft(
+    now = new Date(),
+    icaos?: readonly string[]
+  ): Promise<LiveAircraft[]> {
+    if (icaos !== undefined && icaos.length === 0) return [];
     const cutoff = new Date(
       now.getTime() - this.config.currentAircraftTtlSeconds * 1000
     );
@@ -1400,8 +1409,13 @@ export class FlightRepository {
        LEFT JOIN watchlist w ON w.icao = c.icao
        LEFT JOIN aircraft_metadata m ON m.icao = c.icao
        WHERE c.updated_at >= $1
+         AND ($3::text[] IS NULL OR c.icao = ANY($3::text[]))
        ORDER BY c.icao`,
-      [cutoff, [...activeAircraftAlertRules]]
+      [
+        cutoff,
+        [...activeAircraftAlertRules],
+        icaos ? icaos.map((icao) => icao.trim().toLowerCase()) : null
+      ]
     );
     return result.rows.map((row) => ({
       ...row.state,
@@ -1428,8 +1442,8 @@ export class FlightRepository {
   async aircraftDetail(icao: string): Promise<AircraftDetailResponse> {
     const [live, metadataResult, summaryResult, sessions, alerts] =
       await Promise.all([
-        this.liveAircraft().then(
-          (aircraft) => aircraft.find((item) => item.icao === icao) ?? null
+        this.liveAircraft(new Date(), [icao]).then(
+          (aircraft) => aircraft[0] ?? null
         ),
         this.database.query<MetadataRow>(
           "SELECT * FROM aircraft_metadata WHERE icao = $1",

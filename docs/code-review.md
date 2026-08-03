@@ -57,7 +57,7 @@ items assume the documented trusted-LAN model.
       *Fix:* bind the HTTP server first, then load settings with retry, and let
       `/health/ready` report `not_ready` until it succeeds.
 
-- [ ] **5. Single-aircraft lookups load the whole live table.**
+- [x] **5. Single-aircraft lookups load the whole live table.**
       `db/repository.ts:1409-1411` (`aircraftDetail`) and `:2701`
       (`previewCustomAlertRule`), plus `routes/api.ts:268`, `:282`, `:297`, and
       `:315`, all call `liveAircraft()` — which runs a per-row `EXISTS`

@@ -269,9 +269,7 @@ export async function registerApiRoutes(
         }
       });
     }
-    const live = (await repository.liveAircraft()).find(
-      (aircraft) => aircraft.icao === alert.icao
-    );
+    const [live] = await repository.liveAircraft(new Date(), [alert.icao]);
     hub.publish({
       alerts: [alert],
       upserts: live ? [live] : []
@@ -282,10 +280,8 @@ export async function registerApiRoutes(
   app.post("/api/v1/alerts/dismiss", async (request) => {
     const { ids } = dismissAlertsInputSchema.parse(request.body);
     const alerts = await repository.dismissAlerts(ids);
-    const affectedIcaos = new Set(alerts.map((alert) => alert.icao));
-    const live = (await repository.liveAircraft()).filter((aircraft) =>
-      affectedIcaos.has(aircraft.icao)
-    );
+    const affectedIcaos = [...new Set(alerts.map((alert) => alert.icao))];
+    const live = await repository.liveAircraft(new Date(), affectedIcaos);
     if (alerts.length > 0) hub.publish({ alerts, upserts: live });
     return { items: alerts };
   });
@@ -298,9 +294,7 @@ export async function registerApiRoutes(
     const { icao } = icaoParamsSchema.parse(request.params);
     const body = watchlistInputSchema.parse(request.body ?? {});
     const entry = await repository.putWatchlist(icao, body);
-    const live = (await repository.liveAircraft()).find(
-      (aircraft) => aircraft.icao === icao
-    );
+    const [live] = await repository.liveAircraft(new Date(), [icao]);
     if (live) hub.publish({ upserts: [live] });
     return entry;
   });
@@ -316,9 +310,7 @@ export async function registerApiRoutes(
         }
       });
     }
-    const live = (await repository.liveAircraft()).find(
-      (aircraft) => aircraft.icao === icao
-    );
+    const [live] = await repository.liveAircraft(new Date(), [icao]);
     if (live) hub.publish({ upserts: [live] });
     return reply.code(204).send();
   });
