@@ -69,6 +69,25 @@ export function repository(
   return new FlightRepository(database, integrationConfig(overrides));
 }
 
+/**
+ * Ingestion timestamps have to stay inside `ensure_position_partition`'s
+ * safety window (CURRENT_DATE - 370 to CURRENT_DATE + 7), so tests anchor on
+ * today rather than on a literal date that would age out of it.
+ */
+export const testDay = new Date(
+  `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`
+);
+
+/** An instant on the test day, offset in whole minutes. */
+export function atMinutes(minutes: number): Date {
+  return new Date(testDay.getTime() + minutes * 60_000);
+}
+
+/** The UTC day boundary `days` after the test day, as an ISO string. */
+export function dayBoundary(days = 0): string {
+  return new Date(testDay.getTime() + days * 86_400_000).toISOString();
+}
+
 type AircraftOverrides = {
   hex?: string;
   flight?: string;

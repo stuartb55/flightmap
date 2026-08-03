@@ -62,7 +62,9 @@ describe('value formatting', () => {
     expect(formatBytes(5 * 1024 ** 2)).toBe('5.0 MB')
     expect(formatBytes(3 * 1024 ** 3)).toBe('3.0 GB')
     expect(formatBytes(null)).toBe('—')
-    expect(compactNumber(12_500)).toBe('12.5K')
+    // The compact suffix is CLDR data, not our formatting: en-GB renders
+    // "12.5K" on macOS's ICU and "12.5k" on the Linux build CI uses.
+    expect(compactNumber(12_500)).toMatch(/^12\.5[Kk]$/)
     expect(compactNumber(null)).toBe('—')
   })
 

@@ -2,7 +2,9 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { Database } from "../../src/db/database.js";
 import type { FlightRepository } from "../../src/db/repository.js";
 import {
+  atMinutes,
   createTestDatabase,
+  dayBoundary,
   describeDatabase,
   repository,
   resetDatabase,
@@ -27,7 +29,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("writes the live row, the session, and the position sample", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     const result = await flights.ingestSnapshot(snapshot(at, [{}]));
 
     expect(result.upserts).toHaveLength(1);
@@ -49,9 +51,9 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("continues a session inside the gap and starts a new one beyond it", async () => {
-    const first = new Date("2026-08-01T10:00:00.000Z");
-    const inGap = new Date("2026-08-01T10:04:00.000Z");
-    const afterGap = new Date("2026-08-01T10:20:00.000Z");
+    const first = atMinutes(600);
+    const inGap = atMinutes(604);
+    const afterGap = atMinutes(620);
 
     const one = await flights.ingestSnapshot(snapshot(first, [{}]));
     const two = await flights.ingestSnapshot(snapshot(inGap, [{}]));
@@ -67,7 +69,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("keeps distinct-aircraft membership out of the aggregate rows", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(snapshot(at, [{ hex: "400001" }]));
     await flights.ingestSnapshot(
       snapshot(new Date(at.getTime() + 1000), [
@@ -94,22 +96,22 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("reports coverage insights and cell detail from the membership table", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(
       snapshot(at, [{ hex: "400001" }, { hex: "400002" }])
     );
 
     const coverage = await flights.insightsCoverage({
-      from: "2026-08-01T00:00:00.000Z",
-      to: "2026-08-02T00:00:00.000Z"
+      from: dayBoundary(0),
+      to: dayBoundary(1)
     });
     expect(coverage.cells).toHaveLength(1);
     expect(coverage.cells[0]?.uniqueAircraft).toBe(2);
     expect(coverage.cells[0]?.reports).toBe(2);
 
     const detail = await flights.coverageCellDetail({
-      from: "2026-08-01T00:00:00.000Z",
-      to: "2026-08-02T00:00:00.000Z",
+      from: dayBoundary(0),
+      to: dayBoundary(1),
       latitude: 53.4,
       longitude: -2.3
     });
@@ -121,7 +123,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("expires live aircraft past the TTL and reads one aircraft by ICAO", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(
       snapshot(at, [{ hex: "400001" }, { hex: "400002" }])
     );
@@ -137,7 +139,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("raises an emergency alert for a squawk and exposes it on the live row", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     const result = await flights.ingestSnapshot(
       snapshot(at, [{ squawk: "7700" }])
     );
@@ -150,7 +152,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("searches summaries and sessions case-insensitively", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(
       snapshot(at, [{ hex: "400001", flight: "EZY42KD" }])
     );
@@ -159,8 +161,8 @@ describeDatabase("ingestion against PostgreSQL", () => {
     expect(summaries.items.map((item) => item.icao)).toEqual(["400001"]);
 
     const sessions = await flights.sessions({
-      from: "2026-08-01T00:00:00.000Z",
-      to: "2026-08-02T00:00:00.000Z",
+      from: dayBoundary(0),
+      to: dayBoundary(1),
       query: "EZY42",
       limit: 20
     });
@@ -171,7 +173,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("aggregates the daily insights leaderboard", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(
       snapshot(at, [
         { hex: "400001", flight: "EZY42KD" },
@@ -181,12 +183,12 @@ describeDatabase("ingestion against PostgreSQL", () => {
 
     const overview = await flights.insightsOverview(
       {
-        from: "2026-08-01T00:00:00.000Z",
-        to: "2026-08-02T00:00:00.000Z",
+        from: dayBoundary(0),
+        to: dayBoundary(1),
         bucket: "day",
         compare: false
       },
-      new Date("2026-08-01T12:00:00.000Z")
+      atMinutes(720)
     );
     expect(overview.metrics.uniqueAircraft).toBe(2);
     expect(overview.leaders.aircraft.length).toBeGreaterThan(0);
@@ -194,7 +196,7 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("ignores a duplicate snapshot without double counting", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     await flights.ingestSnapshot(snapshot(at, [{}]));
     await flights.ingestSnapshot(snapshot(at, [{}]));
 
@@ -233,12 +235,12 @@ describeDatabase("ingestion against PostgreSQL", () => {
   });
 
   it("creates a partition per UTC day as snapshots roll over midnight", async () => {
-    await flights.ingestSnapshot(
-      snapshot(new Date("2026-08-01T23:59:59.000Z"), [{}])
-    );
-    await flights.ingestSnapshot(
-      snapshot(new Date("2026-08-02T00:00:01.000Z"), [{}])
-    );
+    const lastSecond = new Date(atMinutes(1439).getTime() + 59_000);
+    const firstSecond = new Date(atMinutes(1440).getTime() + 1_000);
+    await flights.ingestSnapshot(snapshot(lastSecond, [{}]));
+    await flights.ingestSnapshot(snapshot(firstSecond, [{}]));
+    const partitionName = (at: Date) =>
+      `position_samples_${at.toISOString().slice(0, 10).replaceAll("-", "")}`;
 
     const partitions = await database.query<{ relname: string }>(
       `SELECT child.relname
@@ -250,8 +252,8 @@ describeDatabase("ingestion against PostgreSQL", () => {
     );
     expect(partitions.rows.map((row) => row.relname)).toEqual(
       expect.arrayContaining([
-        "position_samples_20260801",
-        "position_samples_20260802"
+        partitionName(lastSecond),
+        partitionName(firstSecond)
       ])
     );
   });

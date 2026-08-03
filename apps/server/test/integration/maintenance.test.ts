@@ -3,11 +3,13 @@ import type { Database } from "../../src/db/database.js";
 import { InsightBackfillService } from "../../src/services/insight-backfill.js";
 import { MaintenanceService } from "../../src/services/maintenance.js";
 import {
+  atMinutes,
   createTestDatabase,
   describeDatabase,
   repository,
   resetDatabase,
-  snapshot
+  snapshot,
+  testDay
 } from "./harness.js";
 
 const logger = { info: vi.fn(), error: vi.fn() };
@@ -28,6 +30,18 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     vi.clearAllMocks();
   });
 
+  /** Partition names carry their UTC day: position_samples_YYYYMMDD. */
+  async function partitionDays(): Promise<string[]> {
+    const result = await database.query<{ relname: string }>(
+      `SELECT child.relname
+       FROM pg_inherits
+       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+       JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+       WHERE parent.oid = 'position_samples'::regclass`
+    );
+    return result.rows.map((row) => row.relname.replace("position_samples_", ""));
+  }
+
   it("drops expired partitions and keeps the retained ones", async () => {
     const now = new Date();
     const flights = repository(database);
@@ -37,6 +51,15 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     await database.query("SELECT ensure_position_partition($1)", [stale]);
     await flights.ingestSnapshot(snapshot(now, [{}]));
 
+    // 001_initial seeds partitions from 31 days ago, and earlier tests leave
+    // their own behind, so the expectation is the retention rule rather than
+    // a fixed count.
+    const day = (at: Date) => at.toISOString().slice(0, 10).replaceAll("-", "");
+    const cutoffDay = day(new Date(now.getTime() - 30 * 86_400_000));
+    const before = await partitionDays();
+    const expectedDrops = before.filter((value) => value < cutoffDay);
+    expect(expectedDrops).toContain(day(stale));
+
     const service = new MaintenanceService(
       database,
       { historyRetentionDays: 30, sessionGapSeconds: 300 },
@@ -45,21 +68,15 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
     const result = await service.run(now);
 
     expect(result.failedSteps).toEqual([]);
-    expect(result.droppedPartitions).toBe(1);
-    const partitions = await database.query<{ relname: string }>(
-      `SELECT child.relname
-       FROM pg_inherits
-       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-       JOIN pg_class child ON pg_inherits.inhrelid = child.oid
-       WHERE parent.oid = 'position_samples'::regclass`
-    );
-    const dropped = `position_samples_${stale.toISOString().slice(0, 10).replaceAll("-", "")}`;
-    expect(partitions.rows.map((row) => row.relname)).not.toContain(dropped);
-    expect(partitions.rows.length).toBeGreaterThan(0);
+    expect(result.droppedPartitions).toBe(expectedDrops.length);
+    const after = await partitionDays();
+    expect(after).not.toContain(day(stale));
+    expect(after.filter((value) => value < cutoffDay)).toEqual([]);
+    expect(after).toContain(day(now));
   });
 
   it("deletes expired rows in batches and records the run", async () => {
-    const now = new Date("2026-08-01T00:00:00.000Z");
+    const now = atMinutes(0);
     const expired = new Date(now.getTime() - 40 * 86_400_000);
     // More rows than one delete batch, so the ctid loop has to iterate.
     await database.query(
@@ -99,7 +116,7 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
   });
 
   it("closes sessions that stopped reporting and detaches the live row", async () => {
-    const at = new Date("2026-08-01T10:00:00.000Z");
+    const at = atMinutes(600);
     const flights = repository(database, { sessionGapSeconds: 300 });
     await flights.ingestSnapshot(snapshot(at, [{}]));
 
@@ -121,11 +138,11 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
   });
 
   it("rebuilds a day of insights from retained position samples", async () => {
-    const day = "2026-08-01";
+    const day = testDay.toISOString().slice(0, 10);
     const flights = repository(database);
     for (let index = 0; index < 5; index += 1) {
       await flights.ingestSnapshot(
-        snapshot(new Date(`2026-08-01T10:00:0${index}.000Z`), [
+        snapshot(new Date(atMinutes(600).getTime() + index * 1_000), [
           { hex: "400001" },
           { hex: "400002" }
         ])
