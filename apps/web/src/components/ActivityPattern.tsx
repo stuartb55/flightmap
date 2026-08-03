@@ -21,7 +21,7 @@ export function ActivityPattern({ patterns }: { patterns: InsightPatternsRespons
       </header>
       {patterns.busiest ? <p className="chart-summary">Busiest window: {weekdays[patterns.busiest.weekday]} at {String(patterns.busiest.hour).padStart(2, '0')}:00, with {patterns.busiest.reports.toLocaleString('en-GB')} reports.</p> : null}
       <div className="pattern-scroll">
-        <div className="pattern-grid" role="grid" aria-label={`${labels[metric]} by local weekday and hour in ${patterns.timeZone}`}>
+        <div className="pattern-grid" role="group" aria-label={`${labels[metric]} by local weekday and hour in ${patterns.timeZone}`}>
           <span />
           {Array.from({ length: 24 }, (_, hour) => <span className="pattern-hour" key={hour}>{hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}</span>)}
           {weekdays.flatMap((weekday, day) => [
@@ -30,7 +30,9 @@ export function ActivityPattern({ patterns }: { patterns: InsightPatternsRespons
               const cell = byCell.get(`${day}:${hour}`)
               const value = valueFor(cell)
               const opacity = value === 0 ? 0.04 : 0.18 + (value / maximum) * 0.82
-              return <span key={`${day}:${hour}`} role="gridcell" aria-label={`${weekday} ${String(hour).padStart(2, '0')}:00: ${value.toLocaleString('en-GB')} ${labels[metric].toLowerCase()}`} style={{ '--pattern-opacity': opacity } as CSSProperties}><i />{cell?.changePercent != null && Math.abs(cell.changePercent) >= 20 ? <b title={`${cell.changePercent > 0 ? '+' : ''}${cell.changePercent.toFixed(0)}% versus preceding period`}>{cell.changePercent > 0 ? '↑' : '↓'}</b> : null}</span>
+              const notableChange = cell?.changePercent != null && Math.abs(cell.changePercent) >= 20 ? cell.changePercent : null
+              const changeLabel = notableChange == null ? '' : `, ${notableChange > 0 ? 'up' : 'down'} ${Math.abs(notableChange).toFixed(0)}% versus preceding period`
+              return <span key={`${day}:${hour}`} className="pattern-cell" role="img" aria-label={`${weekday} ${String(hour).padStart(2, '0')}:00: ${value.toLocaleString('en-GB')} ${labels[metric].toLowerCase()}${changeLabel}`} style={{ '--pattern-opacity': opacity } as CSSProperties}><i />{notableChange == null ? null : <b title={`${notableChange > 0 ? '+' : ''}${notableChange.toFixed(0)}% versus preceding period`}>{notableChange > 0 ? '↑' : '↓'}</b>}</span>
             }),
           ])}
         </div>

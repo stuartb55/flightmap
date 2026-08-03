@@ -103,7 +103,7 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
         <svg
           className="activity-chart"
           viewBox={`0 0 ${width} ${height}`}
-          role="img"
+          role="group"
           aria-label={`Activity by ${overview.bucket}; maximum ${maxReports.toLocaleString('en-GB')} reports`}
         >
           <line x1="0" y1={chartBottom} x2={width} y2={chartBottom} className="chart-axis" />
@@ -112,6 +112,7 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
           {overview.series.map((point, index) => {
             const barHeight = Math.max(1, (point.reports / maxReports) * (chartBottom - chartTop))
             const x = index * barSpace + (barSpace - barWidth) / 2
+            const barLabel = `${seriesLabel(point, overview.bucket)}: ${point.reports.toLocaleString('en-GB')} reports, ${point.uniqueAircraft.toLocaleString('en-GB')} aircraft`
             return (
               <rect
                 key={point.bucketStart}
@@ -123,12 +124,13 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
                 className="chart-bar"
                 role="button"
                 tabIndex={0}
+                aria-label={barLabel}
                 onClick={() => onSelect(point)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onSelect(point)
                 }}
               >
-                <title>{`${seriesLabel(point, overview.bucket)}: ${point.reports.toLocaleString('en-GB')} reports, ${point.uniqueAircraft.toLocaleString('en-GB')} aircraft`}</title>
+                <title>{barLabel}</title>
               </rect>
             )
           })}
@@ -505,7 +507,7 @@ export function InsightsPage() {
       ) : null}
 
       {loading && !overview ? (
-        <div className="insight-metrics" aria-label="Loading insight metrics">
+        <div className="insight-metrics" role="status" aria-label="Loading insight metrics">
           {Array.from({ length: 6 }, (_, index) => <div className="metric-card skeleton-card" key={index} />)}
         </div>
       ) : overview ? (
