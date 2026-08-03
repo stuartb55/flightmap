@@ -653,3 +653,9 @@
   border-radius: 10px;
   background: #0c1218;
 }
+
+.export-units-note {
+  align-self: center;
+  color: var(--muted);
+  font-size: 11px;
+}

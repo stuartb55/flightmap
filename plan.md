@@ -134,7 +134,7 @@ keys), new `apps/web/src/lib/table-columns.ts`, `styles/live.css`.
 
 ### 4. Unit preferences — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Units are hardcoded aviation units throughout
 (`apps/web/src/lib/format.ts`): feet, knots, nautical miles, ft/min. This is
@@ -170,7 +170,7 @@ units — note this in the export UI.
 
 ### 5. Command palette (`Cmd`/`Ctrl` + `K`) — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Finding a specific aircraft means navigating to Live, focusing
 search with `/`, and typing — and there is no way to jump to History for a

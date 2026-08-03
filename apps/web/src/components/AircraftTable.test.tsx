@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { aircraft } from '../test/fixtures'
+import { aviationUnits, metricUnits, setUnitPreferences } from '../lib/unit-preferences'
 import { AircraftTable } from './AircraftTable'
 
 function renderTable(props: Partial<Parameters<typeof AircraftTable>[0]> = {}) {
@@ -17,7 +18,22 @@ function renderTable(props: Partial<Parameters<typeof AircraftTable>[0]> = {}) {
   )
 }
 
+afterEach(() => {
+  setUnitPreferences(aviationUnits)
+})
+
 describe('AircraftTable', () => {
+  it('repaints memoised rows when the unit preference changes', () => {
+    renderTable({ aircraft: [aircraft({ verticalRate: 1_800 })] })
+    expect(screen.getByText('18,000 ft')).toBeInTheDocument()
+
+    act(() => setUnitPreferences(metricUnits))
+
+    expect(screen.getByText('5,490 m')).toBeInTheDocument()
+    expect(screen.queryByText('18,000 ft')).not.toBeInTheDocument()
+    expect(screen.getByTitle('↑ 9.1 m/s')).toHaveTextContent('Climbing')
+  })
+
   it('announces and synchronises row selection', async () => {
     const onSelect = vi.fn()
     renderTable({ onSelect })

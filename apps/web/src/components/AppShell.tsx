@@ -2,6 +2,7 @@ import { Activity, BarChart3, Bell, Clock3, Map, RadioTower, Settings2 } from 'l
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from '../lib/router'
 import { useLiveStatus } from '../state/LiveContext'
+import { CommandPalette } from './CommandPalette'
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 
 const navigation = [
@@ -84,6 +85,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </NavLink>
         ))}
       </nav>
+
+      <CommandPalette />
     </div>
   )
 }

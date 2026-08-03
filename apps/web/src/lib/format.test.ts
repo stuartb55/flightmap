@@ -15,7 +15,9 @@ import {
   formatSpeed,
   formatTime,
   formatVerticalRate,
+  formatVerticalRateValue,
 } from './format'
+import { aviationUnits, metricUnits, setUnitPreferences } from './unit-preferences'
 
 describe('configured display time-zone inputs', () => {
   it('round-trips a summer date through Europe/London', () => {
@@ -46,6 +48,31 @@ describe('value formatting', () => {
     expect(formatVerticalRate(null)).toBe('—')
     expect(formatBearing(7)).toBe('007°')
     expect(formatBearing(null)).toBe('—')
+    expect(formatVerticalRateValue(-1_240)).toBe('-1,240 ft/min')
+    expect(formatVerticalRateValue(null)).toBe('—')
+  })
+
+  it('converts to the chosen units without a reload', () => {
+    setUnitPreferences(metricUnits)
+    try {
+      // 18,000 ft is 5,486.4 m, rounded to the 10 m the source resolution
+      // actually justifies.
+      expect(formatAltitude(18_000)).toBe('5,490 m')
+      expect(formatAltitude('ground')).toBe('GND')
+      expect(formatAltitude(null)).toBe('—')
+      expect(formatSpeed(349.6)).toBe('647 km/h')
+      expect(formatDistance(4.25)).toBe('7.9 km')
+      expect(formatDistance(42.4)).toBe('79 km')
+      expect(formatVerticalRate(1_240)).toBe('↑ 6.3 m/s')
+      expect(formatVerticalRate(20)).toBe('→ 0.1 m/s')
+      expect(formatVerticalRateValue(-1_240)).toBe('-6.3 m/s')
+      setUnitPreferences({ ...metricUnits, speed: 'mph', distance: 'mi' })
+      expect(formatSpeed(349.6)).toBe('402 mph')
+      expect(formatDistance(42.4)).toBe('49 mi')
+    } finally {
+      setUnitPreferences(aviationUnits)
+    }
+    expect(formatAltitude(18_000)).toBe('18,000 ft')
   })
 
   it('formats dates, durations, bytes and compact numbers', () => {

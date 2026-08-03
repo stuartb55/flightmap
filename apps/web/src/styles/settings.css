@@ -340,3 +340,9 @@
     box-shadow: 0 0 24px rgba(88, 213, 177, 0.11);
   }
 }
+
+.settings-units-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}

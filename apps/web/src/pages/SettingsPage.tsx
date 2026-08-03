@@ -10,6 +10,18 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { applyRuntimeConfig } from '../config'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
+import {
+  altitudeUnits,
+  distanceUnits,
+  presetUnits,
+  setUnitPreferences,
+  speedUnits,
+  unitLabels,
+  unitPreset,
+  useUnitPreferences,
+  verticalRateUnits,
+  type UnitPreferences,
+} from '../lib/unit-preferences'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
@@ -78,6 +90,79 @@ function Field({
       </span>
       {children}
     </label>
+  )
+}
+
+/**
+ * Units are a browser preference, not a server setting: two people watching the
+ * same receiver can want different ones. These controls therefore apply and
+ * persist on change rather than waiting for the form's save button, and carry
+ * no `name` so they stay out of the submitted settings.
+ */
+function UnitChoice<K extends keyof UnitPreferences>({
+  units,
+  field,
+  label,
+  options,
+}: {
+  units: UnitPreferences
+  field: K
+  label: string
+  options: readonly UnitPreferences[K][]
+}) {
+  return (
+    <Field label={label}>
+      <select
+        value={units[field]}
+        onChange={(event) =>
+          setUnitPreferences({ ...units, [field]: event.target.value } as UnitPreferences)
+        }
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {(unitLabels[field] as Record<string, string>)[option]}
+          </option>
+        ))}
+      </select>
+    </Field>
+  )
+}
+
+function DisplayUnits() {
+  const units = useUnitPreferences()
+  const preset = unitPreset(units)
+  return (
+    <>
+      <Field label="Unit preset" hint="Applies immediately and is stored in this browser">
+        <select
+          value={preset}
+          onChange={(event) => {
+            const chosen = event.target.value
+            if (chosen === 'aviation' || chosen === 'metric') {
+              setUnitPreferences(presetUnits(chosen))
+            }
+          }}
+        >
+          <option value="aviation">Aviation — ft, kt, nm</option>
+          <option value="metric">Metric — m, km/h, km</option>
+          {preset === 'custom' ? <option value="custom">Custom</option> : null}
+        </select>
+      </Field>
+      <div className="settings-field-grid">
+        <UnitChoice units={units} field="altitude" label="Altitude" options={altitudeUnits} />
+        <UnitChoice units={units} field="speed" label="Speed" options={speedUnits} />
+        <UnitChoice units={units} field="distance" label="Distance" options={distanceUnits} />
+        <UnitChoice
+          units={units}
+          field="verticalRate"
+          label="Vertical rate"
+          options={verticalRateUnits}
+        />
+      </div>
+      <p className="settings-units-note">
+        CSV and GeoJSON exports always use feet, knots and nautical miles, whatever is chosen here.
+      </p>
+    </>
   )
 }
 
@@ -259,6 +344,7 @@ export function SettingsPage() {
             <Field label="Range rings" hint="Nautical miles, comma-separated">
               <input name="rangeRingsNm" defaultValue={settings.rangeRingsNm.join(', ')} required />
             </Field>
+            <DisplayUnits />
           </SettingsCard>
 
           <SettingsCard
