@@ -448,7 +448,20 @@ export const liveSavedViewConfigurationSchema = savedViewBaseSchema
       .strict(),
     sort: z
       .object({
-        key: z.enum(["identity", "altitude", "distance", "speed", "freshness"]),
+        // Mirrors AircraftSortKey in the web app. Additions are backwards
+        // compatible: a view saved under an earlier, shorter list still parses.
+        key: z.enum([
+          "identity",
+          "altitude",
+          "distance",
+          "speed",
+          "freshness",
+          "verticalRate",
+          "track",
+          "squawk",
+          "operator",
+          "typeCode"
+        ]),
         direction: z.enum(["asc", "desc"])
       })
       .strict()
