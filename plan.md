@@ -26,7 +26,7 @@ contained to the web workspace.
 
 ### 1. Category-aware aircraft icons on the map — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Every aircraft on the map is the same 34 px plane glyph
 (`planeImage` in `apps/web/src/components/RadarMap.tsx:125`), differing only by

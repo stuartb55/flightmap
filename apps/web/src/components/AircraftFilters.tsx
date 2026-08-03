@@ -1,4 +1,5 @@
 import { RotateCcw, Search, X } from 'lucide-react'
+import { categoryOptionLabel } from '../lib/aircraft-category'
 import {
   activeFilterCount,
   aircraftFilterErrors,
@@ -121,7 +122,7 @@ export function AircraftFilters({ filters, sources, categories, onChange, onClos
           <option value="">All categories</option>
           {categories.map((category) => (
             <option key={category} value={category}>
-              {category}
+              {categoryOptionLabel(category)}
             </option>
           ))}
         </select>
