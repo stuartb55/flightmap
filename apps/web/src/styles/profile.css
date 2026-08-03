@@ -107,8 +107,8 @@
 .leader-copy { color: inherit; }
 .pattern-scroll { overflow-x: auto; padding-bottom: 6px; }
 .pattern-grid { display: grid; grid-template-columns: 42px repeat(24, minmax(23px, 1fr)); gap: 3px; min-width: 650px; }
-.pattern-grid > span[role="gridcell"] { position: relative; display: grid; place-items: center; height: 29px; border-radius: 3px; background: rgb(88 213 177 / var(--pattern-opacity)); }
-.pattern-grid > span[role="gridcell"] b { position: absolute; right: 2px; bottom: 0; color: var(--text); font-size: 9px; }
+.pattern-grid > .pattern-cell { position: relative; display: grid; place-items: center; height: 29px; border-radius: 3px; background: rgb(88 213 177 / var(--pattern-opacity)); }
+.pattern-grid > .pattern-cell b { position: absolute; right: 2px; bottom: 0; color: var(--text); font-size: 9px; }
 .pattern-hour { color: var(--muted); font-size: 10px; text-align: center; }
 .pattern-day { align-self: center; color: var(--muted-bright); font-size: 11px; }
 .pattern-panel > small { display: block; margin-top: 8px; color: var(--muted); }

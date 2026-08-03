@@ -784,7 +784,7 @@ export function HistoryPage() {
         </div>
 
         {summaryLoading ? (
-          <div className="session-skeleton" aria-label="Loading retained summaries" />
+          <div className="session-skeleton" role="status" aria-label="Loading retained summaries" />
         ) : shouldShowSummarySection(summaries.length, summaryNextCursor) ? (
           <section className="summary-results">
             <div className="results-heading">

@@ -167,7 +167,7 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
       <div
         ref={containerRef}
         className="coverage-map"
-        role="img"
+        role="region"
         aria-label={`Coverage heatmap containing ${cells.length.toLocaleString('en-GB')} aggregated cells`}
       />
       {mapError ? (
