@@ -154,7 +154,7 @@ items assume the documented trusted-LAN model.
 
 ## P5 — Maintainability
 
-- [ ] **18. `db/repository.ts` is 3,044 lines** mixing ingestion, live queries,
+- [x] **18. `db/repository.ts` is 3,044 lines** mixing ingestion, live queries,
       history, insights, alerts, saved views, and status. Split by domain
       (`ingest/`, `history/`, `insights/`, `alerts/`).
 
