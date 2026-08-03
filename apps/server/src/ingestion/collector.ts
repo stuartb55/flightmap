@@ -7,6 +7,7 @@ import type { Config } from "../config.js";
 import type { FlightRepository } from "../db/repository.js";
 import { normaliseSnapshot } from "../domain/normalise.js";
 import { SnapshotCursor } from "../domain/snapshot-cursor.js";
+import { LiveAircraftDiff } from "../realtime/aircraft-diff.js";
 import type { LiveHub } from "../realtime/live-hub.js";
 import { CollectorState } from "./collector-state.js";
 
@@ -91,6 +92,7 @@ function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
 
 export class ReceiverCollector {
   readonly state = new CollectorState();
+  private readonly diff = new LiveAircraftDiff();
   private cursor = new SnapshotCursor();
   private abortController = new AbortController();
   private loops: Promise<void>[] = [];
@@ -133,6 +135,7 @@ export class ReceiverCollector {
       this.abortController = new AbortController();
     }
     this.started = true;
+    this.diff.reset();
     try {
       const [checkpoint, persistedReceiver] = await Promise.all([
         this.repository.checkpoint(),
@@ -232,7 +235,7 @@ export class ReceiverCollector {
             );
           }
           this.hub.publish({
-            upserts: result.upserts,
+            upserts: this.diff.changed(result.upserts),
             removals,
             alerts: result.alerts,
             receiver: this.state.realtime(),

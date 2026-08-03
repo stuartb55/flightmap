@@ -47,14 +47,14 @@ export async function registerWebSocketRoute(
         return;
       }
 
-      const unsubscribe = hub.subscribe((message) => {
+      const unsubscribe = hub.subscribe((_message, encoded) => {
         if (socket.readyState === socket.OPEN) {
           if (socket.bufferedAmount > 1024 * 1024) {
             socket.close(1013, "Client is too slow; resnapshot");
             return;
           }
           try {
-            socket.send(JSON.stringify(message));
+            socket.send(encoded);
           } catch {
             socket.terminate();
           }
