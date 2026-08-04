@@ -607,8 +607,7 @@
      them can be used against a map this small anyway. */
   .live-page.detail-expanded .map-controls,
   .live-page.detail-expanded .map-legend,
-  .live-page.detail-expanded .map-layer-control,
-  .live-page.detail-expanded .map-saved-views {
+  .live-page.detail-expanded .map-layer-control {
     display: none;
   }
 

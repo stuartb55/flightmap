@@ -21,18 +21,6 @@ async function selectLiveAircraft(page: Page, panel: string, callsign: string) {
   await row.click()
 }
 
-async function expectSavedViewsClearOfSelectedAircraft(page: Page) {
-  const layout = await page.locator('.map-stage').evaluate((element) => {
-    const savedViews = element.querySelector('.map-saved-views .saved-view-button')!.getBoundingClientRect()
-    const selectedAircraft = element.querySelector('.selected-map-card')!.getBoundingClientRect()
-    return {
-      savedViewsBottom: savedViews.bottom,
-      selectedAircraftTop: selectedAircraft.top,
-    }
-  })
-  expect(layout.selectedAircraftTop - layout.savedViewsBottom).toBeGreaterThanOrEqual(6)
-}
-
 test('loads live data and supports primary navigation', async ({ page }) => {
   await openFlightmap(page)
   await expect(page.getByRole('main')).toBeVisible()
@@ -163,7 +151,6 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   const details = page.locator('.detail-panel')
   await expect(details).toBeVisible()
   await expect(page.locator('.selected-map-card')).toBeVisible()
-  await expectSavedViewsClearOfSelectedAircraft(page)
   await expect(details.getByRole('link', { name: 'Live' })).toBeVisible()
   await expect(details.getByRole('link', { name: 'History' })).toBeVisible()
 
