@@ -193,7 +193,7 @@ the others sit at reduced opacity.
 
 ### 23. Chart accessibility and data-table parity — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Insights sets the pattern — every chart has a keyboard-reachable
 `details.chart-data-table` fallback (`InsightsPage.tsx:173`, `:608`). Four charts

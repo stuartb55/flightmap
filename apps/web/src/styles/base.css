@@ -295,7 +295,10 @@ button:disabled {
   min-width: 22px;
   height: 22px;
   padding: 0 4px;
-  color: var(--ink-1);
+  /* White on the dark theme's red came to 2.91:1 — the alert count is a number
+     you are meant to read at a glance. `--on-fill-1` is the ink for saturated
+     fills and is dark here, light where the fill is. */
+  color: var(--on-fill-1);
   border-radius: 9px;
   background: var(--red);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;

@@ -353,6 +353,13 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(page.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Lifetime aircraft statistics' })).toBeVisible()
 
+  // The observation bars carry their figures in a title attribute, which a
+  // keyboard user never reaches; the table beneath them is the equivalent.
+  await page.getByText('View observation data table').click()
+  await expect(
+    page.getByRole('table', { name: /Observations of this aircraft over time/ }),
+  ).toBeVisible()
+
   await page.getByRole('link', { name: 'History' }).last().click()
   const session = page.locator('.session-card button:enabled').first()
   await expect(session).toBeVisible({ timeout: 15_000 })
@@ -360,6 +367,13 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(page.getByRole('region', { name: 'Flight profile and event timeline' })).toBeVisible()
   await page.getByRole('button', { name: /Receiver distance/ }).click()
   await expect(page.getByRole('button', { name: /Receiver distance/ })).toHaveAttribute('aria-pressed', 'true')
+
+  await page.getByText('View flight profile data table').click()
+  const profileTable = page.getByRole('table', { name: /Flight profile values/ })
+  await expect(profileTable).toBeVisible()
+  // Values route through the same formatters as the chart, so the units the
+  // rest of the page is showing are the units in the table.
+  await expect(profileTable.locator('tbody td').first()).toContainText('ft')
 })
 
 test('previews, creates, toggles, and removes a custom alert rule', async ({ page, request }, testInfo) => {

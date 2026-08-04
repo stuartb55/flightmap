@@ -693,6 +693,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const shareRef = useRef(share)
   shareRef.current = share
   const initialViewportRef = useRef(initialViewport)
+  // Only set when the view was restored from a link: see the recentre effect.
+  const restoredSelectionRef = useRef(initialViewport ? selectedIcao ?? null : null)
   const [shareStatus, setShareStatus] = useState<string | null>(null)
   const [shareLink, setShareLink] = useState<string | null>(null)
   const shareLinkRef = useRef<HTMLInputElement>(null)
@@ -1341,6 +1343,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map || !selectedIcao) return
+    /*
+     * A shared link carries both a viewport and the aircraft that was selected
+     * in it. The viewport is what the sender framed, so the selection arriving
+     * with it must not pull the camera off it — only selections made afterwards
+     * recentre.
+     */
+    if (restoredSelectionRef.current === selectedIcao) {
+      restoredSelectionRef.current = null
+      return
+    }
     const selected = aircraftRef.current.find((item) => item.icao === selectedIcao)
     if (selected?.longitude == null || selected.latitude == null) return
     // Recentring on an aircraft that is already comfortably on screen throws

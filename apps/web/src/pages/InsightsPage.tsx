@@ -28,6 +28,7 @@ import { ActivityPattern } from '../components/ActivityPattern'
 import { RangeProfile } from '../components/RangeProfile'
 import type { CoverageMapHandle } from '../components/CoverageMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
+import { ChartDataTable } from '../components/ChartDataTable'
 import { api } from '../lib/api'
 import {
   compactNumber,
@@ -172,46 +173,39 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
       {availabilityPoints.length ? (
         <p className="chart-legend"><i aria-hidden="true" /> Receiver availability</p>
       ) : null}
-      <details className="chart-data-table">
-        <summary>View activity data table</summary>
-        <div className="table-scroll">
-          <table>
-            <caption>Activity chart values</caption>
-            <thead>
-              <tr>
-                <th scope="col">Period</th>
-                <th scope="col">Aircraft</th>
-                <th scope="col">Sessions</th>
-                <th scope="col">Reports</th>
-                <th scope="col">Positioned</th>
-                <th scope="col">Maximum range</th>
-                <th scope="col">Maximum altitude</th>
-                <th scope="col">Message rate</th>
-                <th scope="col">Receiver availability</th>
-                <th scope="col">Rejected records</th>
-                <th scope="col">Data gaps</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.series.map((point) => (
-                <tr key={point.bucketStart}>
-                  <th scope="row">{formatDateTime(point.bucketStart)}</th>
-                  <td>{point.uniqueAircraft.toLocaleString('en-GB')}</td>
-                  <td>{point.sessions.toLocaleString('en-GB')}</td>
-                  <td>{point.reports.toLocaleString('en-GB')}</td>
-                  <td>{point.positionedReports.toLocaleString('en-GB')}</td>
-                  <td>{formatDistance(point.maximumRangeNm)}</td>
-                  <td>{formatAltitude(point.maximumAltitudeFt)}</td>
-                  <td>{point.messageRatePerSecond == null ? '—' : `${point.messageRatePerSecond.toFixed(1)}/s`}</td>
-                  <td>{point.receiverAvailabilityPercent == null ? 'Not retained' : `${point.receiverAvailabilityPercent.toFixed(1)}%`}</td>
-                  <td>{point.rejectedRecords?.toLocaleString('en-GB') ?? '—'}</td>
-                  <td>{point.dataGapMinutes == null ? 'Not retained' : `${point.dataGapMinutes.toLocaleString('en-GB')} min`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+      <ChartDataTable
+        summary="View activity data table"
+        caption="Activity chart values"
+        columns={[
+          'Period',
+          'Aircraft',
+          'Sessions',
+          'Reports',
+          'Positioned',
+          'Maximum range',
+          'Maximum altitude',
+          'Message rate',
+          'Receiver availability',
+          'Rejected records',
+          'Data gaps',
+        ]}
+        rows={overview.series.map((point) => ({
+          key: point.bucketStart,
+          header: formatDateTime(point.bucketStart),
+          cells: [
+            point.uniqueAircraft.toLocaleString('en-GB'),
+            point.sessions.toLocaleString('en-GB'),
+            point.reports.toLocaleString('en-GB'),
+            point.positionedReports.toLocaleString('en-GB'),
+            formatDistance(point.maximumRangeNm),
+            formatAltitude(point.maximumAltitudeFt),
+            point.messageRatePerSecond == null ? '—' : `${point.messageRatePerSecond.toFixed(1)}/s`,
+            point.receiverAvailabilityPercent == null ? 'Not retained' : `${point.receiverAvailabilityPercent.toFixed(1)}%`,
+            point.rejectedRecords?.toLocaleString('en-GB') ?? '—',
+            point.dataGapMinutes == null ? 'Not retained' : `${point.dataGapMinutes.toLocaleString('en-GB')} min`,
+          ],
+        }))}
+      />
     </>
   )
 }
@@ -615,16 +609,25 @@ export function InsightsPage() {
               {Math.max(...coverage.cells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
               {coverage.truncated ? ' The display limit was reached; narrow the date range for complete cell detail.' : ''}
             </p>
-            <details className="chart-data-table">
-              <summary>View busiest coverage cells</summary>
-              <div className="table-scroll">
-                <table>
-                  <caption>Top coverage heatmap cells</caption>
-                  <thead><tr><th scope="col">Centre</th><th scope="col">Reports</th><th scope="col">Aircraft</th><th scope="col">Maximum altitude</th></tr></thead>
-                  <tbody>{coverage.cells.slice(0, 50).map((cell) => <tr key={`${cell.latitude}:${cell.longitude}`}><th scope="row"><button type="button" className="text-button" onClick={() => selectCoverageCell(cell)}>{cell.latitude.toFixed(3)}, {cell.longitude.toFixed(3)}</button></th><td>{cell.reports.toLocaleString('en-GB')}</td><td>{cell.uniqueAircraft.toLocaleString('en-GB')}</td><td>{formatAltitude(cell.maximumAltitudeFt)}</td></tr>)}</tbody>
-                </table>
-              </div>
-            </details>
+            <ChartDataTable
+              summary="View busiest coverage cells"
+              caption="Top coverage heatmap cells"
+              columns={['Centre', 'Reports', 'Aircraft', 'Maximum altitude']}
+              rowCap={50}
+              rows={coverage.cells.map((cell) => ({
+                key: `${cell.latitude}:${cell.longitude}`,
+                header: (
+                  <button type="button" className="text-button" onClick={() => selectCoverageCell(cell)}>
+                    {cell.latitude.toFixed(3)}, {cell.longitude.toFixed(3)}
+                  </button>
+                ),
+                cells: [
+                  cell.reports.toLocaleString('en-GB'),
+                  cell.uniqueAircraft.toLocaleString('en-GB'),
+                  formatAltitude(cell.maximumAltitudeFt),
+                ],
+              }))}
+            />
           </>
         ) : (
           <div className="coverage-empty"><MapPinned size={21} /><strong>No aggregated coverage yet</strong><span>Coverage is populated by positioned reports and can still be backfilling even when activity summaries are available.</span></div>

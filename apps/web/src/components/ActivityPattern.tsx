@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { InsightPatternCell, InsightPatternsResponse } from '@flightmap/shared'
+import { ChartDataTable } from './ChartDataTable'
 
 type Metric = 'uniqueAircraft' | 'sessions' | 'reports'
 const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -32,12 +33,36 @@ export function ActivityPattern({ patterns }: { patterns: InsightPatternsRespons
               const opacity = value === 0 ? 0.04 : 0.18 + (value / maximum) * 0.82
               const notableChange = cell?.changePercent != null && Math.abs(cell.changePercent) >= 20 ? cell.changePercent : null
               const changeLabel = notableChange == null ? '' : `, ${notableChange > 0 ? 'up' : 'down'} ${Math.abs(notableChange).toFixed(0)}% versus preceding period`
-              return <span key={`${day}:${hour}`} className="pattern-cell" role="img" aria-label={`${weekday} ${String(hour).padStart(2, '0')}:00: ${value.toLocaleString('en-GB')} ${labels[metric].toLowerCase()}${changeLabel}`} style={{ '--pattern-opacity': opacity } as CSSProperties}><i />{notableChange == null ? null : <b title={`${notableChange > 0 ? '+' : ''}${notableChange.toFixed(0)}% versus preceding period`}>{notableChange > 0 ? '↑' : '↓'}</b>}</span>
+              return <span key={`${day}:${hour}`} className="pattern-cell" role="img" aria-label={`${weekday} ${String(hour).padStart(2, '0')}:00: ${value.toLocaleString('en-GB')} ${labels[metric].toLowerCase()}${changeLabel}`} style={{ '--pattern-opacity': opacity } as CSSProperties}><i />{notableChange == null ? null : <b aria-hidden="true">{notableChange > 0 ? '↑' : '↓'}</b>}</span>
             }),
           ])}
         </div>
       </div>
       <small>Hours use {patterns.timeZone}. Arrows mark changes of at least 20% from the preceding period.</small>
+      {/* The grid's change arrows carried their figure in a `title`, which a
+          keyboard never reaches; the table is where that number now lives. */}
+      <ChartDataTable
+        summary={`View ${labels[metric].toLowerCase()} pattern data table`}
+        caption={`${labels[metric]} by weekday and hour in ${patterns.timeZone}`}
+        columns={['Weekday and hour', 'Aircraft', 'Sessions', 'Reports', 'Change vs preceding']}
+        rows={weekdays.flatMap((weekday, day) =>
+          Array.from({ length: 24 }, (_, hour) => {
+            const cell = byCell.get(`${day}:${hour}`)
+            return {
+              key: `${day}:${hour}`,
+              header: `${weekday} ${String(hour).padStart(2, '0')}:00`,
+              cells: [
+                (cell?.uniqueAircraft ?? 0).toLocaleString('en-GB'),
+                (cell?.sessions ?? 0).toLocaleString('en-GB'),
+                (cell?.reports ?? 0).toLocaleString('en-GB'),
+                cell?.changePercent == null
+                  ? '—'
+                  : `${cell.changePercent > 0 ? '+' : ''}${cell.changePercent.toFixed(0)}%`,
+              ],
+            }
+          }),
+        )}
+      />
     </section>
   )
 }

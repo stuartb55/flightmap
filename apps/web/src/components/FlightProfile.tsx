@@ -8,6 +8,7 @@ import {
   formatVerticalRateValue,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { ChartDataTable } from './ChartDataTable'
 import { useResolvedTheme } from '../lib/theme'
 import { trackColour, type TrackColourMode } from '../lib/track-colour'
 import type { TrackPoint, TrackResponse } from '../types'
@@ -186,6 +187,25 @@ export function FlightProfile({
         <text x="4" y="174">{formatTime(new Date(bounds.start).toISOString())}</text>
         <text x={width - 4} y="174" textAnchor="end">{formatTime(new Date(bounds.end).toISOString())}</text>
       </svg>
+
+      {/* A one-second track is thousands of points; the cap keeps the table
+          usable while still answering what the chart shows. */}
+      <ChartDataTable
+        summary="View flight profile data table"
+        caption={`Flight profile values for ${track.session.callsigns[0] || track.session.icao.toUpperCase()}`}
+        columns={['Time', 'Altitude', 'Speed', 'Vertical rate', 'Receiver distance']}
+        rowCap={200}
+        rows={track.points.map((point) => ({
+          key: point.recordedAt,
+          header: formatTime(point.recordedAt),
+          cells: [
+            formatAltitude(point.altitudeFt),
+            formatSpeed(point.groundSpeedKt),
+            formatVerticalRateValue(point.verticalRateFpm ?? null),
+            formatDistance(point.distanceNm ?? null),
+          ],
+        }))}
+      />
 
       {track.events.length ? (
         <details className="profile-events">

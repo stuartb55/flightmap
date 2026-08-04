@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { formatAltitude, formatDate, formatDateTime, formatDistance } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { Link, useLocation } from '../lib/router'
+import { ChartDataTable } from '../components/ChartDataTable'
 import type { AircraftDetail } from '../types'
 
 type Preset = '30d' | '90d' | '1y' | 'all'
@@ -22,15 +23,36 @@ function rangeForPreset(preset: Preset, firstSeen?: string | null) {
 function ActivityBars({ activity }: { activity: AircraftActivityResponse }) {
   const maximum = Math.max(1, ...activity.series.map((point) => point.observations))
   return (
-    <div className="aircraft-activity-chart" role="img" aria-label="Aircraft observations over time">
-      {activity.series.map((point) => (
-        <span
-          key={point.bucketStart}
-          style={{ height: `${Math.max(3, (point.observations / maximum) * 100)}%` }}
-          title={`${formatDate(point.bucketStart)}: ${point.observations.toLocaleString('en-GB')} observations`}
-        />
-      ))}
-    </div>
+    <>
+      <div className="aircraft-activity-chart" role="img" aria-label="Aircraft observations over time">
+        {activity.series.map((point) => (
+          <span
+            key={point.bucketStart}
+            style={{ height: `${Math.max(3, (point.observations / maximum) * 100)}%` }}
+            title={`${formatDate(point.bucketStart)}: ${point.observations.toLocaleString('en-GB')} observations`}
+          />
+        ))}
+      </div>
+      {/* The bars carried their figures in `title` alone, which a keyboard user
+          never reaches — this is the same data, reachable. */}
+      <ChartDataTable
+        summary="View observation data table"
+        caption="Observations of this aircraft over time"
+        columns={['Period', 'Observations', 'Positioned', 'Sessions', 'Maximum altitude', 'Closest approach']}
+        rowCap={120}
+        rows={activity.series.map((point) => ({
+          key: point.bucketStart,
+          header: formatDate(point.bucketStart),
+          cells: [
+            point.observations.toLocaleString('en-GB'),
+            point.positionedObservations.toLocaleString('en-GB'),
+            point.sessions.toLocaleString('en-GB'),
+            formatAltitude(point.maximumAltitudeFt),
+            formatDistance(point.closestRangeNm),
+          ],
+        }))}
+      />
+    </>
   )
 }
 

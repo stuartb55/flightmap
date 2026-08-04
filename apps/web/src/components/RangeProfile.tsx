@@ -1,6 +1,7 @@
 import type { RangeProfileResponse } from '@flightmap/shared'
 import { formatDistance } from '../lib/format'
 import { convertDistance, unitLabels, useUnitPreferences } from '../lib/unit-preferences'
+import { ChartDataTable } from './ChartDataTable'
 
 function polarPoints(values: Array<number | null>, maximum: number, radius: number, centre: number) {
   return values.map((value, index) => {
@@ -35,6 +36,23 @@ export function RangeProfile({ profile }: { profile: RangeProfileResponse }) {
         <ol>{profile.sectors.filter((sector) => sector.p95ChangeNm != null).sort((left, right) => Math.abs(right.p95ChangeNm!) - Math.abs(left.p95ChangeNm!)).slice(0, 8).map((sector) => <li key={sector.bearingStartDeg}><span>{sector.bearingStartDeg}–{sector.bearingEndDeg}°</span><strong className={sector.p95ChangeNm! >= 0 ? 'positive' : 'negative'}>{sector.p95ChangeNm! > 0 ? '+' : ''}{convertDistance(sector.p95ChangeNm!, units.distance).toFixed(1)} {unitLabels.distance[units.distance]}</strong></li>)}</ol>
         {profile.availableFrom ? <small>Range profiles available from {profile.availableFrom}.</small> : <small>Range profile aggregation begins with new positioned reports.</small>}
       </div>
+      <ChartDataTable
+        summary="View range profile data table"
+        caption="Receiver range by bearing sector"
+        columns={['Bearing', 'Median range', '95th percentile', 'Maximum range', 'Change vs preceding']}
+        rows={profile.sectors.map((sector) => ({
+          key: String(sector.bearingStartDeg),
+          header: `${sector.bearingStartDeg}–${sector.bearingEndDeg}°`,
+          cells: [
+            formatDistance(sector.medianRangeNm),
+            formatDistance(sector.p95RangeNm),
+            formatDistance(sector.maximumRangeNm),
+            sector.p95ChangeNm == null
+              ? '—'
+              : `${sector.p95ChangeNm > 0 ? '+' : ''}${convertDistance(sector.p95ChangeNm, units.distance).toFixed(1)} ${unitLabels.distance[units.distance]}`,
+          ],
+        }))}
+      />
     </div>
   )
 }
