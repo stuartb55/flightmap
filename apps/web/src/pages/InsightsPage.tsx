@@ -45,6 +45,7 @@ import {
 } from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
 import { useAppCommands } from '../lib/app-commands'
+import { Link, useLocation } from '../lib/router'
 import { displayTimeZone } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
@@ -299,13 +300,13 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
           {leaders.map((leader) => (
             <li key={leader.key}>
               <span className="leader-rank" aria-hidden="true" />
-              <a className="leader-copy" href={kind === 'aircraft' ? `/aircraft/${leader.key}` : `/history?${kind}=${encodeURIComponent(leader.label)}`}>
+              <Link className="leader-copy" to={kind === 'aircraft' ? `/aircraft/${encodeURIComponent(leader.key)}` : `/history?${kind}=${encodeURIComponent(leader.label)}`}>
                 <strong>{leader.label}</strong>
                 <small>{leader.secondary ?? `${leader.sessions.toLocaleString('en-GB')} sessions`}</small>
                 <span className="leader-meter" aria-hidden="true">
                   <i style={{ width: `${Math.max(3, (leader.reports / maximum) * 100)}%` }} />
                 </span>
-              </a>
+              </Link>
               <span className="leader-value">{compactNumber(leader.reports)}</span>
             </li>
           ))}
@@ -319,6 +320,7 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
 
 export function InsightsPage() {
   useUnitPreferences()
+  const { navigate } = useLocation()
   const initial = useMemo(() => insightRangeForPreset('today'), [])
   const [preset, setPreset] = useState<Preset>('today')
   const [range, setRange] = useState<InsightRange>(initial)
@@ -568,7 +570,7 @@ export function InsightsPage() {
               <section className="insight-panel activity-panel">
                 <header><div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div><small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small></header>
                 <ReceiverContext series={overview.series} />
-                <ActivityChart overview={overview} onSelect={(point) => { window.location.href = `/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}` }} />
+                <ActivityChart overview={overview} onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }} />
               </section>
 
               <section className="insight-panel">
@@ -624,7 +626,7 @@ export function InsightsPage() {
           <aside className="coverage-cell-detail" aria-label="Selected coverage cell details">
             <header><div><span className="eyebrow">SELECTED CELL</span><h3>{selectedCoverage.cell.latitude.toFixed(3)}, {selectedCoverage.cell.longitude.toFixed(3)}</h3></div><button type="button" className="text-button" onClick={() => setSelectedCoverage(null)}>Close</button></header>
             <dl><div><dt>Reports</dt><dd>{selectedCoverage.cell.reports.toLocaleString('en-GB')}</dd></div><div><dt>Aircraft</dt><dd>{selectedCoverage.cell.uniqueAircraft.toLocaleString('en-GB')}</dd></div><div><dt>Maximum altitude</dt><dd>{formatAltitude(selectedCoverage.cell.maximumAltitudeFt)}</dd></div></dl>
-            <div className="coverage-aircraft-links">{selectedCoverage.aircraft.slice(0, 50).map((aircraft) => <a key={aircraft.icao} href={`/aircraft/${aircraft.icao}`}><strong>{aircraft.registration || aircraft.icao.toUpperCase()}</strong><small>{aircraft.typeCode || aircraft.operator || 'Aircraft profile'}</small></a>)}</div>
+            <div className="coverage-aircraft-links">{selectedCoverage.aircraft.slice(0, 50).map((aircraft) => <Link key={aircraft.icao} to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}><strong>{aircraft.registration || aircraft.icao.toUpperCase()}</strong><small>{aircraft.typeCode || aircraft.operator || 'Aircraft profile'}</small></Link>)}</div>
           </aside>
         ) : null}
       </section>

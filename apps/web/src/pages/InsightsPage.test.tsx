@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InsightsPage, insightRangeForPreset } from './InsightsPage'
+import { Router } from '../lib/router'
 import { api } from '../lib/api'
 
 vi.mock('../components/CoverageMap', () => ({
@@ -14,6 +15,7 @@ vi.mock('../lib/api', () => ({
     insightsCoverage: vi.fn(),
     insightPatterns: vi.fn(),
     rangeProfile: vi.fn(),
+    coverageCellDetail: vi.fn(),
     savedViews: vi.fn().mockResolvedValue([]),
     createSavedView: vi.fn(),
     updateSavedView: vi.fn(),
@@ -98,16 +100,31 @@ const coverage: InsightCoverageResponse = {
 
 afterEach(cleanup)
 
+function renderPage() {
+  return render(
+    <Router>
+      <InsightsPage />
+    </Router>,
+  )
+}
+
 describe('InsightsPage', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/insights')
     vi.mocked(api.insightsOverview).mockResolvedValue(overview())
     vi.mocked(api.insightsCoverage).mockResolvedValue(coverage)
     vi.mocked(api.insightPatterns).mockResolvedValue({ from: coverage.from, to: coverage.to, timeZone: 'Europe/London', cells: [], busiest: null, availability })
     vi.mocked(api.rangeProfile).mockResolvedValue({ from: coverage.from, to: coverage.to, altitudeBand: 'all', sectors: [], availableFrom: null })
+    vi.mocked(api.coverageCellDetail).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      cell: coverage.cells[0]!,
+      aircraft: [{ icao: 'abc123', registration: 'G-CVRG', typeCode: 'A320', operator: 'Test Air' }],
+    })
   })
 
   it('renders chart summaries, equivalent data tables, leaders, and coverage', async () => {
-    render(<InsightsPage />)
+    renderPage()
     expect(await screen.findByText('1,250')).toBeInTheDocument()
     expect(screen.getByText(/Busiest hour:/)).toBeInTheDocument()
     expect(screen.getByText('View activity data table')).toBeInTheDocument()
@@ -131,7 +148,7 @@ describe('InsightsPage', () => {
       }),
     )
     vi.mocked(api.insightsCoverage).mockResolvedValue({ ...coverage, cells: [] })
-    render(<InsightsPage />)
+    renderPage()
     expect(await screen.findByText('No receiver activity in this range')).toBeInTheDocument()
     expect(screen.getByText('Preparing historical insights')).toBeInTheDocument()
     expect(screen.getByText('No aggregated coverage yet')).toBeInTheDocument()
@@ -140,7 +157,7 @@ describe('InsightsPage', () => {
 
   it('keeps coverage usable when the activity request fails', async () => {
     vi.mocked(api.insightsOverview).mockRejectedValue(new Error('Overview unavailable'))
-    render(<InsightsPage />)
+    renderPage()
     expect(await screen.findByRole('alert')).toHaveTextContent('Overview unavailable')
     await waitFor(() => expect(screen.getByTestId('coverage-map')).toBeInTheDocument())
   })
@@ -163,7 +180,7 @@ describe('InsightsPage', () => {
         },
       }),
     )
-    render(<InsightsPage />)
+    renderPage()
     await screen.findByText('1,250')
     fireEvent.click(screen.getByLabelText('Compare preceding period'))
     await waitFor(() => expect(api.insightsOverview).toHaveBeenLastCalledWith(
@@ -172,6 +189,50 @@ describe('InsightsPage', () => {
     ))
     expect(await screen.findByText('Compared with the preceding period')).toBeInTheDocument()
     expect(screen.getByText('+20% vs previous')).toBeInTheDocument()
+  })
+
+  it('drills through the activity chart with the router rather than a document load', async () => {
+    renderPage()
+    await screen.findByText('1,250')
+    fireEvent.click(screen.getByRole('button', { name: /1,250 reports, 8 aircraft/ }))
+    expect(window.location.pathname).toBe('/history')
+    expect(new URLSearchParams(window.location.search).get('from')).toBe('2026-08-01T10:00:00.000Z')
+    expect(new URLSearchParams(window.location.search).get('to')).toBe('2026-08-01T11:00:00.000Z')
+  })
+
+  it('routes the leader lists and coverage aircraft without leaving the document', async () => {
+    renderPage()
+    await screen.findByText('1,250')
+
+    const aircraft = screen.getByRole('link', { name: /G-TEST/ })
+    // fireEvent returns false when the handler called preventDefault, which is
+    // what distinguishes a routed link from one the browser would follow.
+    expect(fireEvent.click(aircraft)).toBe(false)
+    expect(window.location.pathname).toBe('/aircraft/abc123')
+
+    window.history.replaceState(null, '', '/insights')
+    const operator = screen.getByRole('link', { name: /Test Air/ })
+    expect(fireEvent.click(operator)).toBe(false)
+    expect(window.location.pathname).toBe('/history')
+    expect(new URLSearchParams(window.location.search).get('operator')).toBe('Test Air')
+
+    window.history.replaceState(null, '', '/insights')
+    fireEvent.click(screen.getByRole('button', { name: '53.625, -2.275' }))
+    const coverageAircraft = await screen.findByRole('link', { name: /G-CVRG/ })
+    expect(fireEvent.click(coverageAircraft)).toBe(false)
+    expect(window.location.pathname).toBe('/aircraft/abc123')
+  })
+
+  it('leaves modifier and middle clicks to the browser so links still open in a new tab', async () => {
+    renderPage()
+    await screen.findByText('1,250')
+    const aircraft = screen.getByRole('link', { name: /G-TEST/ })
+    expect(aircraft).toHaveAttribute('href', '/aircraft/abc123')
+
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      expect(fireEvent.click(aircraft, modifier)).toBe(true)
+      expect(window.location.pathname).toBe('/insights')
+    }
   })
 })
 

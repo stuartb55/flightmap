@@ -56,6 +56,30 @@ export default tseslint.config(
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/purity': 'off',
       'react-hooks/refs': 'off',
+      // A document load tears down the SPA and drops the live WebSocket, so a
+      // drill-down would cost a cold start. Anchors to a server download
+      // endpoint are the one legitimate exception and carry `download`.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "AssignmentExpression:matches([left.object.name='location'],[left.object.object.name='window'][left.object.property.name='location'])[left.property.name='href']",
+          message:
+            'Assigning location.href reloads the document and drops the live WebSocket. Use navigate() from lib/router instead.',
+        },
+        {
+          selector:
+            'JSXOpeningElement:not(:has(JSXAttribute[name.name="download"])) > JSXAttribute[name.name="href"] Literal[value=/^\\//]',
+          message:
+            'A raw <a href="/…"> reloads the document and drops the live WebSocket. Use <Link to="…"> from lib/router, or keep the plain anchor and add `download` if it targets a server download endpoint.',
+        },
+        {
+          selector:
+            'JSXOpeningElement:not(:has(JSXAttribute[name.name="download"])) > JSXAttribute[name.name="href"] TemplateLiteral[quasis.0.value.raw=/^\\//]',
+          message:
+            'A raw <a href={`/…`}> reloads the document and drops the live WebSocket. Use <Link to="…"> from lib/router, or keep the plain anchor and add `download` if it targets a server download endpoint.',
+        },
+      ],
     },
   },
   {
