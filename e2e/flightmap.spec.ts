@@ -138,8 +138,8 @@ test('remembers the appearance across a reload without a flash of the wrong them
   page,
 }) => {
   await page.goto('/settings')
-  await page.getByLabel('Theme', { exact: false }).selectOption('light')
-  await page.getByLabel('Density', { exact: false }).selectOption('compact')
+  await page.getByRole('combobox', { name: /^Theme/ }).selectOption('light')
+  await page.getByRole('combobox', { name: /^Density/ }).selectOption('compact')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
 
   await page.reload()
@@ -149,8 +149,8 @@ test('remembers the appearance across a reload without a flash of the wrong them
   await expect(page.locator('html')).toHaveAttribute('data-density', 'compact')
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
 
-  await page.getByLabel('Theme', { exact: false }).selectOption('dark')
-  await page.getByLabel('Density', { exact: false }).selectOption('comfortable')
+  await page.getByRole('combobox', { name: /^Theme/ }).selectOption('dark')
+  await page.getByRole('combobox', { name: /^Density/ }).selectOption('comfortable')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 })
 

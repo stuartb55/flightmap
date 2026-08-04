@@ -240,6 +240,31 @@ const shapeDecorations: Partial<Record<AircraftShape, (context: CanvasRenderingC
   },
 }
 
+/**
+ * Colours for the layers MapLibre paints itself. These sit on the basemap
+ * rather than on a panel, so they cannot read a CSS token — and a pale label
+ * with a dark halo, which is right over a dark basemap, reads as a smudge over
+ * a pale one.
+ */
+const mapLabelColours = {
+  dark: {
+    halo: '#091015',
+    aircraft: '#d7e3eb',
+    replay: '#ffffff',
+    arrival: '#ffd287',
+    departure: '#7ce8c9',
+    trackCasing: '#020406',
+  },
+  light: {
+    halo: '#ffffff',
+    aircraft: '#16202a',
+    replay: '#101820',
+    arrival: '#814300',
+    departure: '#006d4b',
+    trackCasing: '#ffffff',
+  },
+} as const satisfies Record<ResolvedTheme, Record<string, string>>
+
 function aircraftImage(shape: AircraftShape, colour: string): ImageData {
   const canvas = document.createElement('canvas')
   canvas.width = 34
@@ -724,6 +749,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!containerRef.current) return
+    const labels = mapLabelColours[theme]
     let map: MapLibreMap
     try {
       map = new maplibregl.Map({
@@ -856,10 +882,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
             'match',
             ['get', 'kind'],
             'arrival',
-            '#ffd287',
-            '#7ce8c9',
+            labels.arrival,
+            labels.departure,
           ],
-          'text-halo-color': '#071014',
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.2,
           'text-opacity': 0.88,
         },
@@ -890,7 +916,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         id: 'history-track-shadow',
         type: 'line',
         source: TRACK_SOURCE,
-        paint: { 'line-color': '#020406', 'line-width': 5, 'line-opacity': 0.5 },
+        paint: { 'line-color': labels.trackCasing, 'line-width': 5, 'line-opacity': 0.5 },
       })
       map.addLayer({
         id: 'history-track',
@@ -1002,8 +1028,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           'text-optional': true,
         },
         paint: {
-          'text-color': '#d7e3eb',
-          'text-halo-color': '#091015',
+          'text-color': labels.aircraft,
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.2,
           'text-opacity': ['get', 'opacity'],
         },
@@ -1038,8 +1064,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           'text-allow-overlap': true,
         },
         paint: {
-          'text-color': '#ffffff',
-          'text-halo-color': '#071014',
+          'text-color': labels.replay,
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.5,
         },
       })
@@ -1116,8 +1142,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
     // A style change replaces every layer, so the map is rebuilt rather than
     // patched; every other runtime setting is applied by the effects below.
-    // Switching theme changes the style, so it rebuilds through the same path.
-  }, [mapStyleUrl])
+    // Switching theme changes the style and these colours, so it rebuilds
+    // through the same path.
+  }, [mapStyleUrl, theme])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
