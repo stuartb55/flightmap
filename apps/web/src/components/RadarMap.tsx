@@ -1545,12 +1545,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
             </button>
           </>
         ) : null}
+        {/* The map's click handlers are registered once its style has loaded,
+            so arming the ruler before then gives a tool that silently drops
+            the first point the user places. */}
         <button
           type="button"
           className={rulerActive ? 'active' : ''}
           title="Measure distance and bearing"
           aria-label="Measure distance and bearing"
           aria-pressed={rulerActive}
+          disabled={!mapReady}
           onClick={() => {
             setRulerPoints([])
             setRulerActive((value) => !value)

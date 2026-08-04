@@ -547,9 +547,15 @@
   border-bottom: 0;
 }
 
-.map-controls button:hover {
+.map-controls button:hover:not(:disabled) {
   color: var(--accent-bright);
   background: rgb(var(--accent-rgb) / 0.08);
+}
+
+/* Only until the map's style has loaded, which is a moment on a warm cache. */
+.map-controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .map-layer-control {
