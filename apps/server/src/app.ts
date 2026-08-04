@@ -3,7 +3,8 @@ import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
 import Fastify, {
   type FastifyBaseLogger,
-  type FastifyInstance
+  type FastifyInstance,
+  type FastifyReply
 } from "fastify";
 import { ZodError } from "zod";
 import type { Config } from "./config.js";
@@ -257,6 +258,12 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       index: false,
       immutable: true,
       maxAge: "1y",
+      // The service worker precaches /index.html as its offline shell, so that
+      // document has to carry the same injected settings as `/`. Left to the
+      // static handler it would serve the unrendered build template — no
+      // receiver name, map style, waypoints or time zone — and pin it for a
+      // year, so the route below answers for it instead.
+      globIgnore: ["index.html"],
       setHeaders(reply, path) {
         // These stable filenames must always be revalidated or an installed
         // client can remain pinned to an old application release for a year.
@@ -269,10 +276,15 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         }
       }
     });
-    app.get("/", async (_request, reply) => {
+    const sendRenderedIndex = (reply: FastifyReply) => {
       reply.header("cache-control", "no-cache");
       return reply.type("text/html").send(renderedIndex());
-    });
+    };
+    app.get("/", async (_request, reply) => sendRenderedIndex(reply));
+    // Workbox fetches this during install and aborts precaching on anything
+    // other than a 200, so it stays an explicit route rather than falling
+    // through to the not-found handler.
+    app.get("/index.html", async (_request, reply) => sendRenderedIndex(reply));
   }
 
   app.setNotFoundHandler(async (request, reply) => {

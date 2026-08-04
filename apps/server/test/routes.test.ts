@@ -483,6 +483,43 @@ describe("web application delivery", () => {
       await rm(webDirectory, { recursive: true, force: true });
     }
   });
+
+  it("renders settings into /index.html so the offline shell matches /", async () => {
+    const webDirectory = await mkdtemp(join(tmpdir(), "flightmap-web-"));
+    await writeFile(
+      join(webDirectory, "index.html"),
+      "<html><head></head><body></body></html>"
+    );
+
+    const server = await buildApp({
+      config: {
+        ...loadConfig({
+          NODE_ENV: "test",
+          SERVE_WEB: "true",
+          WEB_DIST_DIR: webDirectory
+        }),
+        receiverName: "Attic receiver"
+      },
+      dependencies: dependencies() as never,
+      logger: false
+    });
+
+    try {
+      const root = await server.inject("/");
+      // Workbox precaches this document during install, and aborts on any
+      // status other than 200 or on a copy that lost the injected settings.
+      const shell = await server.inject("/index.html");
+
+      expect(shell.statusCode).toBe(200);
+      expect(shell.body).toBe(root.body);
+      expect(shell.headers["cache-control"]).toBe("no-cache");
+      expect(shell.headers["content-type"]).toContain("text/html");
+      expect(decodeURIComponent(shell.body)).toContain("Attic receiver");
+    } finally {
+      await server.close();
+      await rm(webDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("cursor validation", () => {
