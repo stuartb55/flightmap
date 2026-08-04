@@ -342,6 +342,17 @@
     top: 10px;
     left: calc(10px + var(--map-layer-button-span));
     z-index: 63;
+    max-width: none;
+  }
+
+  /* Two buttons already fill this row, so the chips drop below them, pulled
+     back to the same map edge the panels open from and stopping short of the
+     map action buttons on the opposite edge. */
+  .map-saved-views .saved-view-pins {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: calc(-1 * var(--map-layer-button-span));
+    width: calc(100vw - 74px);
   }
 
   .map-layer-menu,

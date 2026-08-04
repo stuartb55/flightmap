@@ -68,6 +68,8 @@ export type SavedViewRow = {
   name: string;
   surface: SavedView["surface"];
   configuration: SavedViewConfiguration;
+  is_default: boolean;
+  pinned_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -261,6 +263,8 @@ export function savedViewFromRow(row: SavedViewRow): SavedView {
     name: row.name,
     surface: row.surface,
     configuration: row.configuration,
+    isDefault: row.is_default,
+    pinnedAt: row.pinned_at ? iso(row.pinned_at) : null,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at)
   });

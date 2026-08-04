@@ -408,6 +408,25 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   await page.getByRole('button', { name: 'Apply E2E Insights saved view' }).click()
   await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
 
+  // Pinning promotes the view to a chip beside the button; making it the
+  // default is what the next arrival opens on.
+  await page.getByRole('button', { name: /Saved views/ }).click()
+  await page.getByRole('button', { name: 'Pin E2E Insights beside the saved views button' }).click()
+  await page.getByRole('button', { name: 'Open insights with E2E Insights by default' }).click()
+  await page.getByRole('button', { name: 'Close saved views' }).click()
+  const chip = page.getByRole('button', { name: 'Apply pinned view E2E Insights' })
+  await expect(chip).toBeVisible()
+
+  await page.getByRole('button', { name: '7 days' }).click()
+  await chip.click()
+  await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+
+  // A full document load, so this exercises the default from a cold start
+  // rather than from state the page already held.
+  await page.goto('/insights')
+  await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Apply pinned view E2E Insights' })).toBeVisible()
+
   const csvDownload = page.waitForEvent('download')
   await page.getByRole('link', { name: 'CSV' }).click()
   await expect((await csvDownload).suggestedFilename()).toMatch(/^flightmap-insights-.*\.csv$/)

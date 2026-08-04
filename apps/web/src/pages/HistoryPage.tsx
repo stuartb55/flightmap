@@ -39,6 +39,7 @@ import {
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useAppCommands } from '../lib/app-commands'
+import { useDefaultSavedView } from '../lib/saved-views'
 import { defaultSessionSort, parseSessionSort, sessionSortOptions } from '../lib/session-sort'
 import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 import type {
@@ -443,7 +444,49 @@ export function HistoryPage() {
     }
   }
 
+  const applySavedView = (configuration: SavedViewConfiguration, replace = false) => {
+    if (configuration.surface !== 'history') return
+    const nextFilters: HistoryFilters = {
+      query: configuration.filters.query,
+      icao: configuration.filters.icao,
+      callsign: configuration.filters.callsign,
+      registration: configuration.filters.registration,
+      type: configuration.filters.type,
+      operator: configuration.filters.operator,
+      from: formatDateTimeInput(new Date(configuration.filters.from)),
+      to: formatDateTimeInput(new Date(configuration.filters.to)),
+      alert: configuration.filters.alert,
+    }
+    setMapLayers(configuration.mapLayers)
+    navigate(
+      historyUrl(
+        nextFilters,
+        parseSessionSort(configuration.sort),
+        configuration.selectedSessionIds,
+        configuration.replayTime,
+        configuration.resolution,
+      ),
+      // The default view is where the page starts, so it replaces the entry
+      // rather than leaving Back pointing at a view nobody asked for.
+      replace,
+    )
+    if (configuration.viewport) {
+      const viewport = configuration.viewport
+      window.setTimeout(() => historyMapRef.current?.applyViewport(viewport), 0)
+    }
+  }
+
+  /*
+   * The default view rewrites the URL, so it has to land before the first
+   * search: History queries from the URL, and searching twice would show six
+   * hours of results and then replace them.
+   */
+  const defaultReady = useDefaultSavedView('history', routeSearch !== '', (configuration) =>
+    applySavedView(configuration, true),
+  )
+
   useEffect(() => {
+    if (!defaultReady) return
     const next = filtersFromSearch(routeSearch)
     const nextSort = restoredSort(routeSearch)
     const restored = restoredTrackState(routeSearch)
@@ -482,7 +525,7 @@ export function HistoryPage() {
       sessionAbortRef.current?.abort()
       controller.abort()
     }
-  }, [routeSearch, search])
+  }, [defaultReady, routeSearch, search])
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -686,35 +729,6 @@ export function HistoryPage() {
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
   })
-
-  const applySavedView = (configuration: SavedViewConfiguration) => {
-    if (configuration.surface !== 'history') return
-    const nextFilters: HistoryFilters = {
-      query: configuration.filters.query,
-      icao: configuration.filters.icao,
-      callsign: configuration.filters.callsign,
-      registration: configuration.filters.registration,
-      type: configuration.filters.type,
-      operator: configuration.filters.operator,
-      from: formatDateTimeInput(new Date(configuration.filters.from)),
-      to: formatDateTimeInput(new Date(configuration.filters.to)),
-      alert: configuration.filters.alert,
-    }
-    setMapLayers(configuration.mapLayers)
-    navigate(
-      historyUrl(
-        nextFilters,
-        parseSessionSort(configuration.sort),
-        configuration.selectedSessionIds,
-        configuration.replayTime,
-        configuration.resolution,
-      ),
-    )
-    if (configuration.viewport) {
-      const viewport = configuration.viewport
-      window.setTimeout(() => historyMapRef.current?.applyViewport(viewport), 0)
-    }
-  }
 
   useAppCommands((command) => {
     if (command.type !== 'apply-saved-view' || command.configuration.surface !== 'history') {

@@ -76,7 +76,7 @@ turns up.
 
 ### 15. Saved views: defaults and pinning — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Saved views exist for Live, History, and Insights
 (`SavedViewsControl.tsx`) but every visit starts from the built-in default, and

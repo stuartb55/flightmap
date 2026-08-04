@@ -41,6 +41,7 @@ import { useUnitPreferences } from '../lib/unit-preferences'
 import { useSearchParams } from '../lib/router'
 import { useModalFocus } from '../lib/use-modal-focus'
 import { useAppCommands } from '../lib/app-commands'
+import { useDefaultSavedView } from '../lib/saved-views'
 import { mobileColumns, useAircraftColumns } from '../lib/table-columns'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
 import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
@@ -257,6 +258,13 @@ export function LivePage() {
     setMapDisplay(configuration.display ?? defaultMapDisplay)
     if (configuration.viewport) mapRef.current?.applyViewport(configuration.viewport)
   }
+
+  /*
+   * A deep link — `?aircraft=…` from the palette, a shared selection — is an
+   * explicit request, and the default view's filters could hide the aircraft it
+   * names, so the URL wins.
+   */
+  useDefaultSavedView('live', searchParams.toString() !== '', applySavedView)
 
   // Commands raised by the command palette, which lives in the app shell and
   // can reach neither this page's state nor the map's imperative handle.

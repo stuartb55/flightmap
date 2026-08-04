@@ -649,6 +649,48 @@
 .saved-view-control {
   position: relative;
   z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Pinned views are the two or three configurations someone actually returns to,
+   promoted out of the popover so reaching one is a single press. */
+.saved-view-pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-view-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 168px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--muted-bright);
+  border: 1px dashed var(--line-bright);
+  border-radius: 999px;
+  background: var(--surface-19);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.saved-view-pin > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-view-pin:hover {
+  color: var(--accent-bright);
+  border-color: rgb(var(--accent-rgb) / 0.38);
 }
 
 .saved-view-button {
@@ -819,13 +861,25 @@
 .saved-view-list article > div button {
   display: grid;
   place-items: center;
-  width: 31px;
-  height: 31px;
+  width: 29px;
+  height: 29px;
   color: var(--muted-bright);
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-20);
   cursor: pointer;
+}
+
+/* Default and pin are state, not actions: the pressed button stays lit so the
+   row says what it is without relying on the icon alone. */
+.saved-view-list article > div button.active {
+  color: var(--accent-bright);
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  background: var(--accent-dim);
+}
+
+.saved-view-list article > div button.active svg {
+  fill: currentcolor;
 }
 
 .saved-view-menu > .form-error {
@@ -836,6 +890,8 @@
   position: absolute;
   top: 64px;
   left: 14px;
+  /* Chips wrap rather than run under the map controls on the opposite edge. */
+  max-width: min(420px, calc(100% - 120px));
 }
 
 .map-saved-views .saved-view-button {

@@ -45,6 +45,7 @@ import {
 } from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
 import { useAppCommands } from '../lib/app-commands'
+import { useDefaultSavedView } from '../lib/saved-views'
 import { Link, useLocation } from '../lib/router'
 import { displayTimeZone } from '../config'
 
@@ -320,7 +321,7 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
 
 export function InsightsPage() {
   useUnitPreferences()
-  const { navigate } = useLocation()
+  const { navigate, search } = useLocation()
   const initial = useMemo(() => insightRangeForPreset('today'), [])
   const [preset, setPreset] = useState<Preset>('today')
   const [range, setRange] = useState<InsightRange>(initial)
@@ -341,7 +342,28 @@ export function InsightsPage() {
   const [mapLayers, setMapLayers] = useMapLayers()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
 
+  const applySavedView = (configuration: SavedViewConfiguration) => {
+    if (configuration.surface !== 'insights') return
+    setPreset(configuration.preset)
+    setRange({ from: configuration.from, to: configuration.to, bucket: configuration.bucket })
+    setCustomFrom(formatDateTimeInput(new Date(configuration.from)))
+    setCustomTo(formatDateTimeInput(new Date(configuration.to)))
+    setMapLayers(configuration.mapLayers)
+    setCompare(configuration.compare)
+    if (configuration.viewport) {
+      const viewport = configuration.viewport
+      window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
+    }
+  }
+
+  /*
+   * A default view has to be in place before the first query goes out: the
+   * range it carries is the range the server should be asked about.
+   */
+  const defaultReady = useDefaultSavedView('insights', search !== '', applySavedView)
+
   useEffect(() => {
+    if (!defaultReady) return
     const controller = new AbortController()
     setLoading(true)
     setError(null)
@@ -376,7 +398,7 @@ export function InsightsPage() {
       setLoading(false)
     })
     return () => controller.abort()
-  }, [range, compare, altitudeBand, refreshKey])
+  }, [defaultReady, range, compare, altitudeBand, refreshKey])
 
   const choosePreset = (value: Exclude<Preset, 'custom'>) => {
     const next = insightRangeForPreset(value)
@@ -415,20 +437,6 @@ export function InsightsPage() {
       .then(setSelectedCoverage)
       .catch((reason) => setCoverageError(reason instanceof Error ? reason.message : 'Coverage cell details are unavailable.'))
       .finally(() => setCoverageDetailLoading(false))
-  }
-
-  const applySavedView = (configuration: SavedViewConfiguration) => {
-    if (configuration.surface !== 'insights') return
-    setPreset(configuration.preset)
-    setRange({ from: configuration.from, to: configuration.to, bucket: configuration.bucket })
-    setCustomFrom(formatDateTimeInput(new Date(configuration.from)))
-    setCustomTo(formatDateTimeInput(new Date(configuration.to)))
-    setMapLayers(configuration.mapLayers)
-    setCompare(configuration.compare)
-    if (configuration.viewport) {
-      const viewport = configuration.viewport
-      window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
-    }
   }
 
   useAppCommands((command) => {
