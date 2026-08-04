@@ -643,9 +643,49 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(liveLayout.legendLeft).toBeGreaterThanOrEqual(0)
   expect(liveLayout.legendRight).toBeLessThanOrEqual(320)
 
+  /*
+   * The detail sheet opens at its collapsed stop, which is the whole point of
+   * it on a phone: it names the aircraft and offers somewhere to go next while
+   * leaving the map the larger share of the page, above the action row rather
+   * than over it. The corner card the wide layout draws would only repeat what
+   * the sheet's own header says, so this width does without it.
+   */
   await selectLiveAircraft(page, '.mobile-list-sheet', 'FLT0001')
-  await expect(page.locator('.selected-map-card')).toBeVisible()
-  await expectSavedViewsClearOfSelectedAircraft(page)
+  const detailSheet = page.locator('.detail-panel')
+  await expect(detailSheet).toBeVisible()
+  await expect(detailSheet.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
+  await expect(page.locator('.selected-map-card')).toBeHidden()
+
+  const collapsed = await page.evaluate(() => {
+    const sheet = document.querySelector('.detail-panel')!.getBoundingClientRect()
+    const stage = document.querySelector('.map-stage')!.getBoundingClientRect()
+    const live = document.querySelector('.live-page')!.getBoundingClientRect()
+    const actions = document.querySelector('.mobile-map-actions')!.getBoundingClientRect()
+    return {
+      sheetTop: sheet.top,
+      sheetHeight: sheet.height,
+      pageHeight: live.height,
+      // A banner takes its own row above the map, so measure the band the
+      // sheet leaves rather than a share of a stage whose height varies.
+      mapVisible: sheet.top - stage.top,
+      sheetBottom: sheet.bottom,
+      actionsTop: actions.top,
+    }
+  })
+  expect(collapsed.sheetHeight).toBeLessThan(collapsed.pageHeight * 0.5)
+  expect(collapsed.mapVisible).toBeGreaterThan(100)
+  expect(collapsed.sheetBottom).toBeLessThanOrEqual(collapsed.actionsTop + 0.5)
+  await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
+
+  // The other stop: the full record, at the cost of the map.
+  await page.getByRole('button', { name: 'Expand details' }).click()
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
+  const expandedTop = await page.evaluate(
+    () => document.querySelector('.detail-panel')!.getBoundingClientRect().top,
+  )
+  expect(expandedTop).toBeLessThan(collapsed.sheetTop)
+  await page.getByRole('button', { name: 'Collapse details' }).click()
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
 
   await page.getByRole('link', { name: 'History' }).last().click()
   await expect(page).toHaveTitle('History · Flightmap')

@@ -104,8 +104,12 @@ export function LivePage() {
   const [dismissingBanner, setDismissingBanner] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
   const [mapDisplay, setMapDisplay] = useMapDisplay()
+  const [detailExpanded, setDetailExpanded] = useState(false)
+  const [mapBottomInset, setMapBottomInset] = useState(0)
   const coverage = useCoverageCells(mapLayers.coverage)
   const mapRef = useRef<RadarMapHandle>(null)
+  const mapStageRef = useRef<HTMLElement>(null)
+  const detailPanelRef = useRef<HTMLElement>(null)
   const livePageRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersDialogRef = useRef<HTMLElement>(null)
@@ -130,6 +134,41 @@ export function LivePage() {
 
   const selectedIcao = searchParams.get('aircraft')?.toLowerCase() ?? null
   const selected = selectedIcao ? aircraftList.find((item) => item.icao === selectedIcao) ?? null : null
+  const hasDetail = selected != null
+
+  // Each aircraft opens at the collapsed stop: the point of the sheet is that
+  // picking through traffic never buries the map.
+  useEffect(() => {
+    setDetailExpanded(false)
+  }, [selectedIcao])
+
+  /*
+   * How much of the map the detail panel covers, measured rather than derived
+   * from the breakpoint: beside the map it covers nothing, over it as a sheet
+   * it covers whatever its current stop comes to. The map aims its camera at
+   * what is left.
+   */
+  useEffect(() => {
+    const stage = mapStageRef.current
+    const panel = detailPanelRef.current
+    if (!stage || !panel) {
+      setMapBottomInset(0)
+      return
+    }
+    const measure = () => {
+      const stageBox = stage.getBoundingClientRect()
+      const panelBox = panel.getBoundingClientRect()
+      const overlapsAcross = panelBox.left < stageBox.right - 1 && panelBox.right > stageBox.left + 1
+      setMapBottomInset(
+        overlapsAcross ? Math.max(0, Math.round(stageBox.bottom - panelBox.top)) : 0,
+      )
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(stage)
+    observer.observe(panel)
+    return () => observer.disconnect()
+  }, [detailExpanded, hasDetail])
   const filtered = useOrderedAircraft(aircraftList, filters, sort)
   const sources = useMemo(
     () =>
@@ -396,7 +435,9 @@ export function LivePage() {
   return (
     <div
       ref={livePageRef}
-      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''}`}
+      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''} ${
+        selected && detailExpanded ? 'detail-expanded' : ''
+      }`}
     >
       {bannerAlert ? (
         <div
@@ -539,7 +580,7 @@ export function LivePage() {
         </>
       ) : null}
 
-      <section className="map-stage" aria-label="Live receiver map">
+      <section ref={mapStageRef} className="map-stage" aria-label="Live receiver map">
         <RadarMap
           ref={mapRef}
           aircraft={aircraftList}
@@ -557,6 +598,7 @@ export function LivePage() {
           coverageCells={coverage.cells}
           trails={mapLayers.allTrails ? trails : undefined}
           initialViewport={sharedViewport}
+          bottomInset={mapBottomInset}
           share={liveShare}
         />
         <SavedViewsControl
@@ -586,7 +628,15 @@ export function LivePage() {
         ) : null}
       </section>
 
-      {selected ? <AircraftDetailPanel aircraft={selected} onClose={closeDetails} /> : null}
+      {selected ? (
+        <AircraftDetailPanel
+          aircraft={selected}
+          onClose={closeDetails}
+          panelRef={detailPanelRef}
+          expanded={detailExpanded}
+          onToggleExpanded={() => setDetailExpanded((value) => !value)}
+        />
+      ) : null}
 
       <div className="mobile-map-actions">
         <button

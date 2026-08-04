@@ -1,5 +1,5 @@
 import { airlineOperatorFromCallsign } from '@flightmap/shared'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, type RefObject, useEffect, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -32,6 +32,15 @@ import type { Aircraft, AircraftDetail } from '../types'
 interface Props {
   aircraft: Aircraft
   onClose: () => void
+  /**
+   * Supplied where the panel is a bottom sheet over the map rather than a
+   * column beside it. Collapsed, it shows only the hero, so the map keeps most
+   * of a phone screen; the grab handle switches between the two.
+   */
+  expanded?: boolean
+  onToggleExpanded?: () => void
+  /** Set on the sheet so the map can measure how much of itself is covered. */
+  panelRef?: RefObject<HTMLElement | null>
 }
 
 function Metric({
@@ -54,7 +63,13 @@ function Metric({
   )
 }
 
-export function AircraftDetailPanel({ aircraft, onClose }: Props) {
+export function AircraftDetailPanel({
+  aircraft,
+  onClose,
+  expanded = false,
+  onToggleExpanded,
+  panelRef,
+}: Props) {
   useUnitPreferences()
   const dispatch = useLiveDispatch()
   const [detail, setDetail] = useState<AircraftDetail | null>(null)
@@ -149,7 +164,22 @@ export function AircraftDetailPanel({ aircraft, onClose }: Props) {
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
 
   return (
-    <aside className="detail-panel" aria-label={`${aircraftLabel(aircraft)} aircraft details`}>
+    <aside
+      ref={panelRef}
+      className={`detail-panel ${expanded ? 'expanded' : ''}`}
+      aria-label={`${aircraftLabel(aircraft)} aircraft details`}
+    >
+      {onToggleExpanded ? (
+        <button
+          className="detail-sheet-handle"
+          type="button"
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+        >
+          <span className="detail-sheet-grip" aria-hidden="true" />
+          <span className="visually-hidden">{expanded ? 'Collapse details' : 'Expand details'}</span>
+        </button>
+      ) : null}
       <div className={`detail-hero ${aircraft.hasActiveAlert ? 'detail-hero-alert' : ''}`}>
         <div className="panel-title-row">
           <span className="aircraft-category-icon" aria-hidden="true">
