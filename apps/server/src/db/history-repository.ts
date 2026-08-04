@@ -3,6 +3,7 @@ import type {
   AircraftActivityResponse,
   DailyAircraftSummary,
   SessionQuery,
+  SessionSort,
   SessionsResponse,
   SummariesResponse,
   SummaryQuery,
@@ -31,6 +32,43 @@ import {
   utcDate
 } from "./repository-shared.js";
 
+/**
+ * How each sort orders a session page, and what it pages by.
+ *
+ * The numeric sorts fold their NULLs into a sentinel that cannot occur —
+ * no approach is a billion miles and no aircraft is a billion feet below sea
+ * level — so a plain row comparison keeps NULLs at the far end without a
+ * separate NULLS FIRST/LAST branch in the keyset predicate.
+ */
+const sessionSorts = {
+  started_desc: { expression: "s.started_at", direction: "DESC", numeric: false },
+  started_asc: { expression: "s.started_at", direction: "ASC", numeric: false },
+  duration_desc: {
+    expression:
+      "extract(epoch from (coalesce(s.ended_at, s.last_position_at) - s.started_at))",
+    direction: "DESC",
+    numeric: true
+  },
+  closest_asc: {
+    expression: "coalesce(s.closest_range_nm, 1e9)",
+    direction: "ASC",
+    numeric: true
+  },
+  altitude_desc: {
+    expression: "coalesce(s.maximum_altitude_ft, -1e9)",
+    direction: "DESC",
+    numeric: true
+  },
+  samples_desc: {
+    expression: "s.sample_count::double precision",
+    direction: "DESC",
+    numeric: true
+  }
+} as const satisfies Record<
+  SessionSort,
+  { expression: string; direction: "ASC" | "DESC"; numeric: boolean }
+>;
+
 /** Track sessions, retained position detail, and per-aircraft history. */
 export class HistoryRepository extends RepositoryBase {
   async sessions(query: SessionQuery): Promise<SessionsResponse> {
@@ -45,8 +83,25 @@ export class HistoryRepository extends RepositoryBase {
       );
     }
     const cursor = decodeCursor(query.cursor, sessionCursorSchema);
-    const result = await this.database.query<SessionRow>(
+    // Routes always parse a sort in; the fallback is for direct callers.
+    const sort = sessionSorts[query.sort ?? "started_desc"];
+    // Whitelisted fragments only: the sort arrives as an enum, never as text.
+    const after = sort.direction === "DESC" ? "<" : ">";
+    const cursorType = sort.numeric ? "double precision" : "timestamptz";
+    const keyset =
+      `($10::${cursorType} IS NULL OR ` +
+      `(${sort.expression}, s.id) ${after} ($10::${cursorType}, $11::uuid))`;
+    // A cursor is only meaningful alongside the sort that produced it.
+    const cursorValue = sort.numeric ? cursor?.value : cursor?.startedAt;
+    if (cursor && cursorValue === undefined) {
+      throw new RepositoryInputError(
+        "INVALID_CURSOR",
+        "Cursor does not belong to this sort order"
+      );
+    }
+    const result = await this.database.query<SessionRow & { sort_value: string | number | null }>(
       `SELECT s.*, true AS detailed_track_available,
+              ${sort.expression} AS sort_value,
               ARRAY(
                 SELECT DISTINCT a.rule
                 FROM alert_events a
@@ -93,11 +148,8 @@ export class HistoryRepository extends RepositoryBase {
              WHERE a.session_id = s.id AND a.rule = $9
            )
          )
-         AND (
-           $10::timestamptz IS NULL OR
-           (s.started_at, s.id) < ($10::timestamptz, $11::uuid)
-         )
-       ORDER BY s.started_at DESC, s.id DESC
+         AND ${keyset}
+       ORDER BY ${sort.expression} ${sort.direction}, s.id ${sort.direction}
        LIMIT $12`,
       [
         from,
@@ -109,7 +161,7 @@ export class HistoryRepository extends RepositoryBase {
         query.operator ?? null,
         query.query ?? query.q ?? null,
         query.alert ?? null,
-        cursor?.startedAt ?? null,
+        cursorValue ?? null,
         cursor?.id ?? null,
         query.limit + 1
       ]
@@ -121,7 +173,12 @@ export class HistoryRepository extends RepositoryBase {
       items: page.map(sessionFromRow),
       nextCursor:
         hasMore && last
-          ? encodeCursor({ startedAt: iso(last.started_at), id: last.id })
+          ? encodeCursor(
+              sort.numeric
+                // The numeric sorts coalesce, so this is only null-typed, not null.
+                ? { value: number(last.sort_value ?? 0), id: last.id }
+                : { startedAt: iso(last.started_at), id: last.id }
+            )
           : null
     };
   }

@@ -472,6 +472,22 @@ export const liveSavedViewConfigurationSchema = savedViewBaseSchema
   })
   .strict();
 
+/**
+ * How a session search is ordered. Each option carries the direction that makes
+ * it useful — nobody asks for the furthest approach or the shortest flight
+ * first — which keeps the control a single list rather than a field and a
+ * direction. Additions are backwards compatible: a view saved under the
+ * earlier, shorter list still parses.
+ */
+export const sessionSortSchema = z.enum([
+  "started_desc",
+  "started_asc",
+  "duration_desc",
+  "closest_asc",
+  "altitude_desc",
+  "samples_desc"
+]);
+
 export const historySavedViewConfigurationSchema = savedViewBaseSchema
   .extend({
     surface: z.literal("history"),
@@ -488,7 +504,7 @@ export const historySavedViewConfigurationSchema = savedViewBaseSchema
         alert: z.enum(["", "emergency_squawk", "emergency_state", "watchlist"])
       })
       .strict(),
-    sort: z.enum(["started_desc", "started_asc"]),
+    sort: sessionSortSchema,
     selectedSessionIds: z.array(z.string().uuid()).max(8),
     resolution: z.enum(["auto", "1s", "5s", "15s", "60s"]),
     replayTime: z.number().finite().nonnegative().nullable()
@@ -840,6 +856,7 @@ export const sessionExportQuerySchema = z
 
 export const sessionQuerySchema = z
   .object({
+    sort: sessionSortSchema.default("started_desc"),
     from: optionalDateTime,
     to: optionalDateTime,
     icao: z.preprocess(emptyToUndefined, icaoSchema.optional()),
@@ -1016,6 +1033,7 @@ export type CoverageCellDetailResponse = z.infer<
 >;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type SessionQuery = z.infer<typeof sessionQuerySchema>;
+export type SessionSort = z.infer<typeof sessionSortSchema>;
 export type TrackQuery = z.infer<typeof trackQuerySchema>;
 export type SummaryQuery = z.infer<typeof summaryQuerySchema>;
 export type AlertQuery = z.infer<typeof alertQuerySchema>;

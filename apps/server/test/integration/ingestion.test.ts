@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import type { SessionSort } from "@flightmap/shared";
 import type { Database } from "../../src/db/database.js";
 import type { FlightRepository } from "../../src/db/repository.js";
 import {
@@ -193,6 +194,97 @@ describeDatabase("ingestion against PostgreSQL", () => {
     expect(overview.metrics.uniqueAircraft).toBe(2);
     expect(overview.leaders.aircraft.length).toBeGreaterThan(0);
     expect(overview.series).toHaveLength(1);
+  });
+
+  it("orders sessions by every supported sort, and pages each one", async () => {
+    // Three aircraft, deliberately ranked differently by each measure: the
+    // long flight is not the closest, and the closest is not the highest.
+    // Both altitude sources must agree, or `analyticalAltitudeFt` discards the
+    // reading and every session records a NULL maximum.
+    const fleet = [
+      { hex: "400001", lat: 53.61, lon: -2.31, altitude: 5_000, minutes: [600, 601, 602, 603] },
+      { hex: "400002", lat: 54.6, lon: -2.31, altitude: 38_000, minutes: [601, 602] },
+      { hex: "400003", lat: 55.6, lon: -2.31, altitude: 20_000, minutes: [602] }
+    ];
+    for (const aircraft of fleet) {
+      for (const minute of aircraft.minutes) {
+        await flights.ingestSnapshot(
+          snapshot(atMinutes(minute), [
+            {
+              hex: aircraft.hex,
+              lat: aircraft.lat,
+              lon: aircraft.lon,
+              alt_baro: aircraft.altitude,
+              alt_geom: aircraft.altitude + 200
+            }
+          ])
+        );
+      }
+    }
+    const search = async (sort: SessionSort, cursor?: string) =>
+      flights.sessions({
+        from: dayBoundary(0),
+        to: dayBoundary(1),
+        limit: cursor === undefined ? 20 : 2,
+        sort,
+        ...(cursor ? { cursor } : {})
+      });
+
+    expect((await search("started_desc")).items.map((item) => item.icao)).toEqual([
+      "400003",
+      "400002",
+      "400001"
+    ]);
+    expect((await search("started_asc")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002",
+      "400003"
+    ]);
+    // 400001 reported over three minutes, 400002 over one, 400003 not at all.
+    expect((await search("duration_desc")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002",
+      "400003"
+    ]);
+    expect((await search("closest_asc")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002",
+      "400003"
+    ]);
+    expect((await search("altitude_desc")).items.map((item) => item.icao)).toEqual([
+      "400002",
+      "400003",
+      "400001"
+    ]);
+    expect((await search("samples_desc")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002",
+      "400003"
+    ]);
+
+    // Each sort pages by its own ordering value, so the second page continues
+    // where the first stopped rather than starting again.
+    for (const sort of [
+      "started_desc",
+      "started_asc",
+      "duration_desc",
+      "closest_asc",
+      "altitude_desc",
+      "samples_desc"
+    ] as const) {
+      const whole = await search(sort);
+      const firstPage = await flights.sessions({
+        from: dayBoundary(0),
+        to: dayBoundary(1),
+        limit: 2,
+        sort
+      });
+      expect(firstPage.nextCursor).not.toBeNull();
+      const secondPage = await search(sort, firstPage.nextCursor ?? undefined);
+      expect([...firstPage.items, ...secondPage.items].map((item) => item.id)).toEqual(
+        whole.items.map((item) => item.id)
+      );
+    }
   });
 
   it("ignores a duplicate snapshot without double counting", async () => {
