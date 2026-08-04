@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
 
 async function openFlightmap(page: Page) {
   await page.goto('/')
@@ -19,6 +19,18 @@ async function selectLiveAircraft(page: Page, panel: string, callsign: string) {
   const row = list.getByRole('button', { name: `Select ${callsign}` })
   await expect(row).toBeVisible({ timeout: 15_000 })
   await row.click()
+}
+
+/** A drag in steps, which is what a sheet gesture has to look like to be one. */
+async function dragVertically(page: Page, target: Locator, distance: number) {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('The drag target is not on screen')
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 8; step += 1) await page.mouse.move(x, y + (distance * step) / 8)
+  await page.mouse.up()
 }
 
 test('loads live data and supports primary navigation', async ({ page }) => {
@@ -664,7 +676,26 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(collapsed.sheetBottom).toBeLessThanOrEqual(collapsed.actionsTop + 0.5)
   await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
 
-  // The other stop: the full record, at the cost of the map.
+  // Collapsed, the sheet answers what the map cannot, without an expand.
+  for (const reading of ['Altitude', 'Speed', 'Track', 'Range']) {
+    await expect(detailSheet.getByRole('term').filter({ hasText: reading })).toBeVisible()
+  }
+  await expect(detailSheet.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
+
+  // The other stop: the full record, at the cost of the map. It is reached by
+  // dragging the sheet as well as by tapping the handle, and a swipe that
+  // begins on the star is a swipe rather than a watchlist toggle.
+  const star = detailSheet.getByRole('button', { name: 'Add to watchlist' })
+  await dragVertically(page, star, -170)
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
+  await expect(star).toHaveAttribute('aria-pressed', 'false')
+  const swipedTop = await page.evaluate(
+    () => document.querySelector('.detail-panel')!.getBoundingClientRect().top,
+  )
+  expect(swipedTop).toBeLessThan(collapsed.sheetTop)
+  await dragVertically(page, detailSheet.locator('.detail-hero-stats'), 170)
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
+
   await page.getByRole('button', { name: 'Expand details' }).click()
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
   const expandedTop = await page.evaluate(

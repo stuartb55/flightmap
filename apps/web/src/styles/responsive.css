@@ -602,6 +602,15 @@
     padding-top: 4px;
   }
 
+  /* The sheet is dragged between its stops from the two parts that are always
+     on screen, so the browser must not claim the vertical gesture for a scroll
+     first. Swiping the hero down collapses rather than scrolls, which is what
+     the gesture means on a sheet; the record below it scrolls as usual. */
+  .detail-sheet-handle,
+  .detail-hero {
+    touch-action: none;
+  }
+
   /* Expanded, the sheet reaches over the map's own chrome. Leaving a row of
      buttons half-buried under its edge read as a rendering fault, and none of
      them can be used against a map this small anyway. */
