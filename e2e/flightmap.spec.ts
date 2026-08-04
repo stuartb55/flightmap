@@ -421,6 +421,79 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   await expect(page.getByText('No insights views saved yet.')).toBeVisible()
 })
 
+test('drills through Insights without reloading the document or dropping the live feed', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'In-app navigation is exercised once on desktop Chromium')
+  // Sockets are tagged with a per-document identifier: a reload would run this
+  // script again and open a socket under a new identifier, so comparing the
+  // open tags either side of the drill-through is what proves the feed survived
+  // rather than being torn down and re-established.
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket
+    const documentId = `${Date.now()}.${Math.random()}`
+    const sockets: { tag: string; socket: WebSocket }[] = []
+    Object.defineProperty(window, '__liveSockets', { value: sockets })
+    const TrackedWebSocket = function (
+      this: WebSocket,
+      url: string | URL,
+      protocols?: string | string[],
+    ) {
+      const socket = protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols)
+      sockets.push({ tag: `${documentId}#${sockets.length}`, socket })
+      return socket
+    } as unknown as typeof WebSocket
+    Object.setPrototypeOf(TrackedWebSocket, NativeWebSocket)
+    TrackedWebSocket.prototype = NativeWebSocket.prototype
+    window.WebSocket = TrackedWebSocket
+  })
+  const openLiveSockets = () =>
+    page.evaluate(() =>
+      (window as unknown as { __liveSockets: { tag: string; socket: WebSocket }[] }).__liveSockets
+        .filter((entry) => entry.socket.readyState === WebSocket.OPEN)
+        .map((entry) => entry.tag),
+    )
+
+  await page.goto('/insights')
+  await expect(page.getByRole('heading', { name: 'Activity & coverage' })).toBeVisible()
+  // The live socket is opened by the app shell, so it is already connected here.
+  await expect.poll(openLiveSockets, { timeout: 15_000 }).not.toEqual([])
+  const connected = await openLiveSockets()
+
+  // A document load would run the init script again and wipe this marker.
+  await page.evaluate(() => { (window as unknown as { __documentMarker?: string }).__documentMarker = 'insights' })
+  let documentLoads = 0
+  page.on('load', () => { documentLoads += 1 })
+
+  const bar = page.locator('.activity-chart .chart-bar').first()
+  await expect(bar).toBeVisible({ timeout: 15_000 })
+  await bar.click()
+  await expect(page).toHaveURL(/\/history\?from=.+&to=/)
+  await expect(page.getByRole('heading', { name: 'Flight history' })).toBeVisible()
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Activity & coverage' })).toBeVisible()
+  const leader = page.locator('.leader-card').first().locator('a.leader-copy').first()
+  await expect(leader).toBeVisible({ timeout: 15_000 })
+  await expect(leader).toHaveAttribute('href', /^\/aircraft\//)
+
+  // Routed links still have to behave like links: the modifier click opens a
+  // tab and leaves this document where it was.
+  const newTab = context.waitForEvent('page')
+  await leader.click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] })
+  expect(new URL((await newTab).url()).pathname).toBe(await leader.getAttribute('href'))
+  await expect(page).toHaveURL(/\/insights$/)
+
+  await leader.click()
+  await expect(page).toHaveURL(/\/aircraft\/[0-9a-f]{6}$/)
+  await expect(page.getByRole('region', { name: 'Lifetime aircraft statistics' })).toBeVisible({ timeout: 15_000 })
+
+  expect(documentLoads).toBe(0)
+  expect(await page.evaluate(() => (window as unknown as { __documentMarker?: string }).__documentMarker)).toBe('insights')
+  // The very socket that was carrying the feed before the drill-through.
+  expect(await openLiveSockets()).toEqual(expect.arrayContaining(connected))
+})
+
 test('shows retained data through a WebSocket interruption and reconnects', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'WebSocket recovery is exercised once on desktop Chromium')
   await page.addInitScript(() => {

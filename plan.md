@@ -4,9 +4,10 @@ Prioritised backlog of user-facing improvements for the delivered v1 application
 Authentication and security work is deliberately out of scope; the deployment
 model (trusted LAN, reverse proxy for remote access) is unchanged.
 
-The original v1 build specification has moved to
-[`docs/v1-build-plan.md`](docs/v1-build-plan.md) and remains the reference for
-existing behaviour.
+Phase 1 — tiers 0 and 1, items 1–12 — is complete and has moved to
+[`docs/delivered-enhancements.md`](docs/delivered-enhancements.md). The original
+v1 build specification is [`docs/v1-build-plan.md`](docs/v1-build-plan.md) and
+remains the reference for existing behaviour.
 
 ## How to use this document
 
@@ -17,380 +18,59 @@ is clean.
 
 Effort key: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3–5 days.
 
----
-
-## Tier 0 — Daily-use wins
-
-These change what a user sees every time they open the app, and each is
-contained to the web workspace.
-
-### 1. Category-aware aircraft icons on the map — **M**
-
-- [x] Implement
-
-**Problem.** Every aircraft on the map is the same 34 px plane glyph
-(`planeImage` in `apps/web/src/components/RadarMap.tsx:125`), differing only by
-altitude colour. A helicopter, an A380, a Cessna, and a ground vehicle are
-visually identical, so the map cannot be read at a glance.
-
-**Approach.** The ADS-B emitter category already reaches the client
-(`Aircraft.category`, `apps/web/src/types.ts:57`) but is used only as a raw
-filter value. Add a category → shape mapping and generate one icon per
-(shape × altitude band) pair at style load:
-
-| Category | Shape | Notes |
-| --- | --- | --- |
-| A1 | Light single-engine | Smaller glyph, straight wings |
-| A2 / A3 | Standard airliner | Current glyph, A3 slightly larger |
-| A4 / A5 | Heavy / super-heavy | Wider glyph, four engine marks |
-| A7 | Rotorcraft | Rotor disc glyph, no track rotation smoothing |
-| B1–B4 | Glider / balloon / parachute / ultralight | Simple diamond |
-| B6 / B7 | UAV / space vehicle | Chevron |
-| C0–C3 | Surface vehicle | Square, always rendered at ground colour |
-| unknown | Current glyph | Fallback |
-
-Fall back to the type-code prefix (`metadata.typeCode`) where category is
-absent — `H` prefixes and known heavy types are a cheap improvement.
-
-**Files.** `RadarMap.tsx` (icon generation, `liveAircraftData` icon key),
-new `apps/web/src/lib/aircraft-category.ts` (mapping + human labels),
-`AircraftFilters.tsx` (show "A3 · Large" instead of "A3").
-
-**Acceptance.**
-- Rotorcraft, light aircraft, heavies, and surface vehicles are distinguishable
-  at default zoom without reading labels.
-- Icon count stays bounded (shapes × 8 altitude bands, generated once per style
-  load, not per render).
-- Unknown/absent categories render exactly as they do today.
-- The category filter dropdown shows human-readable labels.
-- Map legend documents the shapes alongside the existing altitude scale.
-
----
-
-### 2. Short trails for every aircraft — **M**
-
-- [x] Implement
-
-**Problem.** Trails only render for the selected aircraft
-(`LivePage.tsx:228`, the `trail` memo). Users coming from tar1090/PiAware expect
-every aircraft to leave a short trail — it is what makes traffic flow legible
-and shows which direction an aircraft came from before you click it.
-
-**Approach.** Accumulate positions client-side from the WebSocket deltas already
-arriving each second. Keep a bounded ring buffer per ICAO in `LiveContext`
-(default 5 minutes, capped by aircraft count), feed it into a new
-`all-aircraft-trails` GeoJSON source rendered below the existing track layer at
-low opacity. No server work required — this is display of data the client
-already receives.
-
-Add a trail mode to `MapLayerPreferences`: `off` / `selected` (today's
-behaviour, the default) / `all`. Reuse the existing `mapDisplay.trailMinutes`
-control for length.
-
-**Files.** `apps/web/src/state/LiveContext.tsx` and `live-reducer.ts` (buffer),
-`RadarMap.tsx` (source + layer), `apps/web/src/lib/map-preferences.ts`,
-`MapLayerMenu.tsx`, `packages/shared/src/contracts.ts` (preference schema).
-
-**Acceptance.**
-- With trail mode `all` and 250 aircraft, the map holds ≥ 30 fps on the target
-  host and memory stays flat over a 30-minute session (bounded buffer, verified
-  by point count assertion in a unit test).
-- Trails clear when an aircraft ages out of the live set.
-- Existing selected-aircraft server-backed trail behaviour is unchanged in
-  `selected` mode.
-- Preference persists across reloads and is captured by saved views.
-
----
-
-### 3. Live table: vertical trend, more columns, and column choice — **M**
-
-- [x] Implement
-
-**Problem.** The table exposes four columns — Aircraft, Altitude, Speed, Range
-(`AircraftTable.tsx:18`). Vertical rate is the single most useful missing field
-for spotting arrivals versus departures, and it is already in the payload
-(`Aircraft.verticalRate`). Squawk, operator, track, and type are also carried
-but only visible after selecting an aircraft.
-
-**Approach.**
-- Add a climb/descend/level indicator beside altitude (arrow + rate, reusing
-  `formatVerticalRate`), always visible — this needs no column chooser.
-- Add optional columns: Vertical rate, Squawk, Track, Operator, Type, Age.
-- Add a column chooser to the table header, persisted per browser under
-  `flightmap.aircraft-columns.v1`, alongside the existing filter persistence.
-- Extend `AircraftSortKey` to cover the new sortable columns.
-
-**Files.** `AircraftTable.tsx`, `apps/web/src/lib/aircraft-filter.ts` (sort
-keys), new `apps/web/src/lib/table-columns.ts`, `styles/live.css`.
-
-**Acceptance.**
-- Climb/descend state is visible without opening the detail panel.
-- Column choice persists across reloads and degrades to defaults on corrupt
-  storage (mirroring `storedFilters` in `LivePage.tsx:50`).
-- Every column is sortable, with `aria-sort` maintained.
-- Mobile sheet keeps a sensible reduced column set regardless of desktop choice.
-
----
-
-### 4. Unit preferences — **M**
-
-- [x] Implement
-
-**Problem.** Units are hardcoded aviation units throughout
-(`apps/web/src/lib/format.ts`): feet, knots, nautical miles, ft/min. This is
-correct for aviation but wrong for a household member who thinks in kilometres,
-and there is no way to change it.
-
-**Approach.** Introduce a unit preference set — altitude (ft / m), speed
-(kt / km/h / mph), distance (nm / km / mi), vertical rate (ft/min / m/s) — with
-an `aviation` and a `metric` preset. Route every display through the existing
-`format.ts` helpers so the change is a single-layer edit; the helpers become
-preference-aware exactly as they already are time-zone-aware.
-
-Store per browser (`localStorage`, like map preferences) rather than in the
-server settings, so different viewers can differ. Surface the control in the
-existing Settings page under "Map and display", reading from local storage.
-
-**Files.** `apps/web/src/lib/format.ts`, new
-`apps/web/src/lib/unit-preferences.ts`, `SettingsPage.tsx`, plus every caller
-via the shared formatters. Exports (CSV/GeoJSON) stay in canonical aviation
-units — note this in the export UI.
-
-**Acceptance.**
-- Switching preset updates altitude, speed, distance, and vertical rate
-  everywhere — table, detail panel, history, insights, map labels — without a
-  reload.
-- Range rings, filter inputs, and their suffixes follow the preference, with
-  filter values converted rather than reinterpreted.
-- Existing `format.test.ts` cases pass under the aviation default; new cases
-  cover metric conversion and rounding.
-- Exports remain ft/kt/nm and say so.
-
----
-
-### 5. Command palette (`Cmd`/`Ctrl` + `K`) — **S**
-
-- [x] Implement
-
-**Problem.** Finding a specific aircraft means navigating to Live, focusing
-search with `/`, and typing — and there is no way to jump to History for a
-callsign, open a saved view, or reach Settings without using the nav.
-
-**Approach.** A single overlay that searches live aircraft (callsign,
-registration, ICAO, operator, type), saved views, and static destinations
-(pages, "toggle coverage layer", "fit aircraft", "centre receiver"). Selecting
-an aircraft routes to `/?aircraft=<icao>`; a modifier opens its profile.
-
-Reuse the existing modal focus-trap pattern (`useModalFocus`,
-`LivePage.tsx:71`) — extract it to `apps/web/src/lib/use-modal-focus.ts` so both
-callers share it rather than duplicating.
-
-**Files.** New `apps/web/src/components/CommandPalette.tsx`, mounted in
-`AppShell.tsx`; extracted `use-modal-focus.ts`; `KeyboardShortcuts.tsx`
-shortcut list.
-
-**Acceptance.**
-- Opens from any page, closes on `Escape`, restores prior focus.
-- Fully keyboard-driven with roving `aria-activedescendant` and an
-  `aria-live` result count.
-- Results rank exact ICAO/callsign matches first; no result state is explained,
-  not blank.
-- Does not intercept the shortcut while focus is in a form control
-  (`isFormTarget`).
-
----
-
-### 6. Selection and navigation polish — **S**
-
-- [x] Implement
-
-**Problem.** Three small frictions in the core interaction loop:
-
-1. Selecting an aircraft always re-centres and zooms the map
-   (`RadarMap.tsx:880`), yanking the view even when the aircraft is already
-   comfortably visible — which makes selecting from the table feel violent.
-2. The aircraft list cannot be walked with the keyboard. `A` focuses the first
-   row (`LivePage.tsx:305`) and then arrow keys do nothing useful.
-3. The `keydown` effect in `LivePage.tsx:298` has no dependency array, so the
-   listener is torn down and re-registered on every 1 Hz render.
-
-**Approach.**
-1. Only ease to the aircraft when it is outside the current viewport (or inside
-   an edge margin); otherwise leave the camera alone. Keep the existing
-   behaviour for the follow toggle.
-2. Add `↑`/`↓` to move the selection through the filtered list, `Enter` to open
-   details, `Home`/`End` to jump. Scroll the active row into view.
-3. Give the effect a proper dependency list.
-
-**Files.** `RadarMap.tsx`, `LivePage.tsx`, `AircraftTable.tsx`,
-`KeyboardShortcuts.tsx`.
-
-**Acceptance.**
-- Selecting a visible aircraft does not move the map; selecting an off-screen
-  one brings it into view.
-- Arrow-key navigation works from the table and from the command palette
-  results, honouring `prefers-reduced-motion` for scroll behaviour.
-- The keydown listener registers once per dependency change, not per render.
-
----
-
-## Tier 1 — Substantial improvements
-
-### 7. Live list virtualisation and render budget — **M**
-
-- [x] Implement
-
-**Problem.** `AircraftTable` renders every filtered row into the DOM. Rows are
-memoised (`AircraftTable.tsx:30`) so updates are cheap, but with the 250+
-aircraft the load test targets, the initial mount and every filter change build
-a large tree, and `filterAircraft`/`sortAircraft` re-run on each 1 Hz snapshot.
-
-**Approach.**
-- Windowed rendering of table rows (a small hand-rolled windowing hook is
-  enough — no new dependency needed for a single fixed-height list).
-- Move filter/sort off the snapshot critical path: keep the sort comparator
-  stable and only re-sort when the sort key, the filter set, or the aircraft
-  identity set changes, not when telemetry values change.
-- Add a render-cost check to the existing load smoke script
-  (`infra/scripts/load-smoke.mjs`).
-
-**Files.** `AircraftTable.tsx`, new `apps/web/src/lib/use-window-list.ts`,
-`LivePage.tsx`, `infra/scripts/load-smoke.mjs`.
-
-**Acceptance.**
-- With 1,000 aircraft from the fake receiver, scrolling stays smooth and
-  selection latency stays under 100 ms.
-- Keyboard navigation and `aria-rowcount`/`aria-rowindex` semantics survive
-  virtualisation — a screen reader still reports the true total.
-- Existing `AircraftTable.test.tsx` assertions still hold for small lists.
-
----
-
-### 9. Map interaction depth — **M**
-
-- [x] Implement
-
-**Problem.** The map supports hover (a transient card, `RadarMap.tsx:942`) and
-click-to-select, and nothing else. There is no way to interrogate the map
-directly: no persistent popup, no click-to-filter on the altitude legend, no
-measuring, and no way to dismiss a selection by clicking empty space.
-
-**Approach.**
-- Persistent popup on click with the key telemetry and links to profile/history,
-  as an alternative to the side panel on wide screens.
-- Make the altitude legend interactive: click a band to isolate it, which writes
-  through to the existing altitude filter so the table and map stay consistent.
-- Click on empty map space clears the selection.
-- Optional ruler tool: click two points for distance and bearing, using the
-  existing great-circle helpers (`destinationPoint`, `RadarMap.tsx:186`, and the
-  server's `domain/geo.ts` as the reference implementation).
-
-**Files.** `RadarMap.tsx`, `MapLayerMenu.tsx`, `styles/live.css`.
-
-**Acceptance.**
-- Legend filtering and drawer filtering stay in sync in both directions.
-- Popup is keyboard-dismissible and does not trap focus.
-- Ruler is opt-in and does not interfere with selection clicks.
-
----
-
-### 10. History: session timeline, sorting, and track colouring — **M**
-
-- [x] Implement
-
-**Problem.** History results are a flat card list ordered newest-first with no
-sort control — `sort: 'started_desc'` is hardcoded in the saved-view payload
-(`HistoryPage.tsx:852`). Overlap between sessions is only surfaced as a
-sentence ("Tracks overlap in time and can be replayed together",
-`HistoryPage.tsx:901`). Tracks are always coloured by altitude
-(`altitudeColour`), so speed and climb structure are invisible.
-
-**Approach.**
-- A compact timeline strip above the map: one lane per selected session, drawn
-  against the replay bounds, with the replay cursor overlaid. Clicking a lane
-  focuses that track's profile; dragging scrubs.
-- A sort control for the session list (start time, duration, closest approach,
-  maximum altitude, sample count) wired through to the API and the saved view.
-- A colour-by control for tracks: altitude (default), ground speed, or vertical
-  rate, with the legend updating to match.
-
-**Files.** `HistoryPage.tsx`, new
-`apps/web/src/components/SessionTimeline.tsx`, `RadarMap.tsx` (colour
-expression), `apps/web/src/lib/format.ts` (speed and vertical-rate ramps),
-`apps/server/src/db/history-repository.ts` and `routes/api.ts` if the sort
-needs server support.
-
-**Acceptance.**
-- Timeline makes temporal overlap between up to eight tracks obvious at a
-  glance and stays legible on a narrow screen.
-- Sort choice is captured in the URL and in saved views, so a shared link
-  reproduces the same ordering.
-- Colour-by choice applies to both the map and the flight profile chart.
-
----
-
-### 12. Theme, density, and display preferences — **M**
-
-- [x] Implement
-
-**Problem.** The interface is dark-only (`color-scheme: dark`,
-`styles/base.css:4`). A dark radar map is the right default, but the app is
-unreadable in a bright room, and there is no control over text size or density
-beyond browser zoom — which breaks the fixed-height app shell
-(`html, body, #root { overflow: hidden }`).
-
-**Approach.**
-- Extract the existing palette into semantic tokens (it is already
-  token-driven — `--bg`, `--panel`, `--text` etc.), then add a light theme by
-  overriding the token values only.
-- Theme choice: system / dark / light, persisted per browser. Pair the light
-  theme with a light map style URL so the map does not fight the chrome.
-- A comfortable/compact density toggle driving `--type-body`, `--type-control`,
-  and row padding.
-
-**Files.** `styles/base.css` (tokens), each page stylesheet (replace any
-remaining literal colours), new `apps/web/src/lib/theme.ts`, `AppShell.tsx`,
-`SettingsPage.tsx`.
-
-**Acceptance.**
-- Both themes meet WCAG AA contrast for body text and interactive controls;
-  verified by the existing `@axe-core/playwright` e2e pass run in both themes.
-- No flash of the wrong theme on load.
-- Alert, emergency, and altitude-band colours remain distinguishable in light
-  mode — these carry meaning and must be re-checked, not merely inverted.
-- Existing dark appearance is byte-for-byte unchanged as the default.
+Item numbers are stable identifiers used in branch names and pull request
+titles. Numbers 8, 11, and 19 belonged to items dropped before implementation
+(notifications, onboarding, multi-receiver) and are not reused.
 
 ---
 
 ## Tier 2 — Depth and polish
 
-### 13. Multi-track profile comparison — **S**
+Phase 2. Items 22–25 are new, added now that phase 1 has landed and the gaps it
+exposed are visible.
 
-- [ ] Implement
+### 22. In-app navigation without full page reloads — **S**
 
-`FlightProfile` renders only the focused track (`HistoryPage.tsx:905`).
-Overlay up to four selected tracks on one altitude/speed axis, colour-matched to
-their map lines, so approaches to the same runway can be compared directly.
+- [x] Implement
 
-**Acceptance.** Overlay is legible with four tracks; the accessible data table
-that backs the chart lists every series; single-track behaviour is unchanged.
+**Problem.** Three internal links bypass the client router and reload the whole
+document:
 
----
+1. `InsightsPage.tsx:571` — the activity chart drill-through assigns
+   `window.location.href`.
+2. `InsightsPage.tsx:302` — `LeaderList` renders a raw `<a href="/aircraft/…">`
+   / `<a href="/history?…">`.
+3. `InsightsPage.tsx:627` — the coverage cell aircraft links do the same.
 
-### 14. Airport and runway layer — **M**
+Each one tears down the SPA, drops the live WebSocket (`LiveContext.tsx:80`),
+and refetches the bundle, so a drill-down costs a cold start. The router
+already exports `Link` and `navigate` (`apps/web/src/lib/router.tsx`), and
+`RadarMap`'s popup links use them correctly — this is drift, not a design
+choice. Item 17 adds more drill-downs, so fix the pattern first.
 
-- [ ] Implement
+**Approach.** Replace internal anchors with `Link` and programmatic navigation
+with `navigate()`. `Link` already stands aside for modifier and middle clicks
+and for `target="_blank"` (`router.tsx:69`), so opening in a new tab keeps
+working. Leave the download anchors alone — `exportHref` targets
+(`InsightsPage.tsx:464`) and the session exports (`HistoryPage.tsx:1029`) are
+server responses, not routes, and must stay plain anchors with `download`.
 
-The map shows configurable arrival/departure fixes
-(`default-waypoints.ts`) but no airports, so tracks converge on nothing visible.
-Ship a small bundled dataset of airports within a configurable radius of the
-receiver (ICAO, name, position, runway thresholds), rendered as a toggleable
-layer. Keep it local — no runtime external lookup, matching the offline-first
-metadata approach.
+Add an ESLint `no-restricted-syntax` rule for `apps/web/src` covering
+`window.location.href =` assignment and `JSXAttribute[name.name='href']` with a
+string literal starting `/` and no `download` sibling, so the pattern cannot
+silently return.
 
-**Acceptance.** Layer toggles with the others, is bounded in size, labels
-declutter at low zoom, and the data source and licence are documented in
-`docs/`.
+**Files.** `InsightsPage.tsx`, `eslint.config.mjs`, plus any anchor the sweep
+turns up.
+
+**Acceptance.**
+- No internal link causes a document navigation; an e2e test asserts the live
+  connection survives a chart drill-through.
+- Lint fails on a reintroduced raw internal anchor, and the rule's message names
+  the replacement.
+- Modifier-click, middle-click, and "open in new tab" still work on every
+  converted link.
+- Download anchors are unaffected and still carry `download`.
 
 ---
 
@@ -398,13 +78,38 @@ declutter at low zoom, and the data source and licence are documented in
 
 - [ ] Implement
 
-Saved views exist for Live, History, and Insights
-(`SavedViewsControl.tsx`) but every visit starts from the built-in default.
-Allow marking one view per surface as the default applied on load, and pinning
-up to three to the header for one-click switching.
+**Problem.** Saved views exist for Live, History, and Insights
+(`SavedViewsControl.tsx`) but every visit starts from the built-in default, and
+reaching a view takes two clicks through a menu that hides behind a popover. A
+user with one habitual configuration re-applies it every session.
 
-**Acceptance.** Default applies on load without a visible flash of the built-in
-state; a URL with explicit parameters always wins over the default.
+**Approach.** Add two fields to `saved_views`: `is_default boolean` and
+`pinned_at timestamptz`. Enforce the invariants in the database — a partial
+unique index on `(surface) WHERE is_default`, and the "at most three pins per
+surface" cap in the same advisory-locked transaction that already enforces the
+20-view limit (`saved-views-repository.ts:29`). New migration `014`.
+
+Extend `savedViewSchema` (`contracts.ts:550`) and `savedViewPatchSchema`
+(`contracts.ts:581`). On the client, each surface applies its default on mount
+unless the URL already carries explicit parameters; pinned views render as
+chips beside the Saved views button and are registered as commands
+(`lib/app-commands.ts`).
+
+**Files.** New `apps/server/src/db/migrations/014_saved_view_defaults.sql`,
+`saved-views-repository.ts`, `routes/api.ts`, `packages/shared/src/contracts.ts`,
+`SavedViewsControl.tsx`, `LivePage.tsx`, `HistoryPage.tsx`, `InsightsPage.tsx`,
+`lib/app-commands.ts`.
+
+**Acceptance.**
+- The default applies before the surface's first data fetch, so there is no
+  visible flash of the built-in state.
+- A URL with explicit parameters always wins over the default.
+- Setting a new default clears the previous one atomically; concurrent requests
+  cannot leave two defaults on one surface.
+- The fourth pin on a surface is refused with a message naming the limit, not a
+  generic error.
+- Pinned chips are keyboard reachable, appear in the command palette, and are
+  labelled as pinned to a screen reader.
 
 ---
 
@@ -412,13 +117,151 @@ state; a URL with explicit parameters always wins over the default.
 
 - [ ] Implement
 
-Add "Copy link" and "Download image" to the map controls. The link already
-exists in the URL for both Live and History — it just is not discoverable. The
-image uses the MapLibre canvas with an overlaid caption (receiver, timestamp,
-aircraft count).
+**Problem.** The URL already describes the view on Live and History, but nothing
+in the UI says so, and there is no way to save a picture of what the map is
+showing — the thing people actually want to send to someone.
 
-**Acceptance.** Copied link restores the identical view including viewport;
-downloaded PNG includes attribution required by the tile provider.
+**Approach.** Two buttons in the existing `.map-controls` cluster
+(`RadarMap.tsx:1340`).
+
+*Copy link* writes the current viewport into the URL on demand — `getViewport()`
+is already exposed through the imperative handle (`RadarMap.tsx:748`) — then
+copies it. Writing the viewport on demand rather than continuously keeps the
+history stack clean.
+
+*Download image* is not a one-liner: the map is constructed without
+`preserveDrawingBuffer` (`RadarMap.tsx:755`), so `canvas.toDataURL()` returns
+blank. Prefer forcing a synchronous redraw and reading inside a
+`map.once('render')` callback over enabling the flag permanently; if the flag
+proves necessary, measure it against the load smoke before keeping it. Compose
+the result onto a 2D canvas with a caption strip: receiver name, timestamp in
+the display time zone, aircraft count, and the attribution text the compact
+`AttributionControl` shows (`RadarMap.tsx:775`).
+
+**Files.** `RadarMap.tsx`, new `apps/web/src/lib/map-snapshot.ts` (also used by
+item 17), `LivePage.tsx`, `HistoryPage.tsx`, `styles/live.css`.
+
+**Acceptance.**
+- The copied link restores an identical view — viewport, filters, selection, and
+  replay position where applicable.
+- The PNG carries the tile provider attribution (OpenFreeMap, OpenMapTiles,
+  OpenStreetMap) legibly at the exported size.
+- Frame cost is unchanged when no snapshot is being taken; if
+  `preserveDrawingBuffer` is enabled, the load smoke shows under 5% regression.
+- Copy reports success and failure through an `aria-live` region, and falls back
+  to a selectable read-only input where the clipboard API is unavailable — a
+  non-secure-context LAN deployment is the normal case, not an edge case.
+
+---
+
+### 13. Multi-track profile comparison — **S**
+
+- [ ] Implement
+
+**Problem.** Up to eight tracks can be selected and drawn on the History map
+(`HistoryPage.tsx:518`), but `FlightProfile` renders only the focused one
+(`HistoryPage.tsx:1046`). Comparing two approaches to the same runway means
+clicking *Profile* back and forth (`HistoryPage.tsx:1028`) and holding the shape
+in your head.
+
+**Approach.** Take `tracks: TrackResponse[]` plus the focused id instead of a
+single track. Two x-axis modes: absolute time (default, matching
+`SessionTimeline`) and *align on start*, which is what makes approach profiles
+comparable. Cap the overlay at four series — beyond that the chart stops
+answering the question — and offer the rest through the existing focus control.
+
+Colour has to change meaning when comparing: the per-point ramp
+(`track-colour.ts`) is unreadable across four overlaid lines, so in comparison
+mode each series takes its map line's identity colour and the ramp is retained
+only for the single-track case. The focused series draws last, at full width;
+the others sit at reduced opacity.
+
+**Files.** `FlightProfile.tsx`, `HistoryPage.tsx`, `lib/track-colour.ts`
+(per-track identity colours, shared with the map and `SessionTimeline.tsx`),
+`styles/history.css`.
+
+**Acceptance.**
+- Four overlaid tracks stay legible in both themes and are distinguishable
+  without relying on colour alone — a dash pattern or an inline series label.
+- The accessible data table added under the chart (item 23) lists every series.
+- Single-track rendering, including the per-point colour ramp, is unchanged.
+- Axis mode is captured in the URL and in saved views.
+- The shared crosshair reports the focused series' values; scrubbing still
+  drives replay for all selected tracks.
+
+---
+
+### 23. Chart accessibility and data-table parity — **S**
+
+- [ ] Implement
+
+**Problem.** Insights sets the pattern — every chart has a keyboard-reachable
+`details.chart-data-table` fallback (`InsightsPage.tsx:173`, `:608`). Four charts
+never adopted it:
+
+- the flight profile (`FlightProfile.tsx:158`) — `role="img"` with one label;
+- the range profile (`RangeProfile.tsx:22`) — same;
+- the activity pattern grid (`ActivityPattern.tsx:24`) — per-cell labels, no
+  table, and the percentage-change annotation lives only in a `title`;
+- the aircraft profile activity bars (`AircraftProfilePage.tsx:25`) — `title`
+  attributes only, which a keyboard user never reaches.
+
+The cross-cutting requirements demand this, so it is a standing regression
+rather than a new feature.
+
+**Approach.** Extract the existing markup into a shared `ChartDataTable` taking
+a caption, columns, rows, and an optional row cap, then adopt it in Insights
+(no visual change) and in the four charts above. Values format through the
+existing helpers so unit preferences apply automatically. Replace
+`title`-only tooltips with content that is also reachable by keyboard.
+
+**Files.** New `apps/web/src/components/ChartDataTable.tsx`, `InsightsPage.tsx`,
+`FlightProfile.tsx`, `RangeProfile.tsx`, `ActivityPattern.tsx`,
+`AircraftProfilePage.tsx`, `styles/insights.css`.
+
+**Acceptance.**
+- Every chart in the app has a keyboard-reachable table of the values it plots.
+- Tables honour unit preferences and render unavailable values as `—`.
+- Capped tables state the cap, as the coverage table already does at 50 rows.
+- The `@axe-core/playwright` pass stays clean on Insights, History, and the
+  aircraft profile, in both themes.
+
+---
+
+### 25. Receiver records — **S**
+
+- [ ] Implement
+
+**Problem.** Insights reports maxima for the selected range only. The receiver's
+all-time records — farthest contact, highest, closest approach, busiest day,
+longest session, most-observed airframe — are the numbers a hobbyist actually
+shows people, and they already exist in aggregates that are retained
+indefinitely (`aircraft_summary`, `daily_aircraft_summary`,
+`daily_range_histogram`, `daily_coverage_cells`) long after detailed tracks
+expire. Nothing surfaces them.
+
+**Approach.** One endpoint, `GET /api/v1/insights/records`, returning a small
+fixed set of records, each with the ICAO and timestamp behind it so it can link
+onward. Render as a compact panel at the top of Insights, above the date range
+controls, explicitly labelled as all-time and range-independent — otherwise it
+reads as a bug when the numbers do not move with the date picker.
+
+Every figure must come from an indexed aggregate; nothing here may scan
+`position_samples`.
+
+**Files.** `apps/server/src/db/insights-repository.ts`,
+`apps/server/src/routes/api.ts`, `packages/shared/src/contracts.ts`,
+`apps/web/src/lib/api.ts`, `InsightsPage.tsx`, `styles/insights.css`.
+
+**Acceptance.**
+- The records query stays under 100 ms against a year of aggregates and is
+  index-backed — verified with `EXPLAIN` in the repository test.
+- Each record links to the aircraft profile, and to History when the session is
+  still within detailed retention; records whose track has expired still show,
+  with the link degraded to the profile.
+- A receiver with no data yet shows an explained empty state, not a row of
+  zeros.
+- Figures follow unit preferences and the display time zone.
 
 ---
 
@@ -426,13 +269,42 @@ downloaded PNG includes attribution required by the tile provider.
 
 - [ ] Implement
 
-Insights has strong data and CSV export
-(`GET /api/v1/exports/insights`). Add chart image export, per-series
-show/hide, and click-through from any chart element to a pre-filtered History
-search for that bucket.
+**Problem.** The activity chart drills through to History
+(`InsightsPage.tsx:571`) and the leader lists link out (`:302`), but the range
+profile (`RangeProfile.tsx`) and the pattern grid (`ActivityPattern.tsx`) are
+dead ends, the activity chart has no per-series show/hide (reports, positioned
+reports, and availability are drawn unconditionally), and export is CSV and
+GeoJSON only.
 
-**Acceptance.** Every drill-down lands on a History query that returns the
-sessions the chart element counted.
+**Approach.**
+- *Pattern grid cell → History*: filter to that weekday-hour across the current
+  range. `sessionQuerySchema` (`contracts.ts:857`) already carries `from`/`to`,
+  so this needs either repeated ranges in the query or a new weekday-hour
+  parameter — prefer the parameter, and back it with the existing start-time
+  index.
+- *Range sector → coverage, not History*: the sector data comes from
+  `daily_range_histogram`, which is aggregated and cannot name the sessions it
+  counted. Land the sector drill-down on the coverage map filtered to that
+  bearing wedge instead of inventing a History query that would return a
+  different set from the one the chart shows. Say this in the UI copy.
+- *Per-series toggles* on the activity chart, persisted with the other insights
+  preferences and captured in the saved view configuration.
+- *Chart image export* reusing the compositor from item 16: serialise the SVG to
+  a canvas, caption it with the receiver name and range.
+
+**Files.** `InsightsPage.tsx`, `ActivityPattern.tsx`, `RangeProfile.tsx`,
+`lib/map-snapshot.ts`, `HistoryPage.tsx`, `packages/shared/src/contracts.ts`,
+`apps/server/src/db/history-repository.ts`, `apps/server/src/routes/api.ts`.
+
+**Acceptance.**
+- Every drill-down lands on a query that returns exactly the population the
+  chart element counted — asserted against a seeded dataset, not checked by eye.
+  Where that is not possible, the drill-down goes somewhere it *is* true and the
+  UI says what it is showing.
+- Series visibility persists across reloads and is captured in saved views.
+- Exported chart PNGs are legible in both themes and carry the range and
+  receiver name.
+- Drill-downs navigate without a document reload (item 22).
 
 ---
 
@@ -440,14 +312,123 @@ sessions the chart element counted.
 
 - [ ] Implement
 
-Operational documentation lives in `docs/` and the README, reachable only from
-the repository. Add a Help page covering the shortcut reference, field
-glossary (NIC, NACp, SIL, emitter category, MLAT versus ADS-B), retention model,
-and what "detailed track expired" means — the concepts the UI already surfaces
-but never explains.
+**Problem.** Operational documentation lives in `docs/` and the README,
+reachable only from the repository. Meanwhile the UI shows terms it never
+explains: NIC / NACp / NACv / SIL (`AircraftDetailPanel.tsx:251`), the ADS-B
+versus MLAT source (`:248`), emitter category, the retention model, and
+"detailed track expired". The shortcut list exists only inside the `?` dialog
+(`KeyboardShortcuts.tsx:24`).
 
-**Acceptance.** Every jargon term shown in the detail panel appears in the
-glossary; the page works offline from the PWA shell.
+**Approach.** A `/help` route added to the known paths (`App.tsx:46`), reachable
+from the nav and from the `?` dialog. Sections: keyboard shortcuts, field
+glossary, retention and what expiry means, unit and export conventions, and map
+data provenance. Render the shortcut table from the same exported array the
+dialog uses, so the two cannot drift.
+
+The page must work offline from the PWA shell — it is exactly the page someone
+opens when something is not working. Check it against the workbox
+`globPatterns` in `vite.config.ts:71`.
+
+**Files.** New `apps/web/src/pages/HelpPage.tsx`, `App.tsx`, `AppShell.tsx`,
+`KeyboardShortcuts.tsx` (export the shortcut list), `vite.config.ts` if
+precaching needs adjusting, cross-links from `docs/operations.md`.
+
+**Acceptance.**
+- Every jargon term rendered in the detail panel and the map legend appears in
+  the glossary — asserted by a test that walks the panel's `<dt>` labels rather
+  than by a hand-maintained list.
+- The page loads with the network disabled after one visit.
+- The shortcut table and the `?` dialog are generated from one source.
+- Nav placement does not push the primary nav into overflow on a phone.
+
+---
+
+### 14. Airport and runway layer — **M**
+
+- [ ] Implement
+
+**Problem.** The map shows configurable arrival and departure fixes
+(`apps/server/src/default-waypoints.ts`, `apps/web/src/components/waypoints.ts`)
+but no airports, so tracks converge on nothing visible and a descending approach
+has no context.
+
+**Approach.** Bundle a small dataset — ICAO/IATA, name, position, elevation,
+runway idents and thresholds — filtered to a configurable radius of the
+receiver. Generate it at import time through a CLI beside the existing
+`metadata-cli.ts`, never at runtime: this keeps the offline-first rule the
+metadata pipeline already follows (`docs/metadata.md`). OurAirports is the
+obvious source (public domain); record the choice and its licence in `docs/`.
+
+Ship it as an application setting in the same shape as `mapWaypoints`, so a
+deployment can replace or empty it. Render as a toggleable layer in the layer
+menu (`MapLayerMenu.tsx:5`): airport symbol and label from mid zoom, runway
+centrelines above a higher threshold.
+
+**Files.** New `apps/server/src/airports-cli.ts` (or an extension of
+`metadata-cli.ts`), `apps/server/src/settings.ts`,
+`packages/shared/src/contracts.ts`, `apps/web/src/components/RadarMap.tsx`,
+`MapLayerMenu.tsx`, `apps/web/src/lib/map-preferences.ts`, new `docs/airports.md`.
+
+**Acceptance.**
+- The layer toggles alongside the others and is captured in saved views.
+- Bundled data stays within a stated budget — 250 kB gzipped for a 250 nm radius
+  is the working target; document the actual figure.
+- Labels declutter: no overlapping airport labels at any zoom, on either theme.
+- The data source and licence are documented and surfaced in the map
+  attribution.
+- A deployment with no airport data renders no layer and no error.
+
+---
+
+### 24. New-to-this-receiver sightings — **M**
+
+- [ ] Implement
+
+**Problem.** `aircraft_summary.first_seen_at` is the canonical record of when
+this receiver first heard each airframe (`001_initial.sql:138`), retained
+indefinitely, and nothing in the live UI uses it. Seeing an airframe for the
+first time is the moment most worth noticing, and today you cannot tell.
+
+Note the history: a first-seen *alert* existed and was deliberately removed as
+noise in migration `009_focused_alerts.sql` ("a new ICAO address is routine
+receiver history, not an event requiring attention"). That judgement stands.
+This item is the passive alternative — a marker you can go looking for, never a
+notification, never an `alert_events` row.
+
+**Approach.** Extend the live snapshot query (`live-repository.ts:46`) with one
+more `LEFT JOIN` onto `aircraft_summary` — it already joins `watchlist`,
+`alert_events`, and `aircraft_metadata` in a single statement, so this costs a
+join, not a round trip. Carry `firstSeenAt` on `liveAircraftSchema`
+(`contracts.ts:44`) and derive "new" on the client against a threshold
+preference (since this session started / last 24 hours).
+
+Deriving it client-side matters for the delta path: `LiveAircraftDiff` suppresses
+rows whose JSON is byte-identical to the previous tick
+(`aircraft-diff.ts:16`). A static `firstSeenAt` rides along on rows already
+being sent and costs nothing; a server-computed `isNew` boolean, or anything
+relative to `now`, would flip and force otherwise-unchanged rows onto the wire
+every second.
+
+Surface as: a badge in the table's aircraft cell and in the detail panel, a
+filter for new sightings, and an optional map emphasis. No sound, no nav badge,
+no alert feed entry.
+
+**Files.** `apps/server/src/db/live-repository.ts`,
+`packages/shared/src/contracts.ts`, `apps/web/src/lib/aircraft-filter.ts`,
+`AircraftTable.tsx`, `AircraftFilters.tsx`, `AircraftDetailPanel.tsx`,
+`apps/web/src/lib/unit-preferences.ts` or a sibling for the threshold
+preference.
+
+**Acceptance.**
+- The added join does not measurably slow the 1 Hz snapshot at 1,000 aircraft —
+  asserted against the existing load smoke.
+- The delta payload is unchanged in size and frequency for aircraft whose
+  telemetry has not changed.
+- An aircraft with no summary row renders as unknown (`—`), never as "new".
+- No `alert_events` row is written under any circumstance, and the alert rule
+  constraint from migration 009 is untouched.
+- The badge meets AA contrast in both themes and is not conveyed by colour
+  alone.
 
 ---
 
@@ -455,7 +436,6 @@ glossary; the page works offline from the PWA shell.
 
 Worth doing, but each is a project rather than a feature. Scope properly before
 starting.
-
 
 ### 20. Aircraft photographs — **M**
 
@@ -481,21 +461,22 @@ offline, but it is a modelling exercise with an accuracy contract to define.
 - External notification transports (email, push services, Discord, webhooks).
 - Public/internet-facing hosting affordances.
 - Any runtime dependency on a third-party API in the default configuration.
-- Notifications
+- Notifications, including any revival of first-seen alerting (migration
+  `009_focused_alerts.sql`). Item 24 is passive marking, not alerting.
 
 ---
 
 ## Suggested sequencing
 
-1. **Sprint 1 — visual legibility.** Items 1, 3, 6. Highest visible change for
-   the least risk; all confined to the web workspace.
-2. **Sprint 2 — control and reach.** Items 2, 4, 5. Trails and units both touch
-   shared preference plumbing, so land them together.
-3. **Sprint 3 — attention and scale.** Items 7, 8, 11. Notifications and
-   onboarding make the dashboard usable unattended and from cold.
-4. **Sprint 4 — analysis.** Items 9, 10, 13. The history and map interrogation
-   work compounds.
-5. **Sprint 5 — accessibility and polish.** Items 12, 14–18.
+1. **Sprint 1 — foundations and quick wins.** Items 22, 23, 15. The navigation
+   fix and the shared chart table are prerequisites for later items; saved-view
+   defaults are the highest-value small feature.
+2. **Sprint 2 — share and compare.** Items 16, 13, 25. The snapshot compositor
+   from 16 is reused by 17, and 13 depends on the chart table from 23.
+3. **Sprint 3 — analysis reach.** Items 17, 18. Drill-downs assume 22 and 16 are
+   in place; the help page documents everything shipped by then.
+4. **Sprint 4 — new data.** Items 14, 24. Both touch server data paths and
+   deserve their own release.
 
 ## Cross-cutting requirements
 
@@ -503,9 +484,16 @@ Every item inherits the standards the v1 build already meets, and regressions
 against them block a merge:
 
 - Keyboard operable, visible focus, correct ARIA, and `prefers-reduced-motion`
-  respected. The `@axe-core/playwright` e2e pass must stay clean.
+  respected. The `@axe-core/playwright` e2e pass must stay clean in both themes.
+- Every chart has a keyboard-reachable table of its values (item 23 makes this
+  true; keep it true).
 - Desktop and mobile layouts both covered — the mobile bottom-sheet pattern in
   `LivePage.tsx` is the reference.
+- Both themes checked, including any colour that carries meaning.
+- All displayed measurements route through the `format.ts` helpers so unit
+  preferences and the display time zone apply; exports stay in ft/kt/nm and say
+  so.
+- Internal navigation uses the router, never a document load.
 - Unavailable values render as `—`, never as `0`, `null`, or `NaN`.
 - New preferences fail safe: corrupt or absent storage falls back to defaults
   without blocking live data (see `storedFilters`, `LivePage.tsx:50`).
