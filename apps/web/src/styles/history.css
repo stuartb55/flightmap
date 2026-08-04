@@ -473,14 +473,22 @@
 
 .selected-track-tray > header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
 }
 
 .selected-track-tray > header > div {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  /* Holds the colour and clear controls together at the trailing edge, and
+     keeps them together there when a narrow tray wraps them onto a new row. */
+  margin-right: auto;
+}
+
+.selected-track-tray > header .compact-select {
+  height: 32px;
 }
 
 .selected-track-chips {

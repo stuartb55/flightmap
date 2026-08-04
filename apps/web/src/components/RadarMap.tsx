@@ -33,6 +33,7 @@ import { waypointData } from './waypoints'
 import { isTextEntryTarget } from './KeyboardShortcuts'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
+import { trackColour, trackColourModes, type TrackColourMode } from '../lib/track-colour'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
@@ -67,6 +68,8 @@ interface Props {
   onMapDisplayChange?: (display: MapDisplayPreferences) => void
   coverageCells?: CoverageCell[]
   trails?: Record<string, TrailPoint[]>
+  /** What a history track's colour along its length means. Altitude by default. */
+  trackColourMode?: TrackColourMode
 }
 
 const AIRCRAFT_SOURCE = 'live-aircraft'
@@ -433,7 +436,10 @@ function receiverData(receiver?: Receiver | null): FeatureCollection<Point> {
   }
 }
 
-function trackData(tracks: TrackResponse[]): FeatureCollection<LineString> {
+function trackData(
+  tracks: TrackResponse[],
+  colourMode: TrackColourMode,
+): FeatureCollection<LineString> {
   const features: Feature<LineString>[] = []
   for (const track of tracks) {
     for (let index = 1; index < track.points.length; index += 1) {
@@ -445,7 +451,7 @@ function trackData(tracks: TrackResponse[]): FeatureCollection<LineString> {
         properties: {
           sessionId: track.session.id,
           icao: track.session.icao,
-          colour: altitudeColour(point.altitudeFt),
+          colour: trackColour(colourMode, point),
         },
         geometry: {
           type: 'LineString',
@@ -589,6 +595,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     onMapDisplayChange,
     coverageCells = [],
     trails = emptyTrails,
+    trackColourMode = 'altitude',
   },
   forwardedRef,
 ) {
@@ -606,6 +613,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const onSelectRef = useRef(onSelectAircraft)
   const onClearSelectionRef = useRef(onClearSelection)
   const tracksRef = useRef(tracks)
+  const trackColourModeRef = useRef(trackColourMode)
   const replayTimeRef = useRef(replayTime)
   const selectedIcaoRef = useRef(selectedIcao)
   const mapLayersRef = useRef(mapLayers)
@@ -631,6 +639,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   onClearSelectionRef.current = onClearSelection
   rulerActiveRef.current = rulerActive
   tracksRef.current = tracks
+  trackColourModeRef.current = trackColourMode
   replayTimeRef.current = replayTime
   selectedIcaoRef.current = selectedIcao
   mapLayersRef.current = mapLayers
@@ -863,7 +872,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
-      map.addSource(TRACK_SOURCE, { type: 'geojson', data: trackData(tracksRef.current) })
+      map.addSource(TRACK_SOURCE, {
+        type: 'geojson',
+        data: trackData(tracksRef.current, trackColourModeRef.current),
+      })
       map.addLayer({
         id: 'history-track-shadow',
         type: 'line',
@@ -1119,8 +1131,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
-    setSourceData(mapRef.current, TRACK_SOURCE, trackData(tracks))
-  }, [tracks, mapReady])
+    setSourceData(mapRef.current, TRACK_SOURCE, trackData(tracks, trackColourMode))
+  }, [tracks, trackColourMode, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1391,41 +1403,62 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           Map key
         </button>
         <div className="map-legend-body" id={legendBodyId}>
-          {/* One segment per colour band. Where the surrounding page has an
-              altitude filter, each is a button that isolates its band so the
-              list and the map never disagree about what is on screen. */}
-          <div
-            className="map-altitude-scale"
-            aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
-          >
-            {altitudeBands.map((band) => {
-              const description = bandDescription(band, units)
-              return onAltitudeBandChange ? (
-                <button
-                  key={band.key}
-                  type="button"
-                  data-band={band.key}
-                  className={altitudeBand === band.key ? 'active' : ''}
-                  style={{ '--band': band.colour } as CSSProperties}
-                  aria-pressed={altitudeBand === band.key}
-                  aria-label={
-                    altitudeBand === band.key
-                      ? `Show every altitude again instead of only aircraft ${description}`
-                      : `Show only aircraft ${description}`
-                  }
-                  onClick={() => onAltitudeBandChange(band)}
-                >
-                  <i />
-                  {bandLabel(band, units)}
-                </button>
-              ) : (
-                <span key={band.key} style={{ '--band': band.colour } as CSSProperties} title={description}>
-                  <i />
-                  {bandLabel(band, units)}
-                </span>
-              )
-            })}
-          </div>
+          {/* The colour scale says what the colours on the map currently mean:
+              the altitude ramp, which on a page with an altitude filter is
+              also the control for it, or the ramp the tracks are coloured by. */}
+          {trackColourMode === 'altitude' ? (
+            <div
+              className="map-altitude-scale"
+              aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
+            >
+              {altitudeBands.map((band) => {
+                const description = bandDescription(band, units)
+                return onAltitudeBandChange ? (
+                  <button
+                    key={band.key}
+                    type="button"
+                    data-band={band.key}
+                    className={altitudeBand === band.key ? 'active' : ''}
+                    style={{ '--band': band.colour } as CSSProperties}
+                    aria-pressed={altitudeBand === band.key}
+                    aria-label={
+                      altitudeBand === band.key
+                        ? `Show every altitude again instead of only aircraft ${description}`
+                        : `Show only aircraft ${description}`
+                    }
+                    onClick={() => onAltitudeBandChange(band)}
+                  >
+                    <i />
+                    {bandLabel(band, units)}
+                  </button>
+                ) : (
+                  <span key={band.key} style={{ '--band': band.colour } as CSSProperties} title={description}>
+                    <i />
+                    {bandLabel(band, units)}
+                  </span>
+                )
+              })}
+            </div>
+          ) : (() => {
+            const ramp = trackColourModes[trackColourMode]
+            return (
+              <div
+                className="map-altitude-scale"
+                aria-label={`Track ${ramp.label.toLowerCase()} colour scale`}
+              >
+                {ramp.steps.map((step, index) => (
+                  <span
+                    key={step.key}
+                    style={{ '--band': step.colour } as CSSProperties}
+                    title={ramp.description(step, ramp.steps[index + 1], units)}
+                  >
+                    <i />
+                    {ramp.tick(step, units)}
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
           <ul className="map-shape-key">
             {aircraftShapes.map((shape) => (
               <li key={shape}>

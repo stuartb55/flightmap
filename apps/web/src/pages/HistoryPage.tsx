@@ -11,6 +11,7 @@ import {
   FastForward,
   ListFilter,
   MapPinned,
+  Palette,
   Pause,
   Play,
   Search,
@@ -38,6 +39,7 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { defaultSessionSort, parseSessionSort, sessionSortOptions } from '../lib/session-sort'
+import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 import type {
   HistoricalSummary,
   HistoryFilters,
@@ -258,6 +260,7 @@ export function HistoryPage() {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
   const [follow, setFollow] = useState(false)
+  const [trackColourMode, setTrackColourMode] = useState<TrackColourMode>('altitude')
   /*
    * A phone cannot show the results list and a usable map at once: sharing the
    * height left the map shorter than the replay controls that sit over it. The
@@ -942,6 +945,7 @@ export function HistoryPage() {
           replayTime={replayTime}
           followReplay={follow}
           className="history-map"
+          trackColourMode={trackColourMode}
           mapLayers={mapLayers}
           onMapLayersChange={setMapLayers}
           coverageCells={coverage.cells}
@@ -993,6 +997,20 @@ export function HistoryPage() {
             <section className="selected-track-tray" aria-label="Selected tracks">
               <header>
                 <div><span className="eyebrow">SELECTED</span><strong>{selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}</strong></div>
+                <label className="compact-select">
+                  <Palette size={13} />
+                  <select
+                    value={trackColourMode}
+                    onChange={(event) => setTrackColourMode(event.target.value as TrackColourMode)}
+                    aria-label="Colour tracks by"
+                  >
+                    {(Object.entries(trackColourModes) as [TrackColourMode, { label: string }][]).map(
+                      ([value, mode]) => (
+                        <option key={value} value={value}>{mode.label}</option>
+                      ),
+                    )}
+                  </select>
+                </label>
                 <button type="button" className="text-button" onClick={clearTracks}><Trash2 size={14} /> Clear all</button>
               </header>
               <div className="selected-track-chips">
@@ -1022,6 +1040,7 @@ export function HistoryPage() {
           {focusedTrack ? (
             <FlightProfile
               track={focusedTrack}
+              colourMode={trackColourMode}
               replayTime={replayTime}
               onReplayTime={(time) => {
                 setPlaying(false)

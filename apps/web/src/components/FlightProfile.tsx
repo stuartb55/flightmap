@@ -8,6 +8,7 @@ import {
   formatVerticalRateValue,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { trackColour, type TrackColourMode } from '../lib/track-colour'
 import type { TrackPoint, TrackResponse } from '../types'
 
 type Metric = 'altitude' | 'speed' | 'verticalRate' | 'distance'
@@ -64,10 +65,13 @@ export function FlightProfile({
   track,
   replayTime,
   onReplayTime,
+  colourMode = 'altitude',
 }: {
   track: TrackResponse
   replayTime: number | null
   onReplayTime: (time: number) => void
+  /** Matches the map, so a colour means the same thing on both. */
+  colourMode?: TrackColourMode
 }) {
   useUnitPreferences()
   const [metric, setMetric] = useState<Metric>('altitude')
@@ -85,13 +89,35 @@ export function FlightProfile({
   const height = 180
   const chartTop = 14
   const chartBottom = 150
-  const path = useMemo(() => track.points.flatMap((point) => {
-    const value = definition.value(point)
-    if (value == null) return []
-    const x = ((Date.parse(point.recordedAt) - bounds.start) / (bounds.end - bounds.start)) * width
-    const y = chartBottom - ((value - bounds.minimum) / (bounds.maximum - bounds.minimum)) * (chartBottom - chartTop)
-    return [{ x, y }]
-  }).map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '), [bounds, definition, track.points])
+  /*
+   * The line is drawn as one path per run of same-coloured points rather than
+   * one path per point: a track can carry twenty thousand samples but crosses
+   * only a handful of colour boundaries. A segment takes the colour of the
+   * point it arrives at, matching how the map colours the same track.
+   */
+  const segments = useMemo(() => {
+    const plotted = track.points.flatMap((point) => {
+      const value = definition.value(point)
+      if (value == null || !Number.isFinite(value)) return []
+      return [{
+        x: ((Date.parse(point.recordedAt) - bounds.start) / (bounds.end - bounds.start)) * width,
+        y:
+          chartBottom -
+          ((value - bounds.minimum) / (bounds.maximum - bounds.minimum)) * (chartBottom - chartTop),
+        colour: trackColour(colourMode, point),
+      }]
+    })
+    const runs: Array<{ colour: string; d: string }> = []
+    const at = (point: { x: number; y: number }) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`
+    for (let index = 1; index < plotted.length; index += 1) {
+      const previous = plotted[index - 1]!
+      const point = plotted[index]!
+      const run = runs[runs.length - 1]
+      if (run && run.colour === point.colour) run.d += ` L${at(point)}`
+      else runs.push({ colour: point.colour, d: `M${at(previous)} L${at(point)}` })
+    }
+    return runs
+  }, [bounds, colourMode, definition, track.points])
   const activeTime = replayTime ?? bounds.start
   const active = nearestPoint(track.points, activeTime)
   const crosshairX = ((activeTime - bounds.start) / (bounds.end - bounds.start)) * width
@@ -141,7 +167,9 @@ export function FlightProfile({
       >
         <line x1="0" y1={chartBottom} x2={width} y2={chartBottom} className="profile-axis" />
         <line x1="0" y1={(chartTop + chartBottom) / 2} x2={width} y2={(chartTop + chartBottom) / 2} className="profile-grid" />
-        {path ? <path d={path} className="profile-line" /> : null}
+        {segments.map((segment) => (
+          <path key={segment.d} d={segment.d} className="profile-line" style={{ stroke: segment.colour }} />
+        ))}
         {track.events.map((event) => {
           const x = ((Date.parse(event.occurredAt) - bounds.start) / (bounds.end - bounds.start)) * width
           return x < 0 || x > width ? null : (

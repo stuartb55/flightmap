@@ -69,13 +69,19 @@ export function formatAltitude(
   return `${altitudeDisplayValue(value, units).toLocaleString('en-GB')} ${unitLabels.altitude[units.altitude]}`
 }
 
+export function speedDisplayValue(
+  value: number,
+  units: UnitPreferences = unitPreferences(),
+): number {
+  return Math.round(convertSpeed(value, units.speed))
+}
+
 export function formatSpeed(
   value: number | null | undefined,
   units: UnitPreferences = unitPreferences(),
 ): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  const converted = Math.round(convertSpeed(value, units.speed))
-  return `${converted.toLocaleString('en-GB')} ${unitLabels.speed[units.speed]}`
+  return `${speedDisplayValue(value, units).toLocaleString('en-GB')} ${unitLabels.speed[units.speed]}`
 }
 
 export function formatDistance(
@@ -87,6 +93,15 @@ export function formatDistance(
   return `${converted.toFixed(converted < 10 ? 1 : 0)} ${unitLabels.distance[units.distance]}`
 }
 
+export function verticalRateDisplayValue(
+  value: number,
+  units: UnitPreferences = unitPreferences(),
+): number {
+  return units.verticalRate === 'ms'
+    ? Math.round(convertVerticalRate(value, 'ms') * 10) / 10
+    : Math.round(value)
+}
+
 /** Signed rate without the trend arrow, for charts and readouts. */
 export function formatVerticalRateValue(
   value: number | null | undefined,
@@ -94,8 +109,9 @@ export function formatVerticalRateValue(
 ): string {
   if (value == null || !Number.isFinite(value)) return '—'
   const label = unitLabels.verticalRate[units.verticalRate]
-  if (units.verticalRate === 'ms') return `${convertVerticalRate(value, 'ms').toFixed(1)} ${label}`
-  return `${Math.round(value).toLocaleString('en-GB')} ${label}`
+  const converted = verticalRateDisplayValue(value, units)
+  if (units.verticalRate === 'ms') return `${converted.toFixed(1)} ${label}`
+  return `${converted.toLocaleString('en-GB')} ${label}`
 }
 
 export function formatVerticalRate(
