@@ -305,7 +305,9 @@ test('restores selected history tracks, replay position, and exports after refre
   test.skip(testInfo.project.name !== 'chromium', 'The mobile history layout is covered separately')
   await page.goto('/history')
   const search = page.getByPlaceholder('ICAO, callsign, registration, type…')
-  await search.fill('FLT0001')
+  // A callsign prefix rather than one callsign: this exercises comparing two
+  // tracks, which needs a second session to select.
+  await search.fill('FLT000')
   await page.getByRole('button', { name: 'Search history' }).click()
   const session = page.locator('.session-card button:enabled').first()
   await expect(session).toBeVisible({ timeout: 15_000 })
@@ -313,9 +315,31 @@ test('restores selected history tracks, replay position, and exports after refre
   const tray = page.getByRole('region', { name: 'Selected tracks' })
   await expect(tray).toBeVisible()
 
+  // The colour control re-keys the map legend to whatever the tracks now mean.
+  await tray.getByLabel('Colour tracks by').selectOption('speed')
+  await expect(page.locator('.map-altitude-scale')).toHaveAttribute(
+    'aria-label',
+    'Track ground speed colour scale',
+  )
+
+  // A second track brings up the timeline, which is what makes the overlap
+  // between them visible; removing it again leaves one track selected.
+  const second = page.locator('.session-card button:enabled').nth(1)
+  await second.click()
+  const timeline = page.getByRole('region', { name: 'Session timeline' })
+  await expect(timeline.locator('.timeline-lane')).toHaveCount(2)
+  await second.click()
+  await expect(timeline).toBeHidden()
+
   const downloadPromise = page.waitForEvent('download')
   await tray.getByRole('link', { name: /telemetry as CSV/ }).first().click()
   await expect((await downloadPromise).suggestedFilename()).toMatch(/^flightmap-session-.*\.csv$/)
+  // Re-ordering is part of the search, so it travels in the URL — and it does
+  // not cost the selection already on the map.
+  await page.getByLabel('Sort sessions').selectOption('closest_asc')
+  await expect.poll(() => new URL(page.url()).searchParams.get('sort')).toBe('closest_asc')
+  await expect(tray).toBeVisible()
+
   await page.getByRole('button', { name: 'Play replay' }).click()
   await expect.poll(() => new URL(page.url()).searchParams.getAll('session').length).toBe(1)
   await expect.poll(() => new URL(page.url()).searchParams.has('replay')).toBe(true)
@@ -323,6 +347,7 @@ test('restores selected history tracks, replay position, and exports after refre
   await page.reload()
   await expect(page.getByRole('region', { name: 'Selected tracks' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: /Pause replay|Play replay/ })).toBeVisible()
+  await expect(page.getByLabel('Sort sessions')).toHaveValue('closest_asc')
 })
 
 test('filters, compares, saves, restores, and exports Insights views', async ({ page }, testInfo) => {

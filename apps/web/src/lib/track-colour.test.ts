@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { trackColour, trackColourModes } from './track-colour'
+import { colourSpans, trackColour, trackColourModes } from './track-colour'
 import { altitudeBands } from './altitude-bands'
 import { aviationUnits, metricUnits } from './unit-preferences'
 import type { TrackPoint } from '../types'
@@ -56,6 +56,22 @@ describe('track colouring', () => {
     expect(trackColourModes.speed.description(step, undefined, aviationUnits)).toBe(
       '150 kt and above',
     )
+  })
+
+  it('folds a track into contiguous spans, one per colour change', () => {
+    const at = (minute: number, altitudeFt: number) =>
+      point({
+        recordedAt: new Date(Date.parse('2026-08-01T10:00:00.000Z') + minute * 60_000).toISOString(),
+        altitudeFt,
+      })
+    const spans = colourSpans([at(0, 1_000), at(1, 2_000), at(2, 25_000), at(3, 26_000)], 'altitude')
+
+    expect(spans).toHaveLength(2)
+    expect(spans[0]?.start).toBe(Date.parse('2026-08-01T10:00:00.000Z'))
+    // No seam: the second span begins exactly where the first ended.
+    expect(spans[1]?.start).toBe(spans[0]?.end)
+    expect(spans[1]?.end).toBe(Date.parse('2026-08-01T10:03:00.000Z'))
+    expect(spans[0]?.colour).not.toBe(spans[1]?.colour)
   })
 
   it('describes the open-ended descent step without printing an infinite rate', () => {

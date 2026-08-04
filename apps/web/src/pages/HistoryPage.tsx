@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { RadarMap } from '../components/RadarMap'
 import { FlightProfile } from '../components/FlightProfile'
+import { SessionTimeline } from '../components/SessionTimeline'
 import type { RadarMapHandle } from '../components/RadarMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { isFormTarget } from '../components/KeyboardShortcuts'
@@ -839,32 +840,36 @@ export function HistoryPage() {
             <h2>Track sessions</h2>
             <span>{sessions.length} results</span>
           </div>
-          <label className="compact-select">
-            <ArrowDownWideNarrow size={13} />
-            <select
-              value={sort}
-              onChange={(event) => changeSort(event.target.value as SessionSort)}
-              aria-label="Sort sessions"
-            >
-              {sessionSortOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="compact-select">
-            <SlidersHorizontal size={13} />
-            <select
-              value={resolution}
-              onChange={(event) => void changeResolution(event.target.value as Resolution)}
-              aria-label="Track resolution"
-            >
-              <option value="auto">Adaptive</option>
-              <option value="1s">Exact · 1 sec</option>
-              <option value="5s">5 sec</option>
-              <option value="15s">15 sec</option>
-              <option value="60s">60 sec</option>
-            </select>
-          </label>
+          {/* Grouped so a narrow sidebar wraps both controls together onto
+              their own row rather than splitting them across two. */}
+          <div className="results-controls">
+            <label className="compact-select">
+              <ArrowDownWideNarrow size={13} />
+              <select
+                value={sort}
+                onChange={(event) => changeSort(event.target.value as SessionSort)}
+                aria-label="Sort sessions"
+              >
+                {sessionSortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="compact-select">
+              <SlidersHorizontal size={13} />
+              <select
+                value={resolution}
+                onChange={(event) => void changeResolution(event.target.value as Resolution)}
+                aria-label="Track resolution"
+              >
+                <option value="auto">Adaptive</option>
+                <option value="1s">Exact · 1 sec</option>
+                <option value="5s">5 sec</option>
+                <option value="15s">15 sec</option>
+                <option value="60s">60 sec</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="session-list" aria-live="polite">
@@ -1050,7 +1055,7 @@ export function HistoryPage() {
           ) : null}
 
           {replayBounds && replayTime != null ? (
-            <div className="replay-panel">
+            <div className={`replay-panel ${selectedTracks.length > 1 ? 'with-timeline' : ''}`}>
               <div className="replay-topline">
                 <div>
                   <span className="eyebrow">REPLAY</span>
@@ -1061,6 +1066,24 @@ export function HistoryPage() {
                   {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
                 </div>
               </div>
+              {/* Above the slider, on the slider's own axis. A single track
+                  has nothing to overlap with and the flight profile already
+                  draws it against time, so the lanes appear once there is a
+                  comparison to make. */}
+              {selectedTracks.length > 1 ? (
+                <SessionTimeline
+                  tracks={selectedTracks}
+                  bounds={replayBounds}
+                  replayTime={replayTime}
+                  focusedTrackId={focusedTrackId}
+                  colourMode={trackColourMode}
+                  onFocusTrack={setFocusedTrackId}
+                  onReplayTime={(time) => {
+                    setPlaying(false)
+                    setReplayTime(time)
+                  }}
+                />
+              ) : null}
               <input
                 className="time-slider"
                 type="range"

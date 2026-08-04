@@ -128,3 +128,28 @@ export function trackColour(mode: TrackColourMode, point: TrackPoint): string {
   }
   return colour
 }
+
+/**
+ * A track's colours as spans of wall-clock time, in epoch milliseconds. Spans
+ * are contiguous — each begins where the last ended — so a strip drawn from
+ * them has no seams, and a track carrying twenty thousand samples still yields
+ * only as many spans as it has colour changes.
+ */
+export function colourSpans(
+  points: readonly TrackPoint[],
+  mode: TrackColourMode,
+): Array<{ start: number; end: number; colour: string }> {
+  const spans: Array<{ start: number; end: number; colour: string }> = []
+  for (const point of points) {
+    const time = Date.parse(point.recordedAt)
+    if (!Number.isFinite(time)) continue
+    const colour = trackColour(mode, point)
+    const last = spans[spans.length - 1]
+    if (!last) spans.push({ start: time, end: time, colour })
+    else if (last.colour === colour) last.end = time
+    // A span takes the colour of the point it arrives at, as the map and the
+    // flight profile both do.
+    else spans.push({ start: last.end, end: time, colour })
+  }
+  return spans
+}

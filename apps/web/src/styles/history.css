@@ -97,13 +97,23 @@
   background: #0a1016;
 }
 
-.results-heading > div {
+.results-heading > div:first-child {
   display: flex;
   align-items: baseline;
   gap: 7px;
-  /* Pushes the controls to the trailing edge and keeps them together there
-     when a narrow sidebar wraps them onto their own row. */
+  /* Pushes the controls to the trailing edge, and to their own row once the
+     sidebar is too narrow to hold both alongside the heading. */
   margin-right: auto;
+}
+
+.results-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.results-controls select {
+  max-width: 118px;
 }
 
 .results-heading h2 {
@@ -732,4 +742,112 @@
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+/* One lane per selected session against the shared replay window, directly
+   above the slider that scrubs it: stacking the lanes on the slider's own axis
+   is what makes overlap in time visible. */
+.session-timeline {
+  display: block;
+  margin-bottom: 9px;
+}
+
+/* The slider and its ticks step in by the width of the lane labels, so the
+   handle and the lane cursors mark the same instant on one shared axis. */
+.replay-panel.with-timeline .time-slider,
+.replay-panel.with-timeline .replay-ticks {
+  width: calc(100% - 100px);
+  margin-left: 100px;
+}
+
+.timeline-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  /* Five lanes fit; beyond that the strip scrolls rather than pushing the
+     replay controls off a short window. */
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.timeline-lane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-label {
+  display: flex;
+  flex: 0 0 92px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 2px 4px;
+  overflow: hidden;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-label strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-label small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.timeline-lane.focused .timeline-label {
+  border-color: rgba(88, 213, 177, 0.4);
+  background: rgba(88, 213, 177, 0.1);
+}
+
+.timeline-bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.timeline-bar i {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 1px;
+}
+
+.timeline-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text);
+}
+
+@media (max-width: 800px) {
+  /* The lane label is the first thing to give up room on a phone. */
+  .timeline-label {
+    flex-basis: 68px;
+  }
+
+  .timeline-label small {
+    display: none;
+  }
+
+  .replay-panel.with-timeline .time-slider,
+  .replay-panel.with-timeline .replay-ticks {
+    width: calc(100% - 76px);
+    margin-left: 76px;
+  }
 }
