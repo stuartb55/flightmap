@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings } from '../types'
+import { appearance, defaultAppearance, setAppearance } from '../lib/theme'
 
 const apiMock = vi.hoisted(() => ({
   settings: vi.fn(),
@@ -60,6 +61,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  setAppearance(defaultAppearance)
 })
 
 describe('SettingsPage', () => {
@@ -115,6 +117,47 @@ describe('SettingsPage', () => {
       }),
     )
     expect(screen.getByText(/Settings saved and applied/)).toBeInTheDocument()
+  })
+
+  it('applies theme and density on change, without waiting for the save button', async () => {
+    apiMock.settings.mockResolvedValue({ settings: defaultSettings, updatedAt: null })
+    const user = userEvent.setup()
+
+    render(<SettingsPage />)
+
+    const theme = await screen.findByRole('combobox', { name: /Theme/ })
+    await user.selectOptions(theme, 'light')
+    expect(appearance().theme).toBe('light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Density/ }), 'compact')
+    expect(appearance()).toEqual({ theme: 'light', density: 'compact' })
+    expect(document.documentElement.dataset.density).toBe('compact')
+
+    // A browser preference must not travel to the server with the form.
+    expect(apiMock.updateSettings).not.toHaveBeenCalled()
+  })
+
+  it('carries a separate map style for each theme', async () => {
+    apiMock.settings.mockResolvedValue({ settings: defaultSettings, updatedAt: null })
+    apiMock.updateSettings.mockImplementation(async (settings: AppSettings) => ({
+      settings,
+      updatedAt: '2026-07-29T15:00:00.000Z',
+    }))
+
+    render(<SettingsPage />)
+
+    const light = await screen.findByRole('textbox', { name: /Light map style URL/ })
+    expect(light).toHaveValue(defaultSettings.mapStyleUrlLight)
+    fireEvent.submit(screen.getByRole('button', { name: 'Save settings' }).closest('form')!)
+
+    await waitFor(() => expect(apiMock.updateSettings).toHaveBeenCalledOnce())
+    expect(apiMock.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapStyleUrl: defaultSettings.mapStyleUrl,
+        mapStyleUrlLight: defaultSettings.mapStyleUrlLight,
+      }),
+    )
   })
 
   it('reports load and save failures', async () => {

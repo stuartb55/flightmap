@@ -121,16 +121,12 @@ export function useAppearance(): Appearance {
   return useSyncExternalStore(subscribeAppearance, appearance, appearance)
 }
 
-function resolvedTheme(): ResolvedTheme {
-  return resolveTheme(appearance().theme, prefersLight())
-}
-
 /**
  * The theme actually in force, for the parts of the interface CSS cannot reach
  * — chiefly the map style, which is fetched rather than styled.
  */
 export function useResolvedTheme(): ResolvedTheme {
-  return useSyncExternalStore(subscribeAppearance, resolvedTheme, resolvedTheme)
+  return useSyncExternalStore(subscribeAppearance, currentTheme, currentTheme)
 }
 
 /**
@@ -147,4 +143,13 @@ export function watchSystemTheme(): () => void {
   }
   query.addEventListener('change', onChange)
   return () => query.removeEventListener('change', onChange)
+}
+
+/**
+ * The theme in force, for code that colours data rather than chrome — the
+ * altitude and track ramps, which are drawn onto a canvas or a map layer and
+ * so cannot read a CSS custom property.
+ */
+export function currentTheme(): ResolvedTheme {
+  return resolveTheme(appearance().theme, prefersLight())
 }

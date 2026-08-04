@@ -16,14 +16,14 @@ const point = (overrides: Partial<TrackPoint> = {}): TrackPoint => ({
 
 describe('track colouring', () => {
   it('gives a track the same altitude colours the live map uses', () => {
-    for (const band of altitudeBands) {
+    for (const band of altitudeBands()) {
       if (band.key === 'ground') continue
       expect(trackColour('altitude', point({ altitudeFt: band.minimumFt + 1 }))).toBe(band.colour)
     }
   })
 
   it('colours by the step a value clears, not the one it approaches', () => {
-    const steps = trackColourModes.speed.steps
+    const steps = trackColourModes().speed.steps
     for (const [index, step] of steps.entries()) {
       const next = steps[index + 1]
       expect(trackColour('speed', point({ groundSpeedKt: step.minimum }))).toBe(step.colour)
@@ -44,16 +44,16 @@ describe('track colouring', () => {
 
   it('marks a value the receiver never reported rather than colouring it lowest', () => {
     const unknown = trackColour('speed', point({ groundSpeedKt: null }))
-    expect(unknown).not.toBe(trackColourModes.speed.steps[0]?.colour)
+    expect(unknown).not.toBe(trackColourModes().speed.steps[0]?.colour)
     expect(trackColour('verticalRate', point({ verticalRateFpm: undefined }))).toBe(unknown)
     expect(trackColour('altitude', point({ altitudeFt: null }))).toBe(unknown)
   })
 
   it('labels a ramp in the reader own units without moving its boundaries', () => {
-    const step = trackColourModes.speed.steps.find((item) => item.minimum === 150)!
-    expect(trackColourModes.speed.tick(step, aviationUnits)).toBe('150')
-    expect(trackColourModes.speed.tick(step, metricUnits)).toBe('278')
-    expect(trackColourModes.speed.description(step, undefined, aviationUnits)).toBe(
+    const step = trackColourModes().speed.steps.find((item) => item.minimum === 150)!
+    expect(trackColourModes().speed.tick(step, aviationUnits)).toBe('150')
+    expect(trackColourModes().speed.tick(step, metricUnits)).toBe('278')
+    expect(trackColourModes().speed.description(step, undefined, aviationUnits)).toBe(
       '150 kt and above',
     )
   })
@@ -75,11 +75,59 @@ describe('track colouring', () => {
   })
 
   it('describes the open-ended descent step without printing an infinite rate', () => {
-    const steps = trackColourModes.verticalRate.steps
+    const steps = trackColourModes().verticalRate.steps
     const steepest = steps[0]!
-    expect(trackColourModes.verticalRate.tick(steepest, aviationUnits)).toBe('')
-    expect(trackColourModes.verticalRate.description(steepest, steps[1], aviationUnits)).toBe(
+    expect(trackColourModes().verticalRate.tick(steepest, aviationUnits)).toBe('')
+    expect(trackColourModes().verticalRate.description(steepest, steps[1], aviationUnits)).toBe(
       'below -2,000 ft/min',
     )
+  })
+})
+
+/**
+ * The ramps are drawn onto a basemap, so they are graphical objects carrying
+ * information: WCAG 1.4.11 asks for 3:1 against what they sit on. The dark
+ * ramps were authored against a dark basemap and fail badly on a pale one,
+ * which is the whole reason a second set exists.
+ */
+describe('ramp contrast against the basemap of each theme', () => {
+  const channel = (value: number) =>
+    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+
+  const luminance = (hex: string) => {
+    const [red, green, blue] = [1, 3, 5].map((index) =>
+      channel(parseInt(hex.slice(index, index + 2), 16) / 255),
+    )
+    return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!
+  }
+
+  const contrast = (one: string, two: string) => {
+    const [brighter, darker] = [luminance(one), luminance(two)].sort((a, b) => b - a)
+    return (brighter! + 0.05) / (darker! + 0.05)
+  }
+
+  // Representative land colours from the dark and the bright OpenFreeMap styles.
+  const basemap = { dark: '#0c1319', light: '#f8f4f0' } as const
+
+  it.each(['dark', 'light'] as const)('keeps every %s ramp legible', (theme) => {
+    const modes = trackColourModes(theme)
+    for (const mode of [modes.altitude, modes.speed, modes.verticalRate]) {
+      for (const step of mode.steps) {
+        expect(
+          contrast(step.colour, basemap[theme]),
+          `${mode.label} ${step.key} (${step.colour}) on the ${theme} basemap`,
+        ).toBeGreaterThanOrEqual(3)
+      }
+    }
+  })
+
+  it('gives each theme its own ramp rather than reusing one', () => {
+    const dark = trackColourModes('dark')
+    const light = trackColourModes('light')
+    for (const key of ['altitude', 'speed', 'verticalRate'] as const) {
+      expect(dark[key].steps.map((step) => step.colour)).not.toEqual(
+        light[key].steps.map((step) => step.colour),
+      )
+    }
   })
 })

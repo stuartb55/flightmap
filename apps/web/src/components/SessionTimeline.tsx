@@ -1,5 +1,6 @@
 import { useMemo, type PointerEvent } from 'react'
 import { formatTime } from '../lib/format'
+import { useResolvedTheme } from '../lib/theme'
 import { colourSpans, type TrackColourMode } from '../lib/track-colour'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import type { TrackResponse } from '../types'
@@ -33,6 +34,8 @@ export function SessionTimeline({
   onReplayTime: (time: number) => void
 }) {
   useUnitPreferences()
+  // The ramps have a variant per theme, so a theme change must recolour the lanes.
+  const theme = useResolvedTheme()
   const window = Math.max(1, bounds.end - bounds.start)
   const percent = (time: number) => ((time - bounds.start) / window) * 100
 
@@ -40,9 +43,9 @@ export function SessionTimeline({
     () =>
       tracks.map((track) => ({
         track,
-        spans: colourSpans(track.points, colourMode),
+        spans: colourSpans(track.points, colourMode, theme),
       })),
-    [tracks, colourMode],
+    [tracks, colourMode, theme],
   )
 
   const scrub = (event: PointerEvent<HTMLDivElement>) => {

@@ -103,16 +103,55 @@ test('loads the MapLibre worker and style assets without warnings', async ({ pag
   expect(mapWarnings).toEqual([])
 })
 
-test('has no serious automated accessibility violations', async ({ page }) => {
-  for (const path of ['/', '/history', '/insights', '/alerts', '/system', '/settings']) {
-    await page.goto(path)
-    await expect(page.getByRole('main')).toBeVisible()
-    const results = await new AxeBuilder({ page }).analyze()
-    const important = results.violations.filter((violation) =>
-      ['serious', 'critical'].includes(violation.impact ?? ''),
-    )
-    expect(important, `${path}: ${important.map((violation) => violation.id).join(', ')}`).toEqual([])
-  }
+/**
+ * Both themes, because a light theme built by overriding token values is only
+ * as good as its contrast: the automated pass is what catches a token that was
+ * flipped without being re-checked.
+ */
+for (const theme of ['dark', 'light'] as const) {
+  test(`has no serious automated accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await page.addInitScript((value) => {
+      localStorage.setItem(
+        'flightmap.appearance.v1',
+        JSON.stringify({ theme: value, density: 'comfortable' }),
+      )
+    }, theme)
+    for (const path of ['/', '/history', '/insights', '/alerts', '/system', '/settings']) {
+      await page.goto(path)
+      await expect(page.getByRole('main')).toBeVisible()
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+      const results = await new AxeBuilder({ page }).analyze()
+      const important = results.violations.filter((violation) =>
+        ['serious', 'critical'].includes(violation.impact ?? ''),
+      )
+      expect(
+        important,
+        `${theme} ${path}: ${important.map((violation) => violation.id).join(', ')}`,
+      ).toEqual([])
+    }
+  })
+}
+
+test('remembers the appearance across a reload without a flash of the wrong theme', async ({
+  page,
+}) => {
+  await page.goto('/settings')
+  await page.getByLabel('Theme', { exact: false }).selectOption('light')
+  await page.getByLabel('Density', { exact: false }).selectOption('compact')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+
+  await page.reload()
+  // The blocking bootstrap script stamps this before anything paints, so it is
+  // already correct on the very first evaluation after navigation.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('html')).toHaveAttribute('data-density', 'compact')
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+
+  await page.getByLabel('Theme', { exact: false }).selectOption('dark')
+  await page.getByLabel('Density', { exact: false }).selectOption('comfortable')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 })
 
 test('supports live selection and optimistic watchlist editing', async ({ page, request }, testInfo) => {

@@ -75,6 +75,11 @@ Receiver coordinates are discovered from `receiver.json`; both can be
 overridden together in Settings. Dates are persisted in UTC and displayed in
 `Europe/London` by default.
 
+Theme (system, dark or light), density and units are per-browser choices rather
+than server settings, so two people watching the same receiver can differ. The
+theme carries the basemap with it: Settings holds a map style URL for each, and
+the content security policy allows both origins.
+
 ### Install as an app
 
 Serve Flightmap from a trusted HTTPS origin (or open it on `localhost`), then

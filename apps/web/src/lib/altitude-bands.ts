@@ -1,4 +1,5 @@
 import { altitudeColour } from './format'
+import type { ResolvedTheme } from './theme'
 
 /**
  * The altitude ramp the map colours aircraft by, as discrete bands. The legend
@@ -18,15 +19,24 @@ export interface AltitudeBand {
   colour: string
 }
 
-export const altitudeBands: readonly AltitudeBand[] = [
-  { key: 'ground', minimumFt: 0, maximumFt: 0, colour: altitudeColour('ground') },
-  { key: 'low', minimumFt: 0, maximumFt: 3_000, colour: altitudeColour(1_000) },
-  { key: 'lower', minimumFt: 3_000, maximumFt: 10_000, colour: altitudeColour(5_000) },
-  { key: 'middle', minimumFt: 10_000, maximumFt: 20_000, colour: altitudeColour(15_000) },
-  { key: 'high', minimumFt: 20_000, maximumFt: 30_000, colour: altitudeColour(25_000) },
-  { key: 'veryHigh', minimumFt: 30_000, maximumFt: 40_000, colour: altitudeColour(35_000) },
-  { key: 'extreme', minimumFt: 40_000, maximumFt: null, colour: altitudeColour(45_000) },
-]
+/**
+ * Computed per call rather than held as a constant: `altitudeColour` answers
+ * differently under each theme, and a legend built at module load would keep
+ * the ramp of whichever theme happened to be in force first.
+ */
+export function altitudeBands(theme?: ResolvedTheme): readonly AltitudeBand[] {
+  const colour = (altitude: Parameters<typeof altitudeColour>[0]) =>
+    altitudeColour(altitude, theme)
+  return [
+    { key: 'ground', minimumFt: 0, maximumFt: 0, colour: colour('ground') },
+    { key: 'low', minimumFt: 0, maximumFt: 3_000, colour: colour(1_000) },
+    { key: 'lower', minimumFt: 3_000, maximumFt: 10_000, colour: colour(5_000) },
+    { key: 'middle', minimumFt: 10_000, maximumFt: 20_000, colour: colour(15_000) },
+    { key: 'high', minimumFt: 20_000, maximumFt: 30_000, colour: colour(25_000) },
+    { key: 'veryHigh', minimumFt: 30_000, maximumFt: 40_000, colour: colour(35_000) },
+    { key: 'extreme', minimumFt: 40_000, maximumFt: null, colour: colour(45_000) },
+  ]
+}
 
 export interface AltitudeRange {
   minimum: string
@@ -48,7 +58,7 @@ export function bandRange(band: AltitudeBand): AltitudeRange {
  */
 export function bandForRange(range: AltitudeRange): AltitudeBand | null {
   return (
-    altitudeBands.find((band) => {
+    altitudeBands().find((band) => {
       const target = bandRange(band)
       return target.minimum === range.minimum.trim() && target.maximum === range.maximum.trim()
     }) ?? null

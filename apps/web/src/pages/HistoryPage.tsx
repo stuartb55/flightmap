@@ -1009,7 +1009,7 @@ export function HistoryPage() {
                     onChange={(event) => setTrackColourMode(event.target.value as TrackColourMode)}
                     aria-label="Colour tracks by"
                   >
-                    {(Object.entries(trackColourModes) as [TrackColourMode, { label: string }][]).map(
+                    {(Object.entries(trackColourModes()) as [TrackColourMode, { label: string }][]).map(
                       ([value, mode]) => (
                         <option key={value} value={value}>{mode.label}</option>
                       ),

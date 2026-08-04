@@ -8,6 +8,7 @@ import {
   formatVerticalRateValue,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { useResolvedTheme } from '../lib/theme'
 import { trackColour, type TrackColourMode } from '../lib/track-colour'
 import type { TrackPoint, TrackResponse } from '../types'
 
@@ -74,6 +75,8 @@ export function FlightProfile({
   colourMode?: TrackColourMode
 }) {
   useUnitPreferences()
+  // The ramps have a variant per theme, so a theme change must recolour the line.
+  const theme = useResolvedTheme()
   const [metric, setMetric] = useState<Metric>('altitude')
   const definition = metrics[metric]
   const bounds = useMemo(() => {
@@ -104,7 +107,7 @@ export function FlightProfile({
         y:
           chartBottom -
           ((value - bounds.minimum) / (bounds.maximum - bounds.minimum)) * (chartBottom - chartTop),
-        colour: trackColour(colourMode, point),
+        colour: trackColour(colourMode, point, theme),
       }]
     })
     const runs: Array<{ colour: string; d: string }> = []
@@ -117,7 +120,7 @@ export function FlightProfile({
       else runs.push({ colour: point.colour, d: `M${at(previous)} L${at(point)}` })
     }
     return runs
-  }, [bounds, colourMode, definition, track.points])
+  }, [bounds, colourMode, definition, theme, track.points])
   const activeTime = replayTime ?? bounds.start
   const active = nearestPoint(track.points, activeTime)
   const crosshairX = ((activeTime - bounds.start) / (bounds.end - bounds.start)) * width
