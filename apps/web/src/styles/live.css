@@ -1308,6 +1308,12 @@
   cursor: pointer;
 }
 
+/* Only the bottom-sheet layout has two stops to switch between; beside the map
+   the panel is always its full height. See responsive.css. */
+.detail-sheet-handle {
+  display: none;
+}
+
 .detail-panel {
   grid-area: detail;
   position: relative;

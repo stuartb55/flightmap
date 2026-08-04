@@ -82,6 +82,12 @@ interface Props {
   /** What a history track's colour along its length means. Altitude by default. */
   trackColourMode?: TrackColourMode
   /**
+   * Pixels along the bottom of the map hidden by an overlay the page draws over
+   * it — the mobile detail sheet. The camera aims at the middle of what is left
+   * rather than the middle of the canvas, so a selection cannot land behind it.
+   */
+  bottomInset?: number
+  /**
    * Applied once, when the map is created — a viewport carried by the URL of a
    * shared link. Later changes are ignored: after that the user owns the view.
    */
@@ -185,6 +191,16 @@ const prefersReducedMotion =
 
 function motionDuration(milliseconds: number) {
   return prefersReducedMotion ? 0 : milliseconds
+}
+
+/**
+ * Touch browsers synthesise a mouse event stream from a tap, so hover-only
+ * affordances have to ask whether the pointer can actually hover rather than
+ * whether a mouse event arrived.
+ */
+function hasHoverPointer() {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? true
 }
 
 /**
@@ -652,6 +668,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     coverageCells = [],
     trails = emptyTrails,
     trackColourMode = 'altitude',
+    bottomInset = 0,
     initialViewport = null,
     share,
   },
@@ -690,6 +707,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [rulerActive, setRulerActive] = useState(false)
   const [rulerPoints, setRulerPoints] = useState<Array<[number, number]>>([])
   const rulerActiveRef = useRef(rulerActive)
+  const hoverPointerRef = useRef(hasHoverPointer())
+  const bottomInsetRef = useRef(bottomInset)
   const shareRef = useRef(share)
   shareRef.current = share
   const initialViewportRef = useRef(initialViewport)
@@ -708,6 +727,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   onSelectRef.current = onSelectAircraft
   onClearSelectionRef.current = onClearSelection
   rulerActiveRef.current = rulerActive
+  bottomInsetRef.current = bottomInset
   tracksRef.current = tracks
   trackColourModeRef.current = trackColourMode
   themeRef.current = theme
@@ -728,6 +748,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           currentReceiver?.longitude ?? defaultReceiver().longitude,
           currentReceiver?.latitude ?? defaultReceiver().latitude,
         ],
+        offset: [0, -bottomInset / 2],
         zoom: 7.7,
         duration: motionDuration(500),
       })
@@ -741,7 +762,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       ),
     )
     mapRef.current?.fitBounds(bounds, {
-      padding: 70,
+      padding: { top: 70, right: 70, left: 70, bottom: 70 + bottomInset },
       maxZoom: 10,
       duration: motionDuration(700),
     })
@@ -754,6 +775,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         currentReceiver?.longitude ?? defaultReceiver().longitude,
         currentReceiver?.latitude ?? defaultReceiver().latitude,
       ],
+      offset: [0, -bottomInset / 2],
       zoom: 8.5,
       duration: motionDuration(600),
     })
@@ -1249,7 +1271,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         if (!rulerActiveRef.current) map.getCanvas().style.cursor = 'pointer'
       })
       map.on('mousemove', 'aircraft-icons', (event) => {
-        if (rulerActiveRef.current) return
+        // A touch device synthesises one mousemove from a tap and then never a
+        // mouseleave, so the card stuck over the layer buttons until the next
+        // tap landed on another aircraft. Hover is a mouse affordance only.
+        if (rulerActiveRef.current || !hoverPointerRef.current) return
         const icao = event.features?.[0]?.properties?.icao
         setHoveredIcao(typeof icao === 'string' ? icao : null)
       })
@@ -1358,23 +1383,27 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     // Recentring on an aircraft that is already comfortably on screen throws
     // the whole view about for no gain, which made picking through the table
     // feel violent. Only move the camera when the aircraft is off screen or
-    // crowding an edge.
+    // crowding an edge — where the edge is the overlay's, not the canvas's, so
+    // an aircraft behind the mobile detail sheet counts as off screen.
     const canvas = map.getCanvas()
+    const visibleHeight = Math.max(0, canvas.clientHeight - bottomInset)
     if (
       !needsRecentre(
         map.project([selected.longitude, selected.latitude]),
         canvas.clientWidth,
-        canvas.clientHeight,
+        visibleHeight,
       )
     ) {
       return
     }
     map.easeTo({
       center: [selected.longitude, selected.latitude],
+      // Lifts the target into the middle of the uncovered band.
+      offset: [0, -bottomInset / 2],
       zoom: Math.max(map.getZoom(), 9),
       duration: motionDuration(450),
     })
-  }, [selectedIcao, mapReady])
+  }, [bottomInset, selectedIcao, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1389,6 +1418,19 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     map.getCanvas().style.cursor = rulerActive ? 'crosshair' : ''
     if (rulerActive) setHoveredIcao(null)
   }, [rulerActive, mapReady])
+
+  // A tablet that gains or loses a mouse changes this mid-session, and a card
+  // left behind by the old pointer would have nothing to dismiss it.
+  useEffect(() => {
+    const query = window.matchMedia?.('(hover: hover) and (pointer: fine)')
+    if (!query) return
+    const update = () => {
+      hoverPointerRef.current = query.matches
+      if (!query.matches) setHoveredIcao(null)
+    }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   const rulerMeasurement =
     rulerPoints.length === 2 ? greatCircle(rulerPoints[0]!, rulerPoints[1]!) : null
@@ -1449,7 +1491,11 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     if (!followSelected || !selectedIcao || !mapRef.current) return
     const selected = aircraft.find((item) => item.icao === selectedIcao)
     if (selected?.longitude != null && selected.latitude != null) {
-      mapRef.current.easeTo({ center: [selected.longitude, selected.latitude], duration: motionDuration(250) })
+      mapRef.current.easeTo({
+        center: [selected.longitude, selected.latitude],
+        offset: [0, -bottomInsetRef.current / 2],
+        duration: motionDuration(250),
+      })
     }
   }, [aircraft, followSelected, selectedIcao])
 
