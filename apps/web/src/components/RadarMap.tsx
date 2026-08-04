@@ -14,7 +14,7 @@ import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
 import { Focus, Info, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
-import { defaultReceiver, useRuntimeConfig } from '../config'
+import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
 import { Link } from '../lib/router'
 import {
@@ -600,6 +600,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   forwardedRef,
 ) {
   const runtime = useRuntimeConfig()
+  const mapStyleUrl = useMapStyleUrl()
   const runtimeRef = useRef(runtime)
   runtimeRef.current = runtime
   const units = useUnitPreferences()
@@ -718,7 +719,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: runtime.mapStyleUrl,
+        style: mapStyleUrl,
         center: [
           receiverRef.current?.longitude ?? defaultReceiver().longitude,
           receiverRef.current?.latitude ?? defaultReceiver().latitude,
@@ -1106,7 +1107,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
     // A style change replaces every layer, so the map is rebuilt rather than
     // patched; every other runtime setting is applied by the effects below.
-  }, [runtime.mapStyleUrl])
+    // Switching theme changes the style, so it rebuilds through the same path.
+  }, [mapStyleUrl])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return

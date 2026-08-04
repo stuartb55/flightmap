@@ -26,19 +26,25 @@ export type BuildAppOptions = {
 };
 
 /**
- * The map style is the only remote origin the client contacts, so the policy
- * names it instead of allowing all of `http:` and `https:`. A style hosted on
- * one origin but serving tiles, sprites or glyphs from another needs that
- * origin adding here.
+ * The map styles are the only remote origins the client contacts, so the
+ * policy names them instead of allowing all of `http:` and `https:`. A style
+ * hosted on one origin but serving tiles, sprites or glyphs from another needs
+ * that origin adding here.
+ *
+ * Both the dark and the light style are listed, because either can be in force
+ * depending on the reader's theme.
  */
-export function contentSecurityPolicy(mapStyleUrl: string): string {
-  let mapOrigin = "";
-  try {
-    const url = new URL(mapStyleUrl);
-    if (["http:", "https:"].includes(url.protocol)) mapOrigin = ` ${url.origin}`;
-  } catch {
-    mapOrigin = "";
+export function contentSecurityPolicy(...mapStyleUrls: string[]): string {
+  const origins = new Set<string>();
+  for (const mapStyleUrl of mapStyleUrls) {
+    try {
+      const url = new URL(mapStyleUrl);
+      if (["http:", "https:"].includes(url.protocol)) origins.add(url.origin);
+    } catch {
+      // An unusable style URL simply contributes no origin.
+    }
   }
+  const mapOrigin = [...origins].map((origin) => ` ${origin}`).join("");
   return [
     "default-src 'self'",
     "script-src 'self'",
@@ -145,7 +151,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header("referrer-policy", "same-origin");
     reply.header(
       "content-security-policy",
-      contentSecurityPolicy(options.config.mapStyleUrl)
+      contentSecurityPolicy(
+        options.config.mapStyleUrl,
+        options.config.mapStyleUrlLight
+      )
     );
     reply.header(
       "permissions-policy",
@@ -230,6 +239,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         `<meta name="flightmap-config" content="${encodeURIComponent(
           JSON.stringify({
             mapStyleUrl: options.config.mapStyleUrl,
+            mapStyleUrlLight: options.config.mapStyleUrlLight,
             receiverName: options.config.receiverName,
             receiverLatitude: options.config.receiverLatitude,
             receiverLongitude: options.config.receiverLongitude,

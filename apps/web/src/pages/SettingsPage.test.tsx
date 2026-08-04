@@ -24,6 +24,7 @@ const defaultSettings: AppSettings = {
   receiverStatsIntervalMs: 60_000,
   displayTimeZone: 'Europe/London',
   mapStyleUrl: 'https://tiles.openfreemap.org/styles/dark',
+  mapStyleUrlLight: 'https://tiles.openfreemap.org/styles/bright',
   rangeRingsNm: [5, 10, 25, 50, 100],
   historyRetentionDays: 30,
   sessionGapSeconds: 300,

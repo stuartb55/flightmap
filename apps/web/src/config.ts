@@ -1,9 +1,11 @@
 import { mapWaypointSchema } from '@flightmap/shared'
 import type { MapWaypoint } from '@flightmap/shared'
 import { useSyncExternalStore } from 'react'
+import { useResolvedTheme } from './lib/theme'
 
 type RuntimeConfigInput = {
   mapStyleUrl?: string
+  mapStyleUrlLight?: string
   receiverName?: string
   receiverLatitude?: number | null
   receiverLongitude?: number | null
@@ -14,6 +16,7 @@ type RuntimeConfigInput = {
 
 export interface RuntimeConfig {
   mapStyleUrl: string
+  mapStyleUrlLight: string
   displayTimeZone: string
   rangeRingsNm: readonly number[]
   mapWaypoints: readonly MapWaypoint[]
@@ -50,6 +53,11 @@ function resolve(input: RuntimeConfigInput, previous?: RuntimeConfig): RuntimeCo
       previous?.mapStyleUrl ??
       import.meta.env.VITE_MAP_STYLE_URL ??
       'https://tiles.openfreemap.org/styles/dark',
+    mapStyleUrlLight:
+      input.mapStyleUrlLight ??
+      previous?.mapStyleUrlLight ??
+      import.meta.env.VITE_MAP_STYLE_URL_LIGHT ??
+      'https://tiles.openfreemap.org/styles/bright',
     displayTimeZone:
       input.displayTimeZone ??
       previous?.displayTimeZone ??
@@ -97,6 +105,16 @@ export function subscribeRuntimeConfig(listener: () => void): () => void {
 
 export function useRuntimeConfig(): RuntimeConfig {
   return useSyncExternalStore(subscribeRuntimeConfig, runtimeConfig, runtimeConfig)
+}
+
+/**
+ * The map style that matches the theme in force. A dark basemap under a light
+ * interface — or the reverse — is the one part of a theme switch CSS cannot
+ * do, because the style is fetched rather than styled.
+ */
+export function useMapStyleUrl(): string {
+  const config = useRuntimeConfig()
+  return useResolvedTheme() === 'light' ? config.mapStyleUrlLight : config.mapStyleUrl
 }
 
 export function defaultReceiver(): RuntimeConfig['receiver'] {

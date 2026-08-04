@@ -243,6 +243,7 @@ export interface AppSettings {
   receiverStatsIntervalMs: number
   displayTimeZone: string
   mapStyleUrl: string
+  mapStyleUrlLight: string
   rangeRingsNm: number[]
   /** Configured on the server; the Settings form does not edit these. */
   mapWaypoints?: MapWaypoint[]
