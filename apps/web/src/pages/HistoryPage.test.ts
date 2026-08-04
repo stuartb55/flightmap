@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { historyUrl, restoredTrackState, shouldShowSummarySection } from './HistoryPage'
+import {
+  historyUrl,
+  restoredSort,
+  restoredTrackState,
+  shouldShowSummarySection,
+} from './HistoryPage'
 
 describe('history summary pagination visibility', () => {
   it('keeps load-more reachable when a page contains only filtered recent summaries', () => {
@@ -14,21 +19,23 @@ describe('history summary pagination visibility', () => {
 describe('history URL restoration', () => {
   const firstSession = '11111111-1111-4111-8111-111111111111'
   const secondSession = '22222222-2222-4222-8222-222222222222'
+  const filters = {
+    query: 'G-TEST',
+    icao: '',
+    callsign: '',
+    registration: '',
+    type: '',
+    operator: '',
+    from: '2026-08-01T10:00',
+    to: '2026-08-01T14:00',
+    alert: 'watchlist',
+  } as const
 
   it('round-trips selected sessions, replay position, and resolution', () => {
     const replayTime = Date.parse('2026-08-01T12:34:56.000Z')
     const url = historyUrl(
-      {
-        query: 'G-TEST',
-        icao: '',
-        callsign: '',
-        registration: '',
-        type: '',
-        operator: '',
-        from: '2026-08-01T10:00',
-        to: '2026-08-01T14:00',
-        alert: 'watchlist',
-      },
+      filters,
+      'started_desc',
       [firstSession, secondSession],
       replayTime,
       '15s',
@@ -39,6 +46,20 @@ describe('history URL restoration', () => {
       replayTime,
       resolution: '15s',
     })
+  })
+
+  it('round-trips a non-default ordering and omits the default one', () => {
+    const sorted = historyUrl(filters, 'closest_asc', [], null, 'auto')
+    expect(restoredSort(sorted.split('?')[1] ?? '')).toBe('closest_asc')
+
+    const defaulted = historyUrl(filters, 'started_desc', [], null, 'auto')
+    expect(defaulted).not.toContain('sort=')
+    expect(restoredSort(defaulted.split('?')[1] ?? '')).toBe('started_desc')
+  })
+
+  it('falls back to the default ordering rather than failing on an unknown one', () => {
+    expect(restoredSort('?sort=by_vibes')).toBe('started_desc')
+    expect(restoredSort('')).toBe('started_desc')
   })
 
   it('deduplicates, validates, and bounds shared session identifiers', () => {

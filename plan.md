@@ -296,7 +296,7 @@ measuring, and no way to dismiss a selection by clicking empty space.
 
 ### 10. History: session timeline, sorting, and track colouring — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** History results are a flat card list ordered newest-first with no
 sort control — `sort: 'started_desc'` is hardcoded in the saved-view payload

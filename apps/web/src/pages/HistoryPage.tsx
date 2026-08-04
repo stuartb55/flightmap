@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SavedViewConfiguration } from '@flightmap/shared'
+import type { SavedViewConfiguration, SessionSort } from '@flightmap/shared'
 import {
+  ArrowDownWideNarrow,
   CalendarClock,
   Check,
   ChevronRight,
@@ -10,6 +11,7 @@ import {
   FastForward,
   ListFilter,
   MapPinned,
+  Palette,
   Pause,
   Play,
   Search,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react'
 import { RadarMap } from '../components/RadarMap'
 import { FlightProfile } from '../components/FlightProfile'
+import { SessionTimeline } from '../components/SessionTimeline'
 import type { RadarMapHandle } from '../components/RadarMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { isFormTarget } from '../components/KeyboardShortcuts'
@@ -36,6 +39,8 @@ import {
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useAppCommands } from '../lib/app-commands'
+import { defaultSessionSort, parseSessionSort, sessionSortOptions } from '../lib/session-sort'
+import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 import type {
   HistoricalSummary,
   HistoryFilters,
@@ -101,6 +106,10 @@ function filtersSearch(filters: HistoryFilters): string {
   return query ? `?${query}` : ''
 }
 
+export function restoredSort(search: string): SessionSort {
+  return parseSessionSort(new URLSearchParams(search).get('sort'))
+}
+
 export function restoredTrackState(search: string) {
   const params = new URLSearchParams(search)
   const selectedSessionIds = [...new Set(params.getAll('session'))]
@@ -121,11 +130,13 @@ export function restoredTrackState(search: string) {
 
 export function historyUrl(
   filters: HistoryFilters,
+  sort: SessionSort,
   selectedSessionIds: string[],
   replayTime: number | null,
   resolution: Resolution,
 ) {
   const params = new URLSearchParams(filtersSearch(filters).replace(/^\?/, ''))
+  if (sort !== defaultSessionSort) params.set('sort', sort)
   for (const id of selectedSessionIds.slice(0, 8)) params.append('session', id)
   if (replayTime != null) params.set('replay', new Date(replayTime).toISOString())
   if (resolution !== 'auto') params.set('resolution', resolution)
@@ -229,6 +240,7 @@ export function HistoryPage() {
     filtersFromSearch(routeSearch),
   )
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(filters)
+  const [sort, setSort] = useState<SessionSort>(() => restoredSort(routeSearch))
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [summaries, setSummaries] = useState<HistoricalSummary[]>([])
   const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null)
@@ -249,6 +261,7 @@ export function HistoryPage() {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
   const [follow, setFollow] = useState(false)
+  const [trackColourMode, setTrackColourMode] = useState<TrackColourMode>('altitude')
   /*
    * A phone cannot show the results list and a usable map at once: sharing the
    * height left the map shorter than the replay controls that sit over it. The
@@ -266,6 +279,8 @@ export function HistoryPage() {
   const lastFrameRef = useRef<number | null>(null)
   const searchGenerationRef = useRef(0)
   const searchAbortRef = useRef<AbortController | null>(null)
+  const sessionGenerationRef = useRef(0)
+  const sessionAbortRef = useRef<AbortController | null>(null)
   const restoreAbortRef = useRef<AbortController | null>(null)
   const restoringUrlRef = useRef(false)
   const wideAppliedRange = useMemo(() => {
@@ -280,7 +295,40 @@ export function HistoryPage() {
     }
   }, [appliedFilters.from, appliedFilters.to])
 
-  const search = useCallback(async (nextFilters: HistoryFilters) => {
+  /*
+   * The session half of a search, on its own generation and abort controller.
+   * Re-ordering the list re-runs only this: the retained summaries have their
+   * own ordering, and the tracks already on the map should survive a change to
+   * how the list beneath them is sorted.
+   */
+  const searchSessions = useCallback(
+    async (nextFilters: HistoryFilters, nextSort: SessionSort) => {
+      const generation = ++sessionGenerationRef.current
+      sessionAbortRef.current?.abort()
+      const controller = new AbortController()
+      sessionAbortRef.current = controller
+      setSessionError(null)
+      setSessionLoading(true)
+      try {
+        const page = await api.sessions(nextFilters, nextSort, null, controller.signal)
+        if (generation !== sessionGenerationRef.current) return
+        setSessions(page.sessions)
+        setSessionNextCursor(page.nextCursor)
+      } catch (requestError) {
+        if (controller.signal.aborted || generation !== sessionGenerationRef.current) return
+        setSessionError(
+          requestError instanceof Error ? requestError.message : 'Session search failed',
+        )
+      } finally {
+        if (!controller.signal.aborted && generation === sessionGenerationRef.current) {
+          setSessionLoading(false)
+        }
+      }
+    },
+    [],
+  )
+
+  const search = useCallback(async (nextFilters: HistoryFilters, nextSort: SessionSort) => {
     const generation = ++searchGenerationRef.current
     searchAbortRef.current?.abort()
     const controller = new AbortController()
@@ -309,29 +357,14 @@ export function HistoryPage() {
 
     const wideRange = Date.parse(to) - Date.parse(from) > 32 * 86_400_000
     if (wideRange) {
+      sessionAbortRef.current?.abort()
+      sessionGenerationRef.current += 1
       setSessions([])
       setSessionNextCursor(null)
       setSessionLoading(false)
       setSearchNotice('Detailed sessions are limited to 32 days; retained daily summaries are shown.')
     } else {
-      setSessionLoading(true)
-      void api
-        .sessions(nextFilters, null, controller.signal)
-        .then((page) => {
-          if (generation !== searchGenerationRef.current) return
-          setSessions(page.sessions)
-          setSessionNextCursor(page.nextCursor)
-        })
-        .catch((requestError) => {
-          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
-            setSessionError(requestError instanceof Error ? requestError.message : 'Session search failed')
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted && generation === searchGenerationRef.current) {
-            setSessionLoading(false)
-          }
-        })
+      void searchSessions(nextFilters, nextSort)
     }
 
     if (nextFilters.alert) {
@@ -367,16 +400,16 @@ export function HistoryPage() {
           }
         })
     }
-  }, [])
+  }, [searchSessions])
 
   const loadMoreSessions = async () => {
     if (!sessionNextCursor) return
-    const generation = searchGenerationRef.current
+    const generation = sessionGenerationRef.current
     setLoadingMore(true)
     setSessionError(null)
     try {
-      const page = await api.sessions(appliedFilters, sessionNextCursor)
-      if (generation !== searchGenerationRef.current) return
+      const page = await api.sessions(appliedFilters, sort, sessionNextCursor)
+      if (generation !== sessionGenerationRef.current) return
       setSessions((current) => [...current, ...page.sessions])
       setSessionNextCursor(page.nextCursor)
     } catch (requestError) {
@@ -412,12 +445,14 @@ export function HistoryPage() {
 
   useEffect(() => {
     const next = filtersFromSearch(routeSearch)
+    const nextSort = restoredSort(routeSearch)
     const restored = restoredTrackState(routeSearch)
     restoringUrlRef.current = restored.selectedSessionIds.length > 0
     setFilters(next)
     setAppliedFilters(next)
+    setSort(nextSort)
     setResolution(restored.resolution)
-    void search(next)
+    void search(next, nextSort)
     restoreAbortRef.current?.abort()
     const controller = new AbortController()
     restoreAbortRef.current = controller
@@ -444,6 +479,7 @@ export function HistoryPage() {
     }
     return () => {
       searchAbortRef.current?.abort()
+      sessionAbortRef.current?.abort()
       controller.abort()
     }
   }, [routeSearch, search])
@@ -451,9 +487,19 @@ export function HistoryPage() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     setAppliedFilters(filters)
-    const nextSearch = filtersSearch(filters)
-    if (routeSearch === nextSearch) void search(filters)
-    else navigate(`/history${nextSearch}`)
+    // A new search drops the selection, but keeps how the results are ordered
+    // and how finely they are sampled — both are choices about the search.
+    const nextUrl = historyUrl(filters, sort, [], null, resolution)
+    const nextSearch = nextUrl.slice('/history'.length)
+    if (routeSearch === nextSearch) void search(filters, sort)
+    else navigate(nextUrl)
+  }
+
+  // Re-ordering keeps the tracks on the map and the summaries beside them, so
+  // it re-runs the session list alone rather than the whole search.
+  const changeSort = (next: SessionSort) => {
+    setSort(next)
+    if (!wideAppliedRange) void searchSessions(appliedFilters, next)
   }
 
   const loadTrack = async (session: SessionSummary) => {
@@ -576,22 +622,23 @@ export function HistoryPage() {
       '',
       historyUrl(
         appliedFilters,
+        sort,
         selectedTracks.map((track) => track.session.id),
         replayTimeRef.current,
         resolution,
       ),
     )
-  }, [appliedFilters, resolution, selectedTracks])
+  }, [appliedFilters, resolution, selectedTracks, sort])
   const writeUrlRef = useRef(writeUrl)
   writeUrlRef.current = writeUrl
 
-  // Filters, selection and resolution settle on their own debounce. Replay is
+  // Filters, ordering, selection and resolution settle on their own debounce. Replay is
   // deliberately not a dependency: it advances every animation frame, and a
   // shared dependency would clear this timer before it could ever fire.
   useEffect(() => {
     const timer = window.setTimeout(() => writeUrlRef.current(), 300)
     return () => window.clearTimeout(timer)
-  }, [appliedFilters, resolution, selectedTracks])
+  }, [appliedFilters, resolution, selectedTracks, sort])
 
   // A playing replay is persisted on a fixed interval, and once more when it
   // stops, so the address bar stays close to the visible position without
@@ -655,7 +702,13 @@ export function HistoryPage() {
     }
     setMapLayers(configuration.mapLayers)
     navigate(
-      historyUrl(nextFilters, configuration.selectedSessionIds, configuration.replayTime, configuration.resolution),
+      historyUrl(
+        nextFilters,
+        parseSessionSort(configuration.sort),
+        configuration.selectedSessionIds,
+        configuration.replayTime,
+        configuration.resolution,
+      ),
     )
     if (configuration.viewport) {
       const viewport = configuration.viewport
@@ -787,20 +840,36 @@ export function HistoryPage() {
             <h2>Track sessions</h2>
             <span>{sessions.length} results</span>
           </div>
-          <label className="compact-select">
-            <SlidersHorizontal size={13} />
-            <select
-              value={resolution}
-              onChange={(event) => void changeResolution(event.target.value as Resolution)}
-              aria-label="Track resolution"
-            >
-              <option value="auto">Adaptive</option>
-              <option value="1s">Exact · 1 sec</option>
-              <option value="5s">5 sec</option>
-              <option value="15s">15 sec</option>
-              <option value="60s">60 sec</option>
-            </select>
-          </label>
+          {/* Grouped so a narrow sidebar wraps both controls together onto
+              their own row rather than splitting them across two. */}
+          <div className="results-controls">
+            <label className="compact-select">
+              <ArrowDownWideNarrow size={13} />
+              <select
+                value={sort}
+                onChange={(event) => changeSort(event.target.value as SessionSort)}
+                aria-label="Sort sessions"
+              >
+                {sessionSortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="compact-select">
+              <SlidersHorizontal size={13} />
+              <select
+                value={resolution}
+                onChange={(event) => void changeResolution(event.target.value as Resolution)}
+                aria-label="Track resolution"
+              >
+                <option value="auto">Adaptive</option>
+                <option value="1s">Exact · 1 sec</option>
+                <option value="5s">5 sec</option>
+                <option value="15s">15 sec</option>
+                <option value="60s">60 sec</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="session-list" aria-live="polite">
@@ -869,8 +938,8 @@ export function HistoryPage() {
           </section>
         ) : null}
         {searchNotice ? <p className="history-notice" role="status">{searchNotice}</p> : null}
-        {sessionError ? <div className="form-error retry-error" role="alert"><span>Sessions: {sessionError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
-        {summaryError ? <div className="form-error retry-error" role="alert"><span>Summaries: {summaryError}</span><button type="button" onClick={() => void search(appliedFilters)}>Retry</button></div> : null}
+        {sessionError ? <div className="form-error retry-error" role="alert"><span>Sessions: {sessionError}</span><button type="button" onClick={() => void search(appliedFilters, sort)}>Retry</button></div> : null}
+        {summaryError ? <div className="form-error retry-error" role="alert"><span>Summaries: {summaryError}</span><button type="button" onClick={() => void search(appliedFilters, sort)}>Retry</button></div> : null}
         {trackError ? <p className="form-error" role="alert">Track: {trackError}</p> : null}
       </aside>
 
@@ -881,6 +950,7 @@ export function HistoryPage() {
           replayTime={replayTime}
           followReplay={follow}
           className="history-map"
+          trackColourMode={trackColourMode}
           mapLayers={mapLayers}
           onMapLayersChange={setMapLayers}
           coverageCells={coverage.cells}
@@ -901,7 +971,7 @@ export function HistoryPage() {
               to: dateTimeInputToIso(appliedFilters.to),
               alert: appliedFilters.alert,
             },
-            sort: 'started_desc',
+            sort,
             selectedSessionIds: selectedTracks.map((track) => track.session.id),
             resolution,
             replayTime,
@@ -932,6 +1002,20 @@ export function HistoryPage() {
             <section className="selected-track-tray" aria-label="Selected tracks">
               <header>
                 <div><span className="eyebrow">SELECTED</span><strong>{selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}</strong></div>
+                <label className="compact-select">
+                  <Palette size={13} />
+                  <select
+                    value={trackColourMode}
+                    onChange={(event) => setTrackColourMode(event.target.value as TrackColourMode)}
+                    aria-label="Colour tracks by"
+                  >
+                    {(Object.entries(trackColourModes) as [TrackColourMode, { label: string }][]).map(
+                      ([value, mode]) => (
+                        <option key={value} value={value}>{mode.label}</option>
+                      ),
+                    )}
+                  </select>
+                </label>
                 <button type="button" className="text-button" onClick={clearTracks}><Trash2 size={14} /> Clear all</button>
               </header>
               <div className="selected-track-chips">
@@ -961,6 +1045,7 @@ export function HistoryPage() {
           {focusedTrack ? (
             <FlightProfile
               track={focusedTrack}
+              colourMode={trackColourMode}
               replayTime={replayTime}
               onReplayTime={(time) => {
                 setPlaying(false)
@@ -970,7 +1055,7 @@ export function HistoryPage() {
           ) : null}
 
           {replayBounds && replayTime != null ? (
-            <div className="replay-panel">
+            <div className={`replay-panel ${selectedTracks.length > 1 ? 'with-timeline' : ''}`}>
               <div className="replay-topline">
                 <div>
                   <span className="eyebrow">REPLAY</span>
@@ -981,6 +1066,24 @@ export function HistoryPage() {
                   {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
                 </div>
               </div>
+              {/* Above the slider, on the slider's own axis. A single track
+                  has nothing to overlap with and the flight profile already
+                  draws it against time, so the lanes appear once there is a
+                  comparison to make. */}
+              {selectedTracks.length > 1 ? (
+                <SessionTimeline
+                  tracks={selectedTracks}
+                  bounds={replayBounds}
+                  replayTime={replayTime}
+                  focusedTrackId={focusedTrackId}
+                  colourMode={trackColourMode}
+                  onFocusTrack={setFocusedTrackId}
+                  onReplayTime={(time) => {
+                    setPlaying(false)
+                    setReplayTime(time)
+                  }}
+                />
+              ) : null}
               <input
                 className="time-slider"
                 type="range"

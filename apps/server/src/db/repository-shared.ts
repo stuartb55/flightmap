@@ -311,9 +311,16 @@ export function decodeCursor<T>(
   }
 }
 
+/**
+ * Keyset position in a session page. Time sorts carry the timestamp they
+ * ordered by; the numeric sorts carry their own ordering value instead, so
+ * every sort paginates by the same "last row seen" rule rather than by offset.
+ * A cursor written before the numeric sorts existed still parses.
+ */
 export const sessionCursorSchema = z
   .object({
-    startedAt: z.string().datetime({ offset: true }),
+    startedAt: z.string().datetime({ offset: true }).optional(),
+    value: z.number().finite().optional(),
     id: z.string().uuid()
   })
   .strict();
