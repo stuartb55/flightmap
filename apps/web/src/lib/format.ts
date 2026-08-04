@@ -1,5 +1,6 @@
 import type { Altitude } from '../types'
 import { displayTimeZone } from '../config'
+import { currentTheme, type ResolvedTheme } from './theme'
 import {
   convertAltitude,
   convertDistance,
@@ -251,15 +252,32 @@ export function compactNumber(value: number | null | undefined): string {
   return new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
-export function altitudeColour(altitude: Altitude | undefined): string {
-  if (altitude === 'ground') return '#b7c0c8'
-  if (altitude == null) return '#8090a0'
-  if (altitude < 3_000) return '#72e5af'
-  if (altitude < 10_000) return '#50d5df'
-  if (altitude < 20_000) return '#5aa8ff'
-  if (altitude < 30_000) return '#ac8cff'
-  if (altitude < 40_000) return '#eb7ddd'
-  return '#ff7b86'
+/**
+ * The altitude ramp, once per theme. The hue sequence is the same in both —
+ * grey ground, green low, through blue and violet to red at the top — because
+ * that ordering is what a reader learns. Only the lightness moves: the dark
+ * ramp is bright enough to sit on a dark basemap, and the light ramp is dark
+ * enough to clear 3:1 against a pale one, which the dark ramp does not.
+ */
+const altitudeRamps: Record<ResolvedTheme, readonly string[]> = {
+  //         ground     unknown    <3k        <10k       <20k       <30k       <40k       40k+
+  dark: ['#b7c0c8', '#8090a0', '#72e5af', '#50d5df', '#5aa8ff', '#ac8cff', '#eb7ddd', '#ff7b86'],
+  light: ['#626d78', '#586e84', '#00874a', '#008192', '#0068c6', '#724dbf', '#9e3a93', '#b62f45'],
+}
+
+export function altitudeColour(
+  altitude: Altitude | undefined,
+  theme: ResolvedTheme = currentTheme(),
+): string {
+  const ramp = altitudeRamps[theme]
+  if (altitude === 'ground') return ramp[0]!
+  if (altitude == null) return ramp[1]!
+  if (altitude < 3_000) return ramp[2]!
+  if (altitude < 10_000) return ramp[3]!
+  if (altitude < 20_000) return ramp[4]!
+  if (altitude < 30_000) return ramp[5]!
+  if (altitude < 40_000) return ramp[6]!
+  return ramp[7]!
 }
 
 export function aircraftLabel(aircraft: {

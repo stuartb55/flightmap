@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { altitudeBands, bandForRange, bandRange, toggleBand } from './altitude-bands'
 
-const band = (key: string) => altitudeBands.find((item) => item.key === key)!
+const band = (key: string) => altitudeBands().find((item) => item.key === key)!
 
 describe('altitude bands', () => {
   it('covers the colour ramp from the ground upwards without a gap', () => {
-    const flying = altitudeBands.filter((item) => item.key !== 'ground')
+    const flying = altitudeBands().filter((item) => item.key !== 'ground')
     for (const [index, item] of flying.entries()) {
       if (index === 0) expect(item.minimumFt).toBe(0)
       else expect(item.minimumFt).toBe(flying[index - 1]!.maximumFt)

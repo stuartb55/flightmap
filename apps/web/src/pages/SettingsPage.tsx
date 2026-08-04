@@ -11,6 +11,16 @@ import { applyRuntimeConfig } from '../config'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/format'
 import {
+  densities,
+  densityLabels,
+  setAppearance,
+  themeChoices,
+  themeLabels,
+  useAppearance,
+  type Density,
+  type ThemeChoice,
+} from '../lib/theme'
+import {
   altitudeUnits,
   distanceUnits,
   presetUnits,
@@ -49,6 +59,7 @@ function buildSettings(data: FormData): AppSettings {
     receiverStatsIntervalMs: requiredNumber(data, 'receiverStatsIntervalSeconds') * 1_000,
     displayTimeZone: String(data.get('displayTimeZone') ?? ''),
     mapStyleUrl: String(data.get('mapStyleUrl') ?? ''),
+    mapStyleUrlLight: String(data.get('mapStyleUrlLight') ?? ''),
     rangeRingsNm: String(data.get('rangeRingsNm') ?? '')
       .split(',')
       .map((value) => Number(value.trim())),
@@ -125,6 +136,44 @@ function UnitChoice<K extends keyof UnitPreferences>({
         ))}
       </select>
     </Field>
+  )
+}
+
+/**
+ * Theme and density travel with the units: a browser preference rather than a
+ * server setting, applied on change so the reader can see what they picked.
+ */
+function DisplayAppearance() {
+  const { theme, density } = useAppearance()
+  return (
+    <div className="settings-field-pair">
+      <Field label="Theme" hint="Applies immediately and is stored in this browser">
+        <select
+          value={theme}
+          onChange={(event) =>
+            setAppearance({ theme: event.target.value as ThemeChoice, density })
+          }
+        >
+          {themeChoices.map((choice) => (
+            <option key={choice} value={choice}>
+              {themeLabels[choice]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Density" hint="Compact tightens text and table rows">
+        <select
+          value={density}
+          onChange={(event) => setAppearance({ theme, density: event.target.value as Density })}
+        >
+          {densities.map((choice) => (
+            <option key={choice} value={choice}>
+              {densityLabels[choice]}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </div>
   )
 }
 
@@ -338,12 +387,21 @@ export function SettingsPage() {
             <Field label="Display time zone" hint="IANA name, for example Europe/London">
               <input name="displayTimeZone" defaultValue={settings.displayTimeZone} required />
             </Field>
-            <Field label="Map style URL">
+            <Field label="Map style URL" hint="Used while the dark theme is in force">
               <input name="mapStyleUrl" type="url" defaultValue={settings.mapStyleUrl} required />
+            </Field>
+            <Field label="Light map style URL" hint="Used while the light theme is in force">
+              <input
+                name="mapStyleUrlLight"
+                type="url"
+                defaultValue={settings.mapStyleUrlLight}
+                required
+              />
             </Field>
             <Field label="Range rings" hint="Nautical miles, comma-separated">
               <input name="rangeRingsNm" defaultValue={settings.rangeRingsNm.join(', ')} required />
             </Field>
+            <DisplayAppearance />
             <DisplayUnits />
           </SettingsCard>
 

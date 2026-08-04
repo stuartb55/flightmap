@@ -8,7 +8,7 @@
   align-items: start;
   justify-items: center;
   padding: 12vh 18px 18px;
-  background: rgba(2, 5, 8, 0.72);
+  background: var(--veil-1);
   backdrop-filter: blur(6px);
 }
 
@@ -20,7 +20,7 @@
   flex-direction: column;
   border: 1px solid var(--line-bright);
   border-radius: 11px;
-  background: #0c1319;
+  background: var(--surface-12);
   box-shadow: var(--shadow);
 }
 
@@ -85,7 +85,7 @@
 
 .palette-option.active {
   color: var(--text);
-  background: #16222c;
+  background: var(--surface-30);
 }
 
 .palette-option > span {
@@ -152,7 +152,7 @@
   color: var(--accent-bright);
   border: 1px solid var(--line-bright);
   border-radius: 4px;
-  background: #121b23;
+  background: var(--surface-25);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 10px;
 }

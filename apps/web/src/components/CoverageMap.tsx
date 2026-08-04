@@ -4,7 +4,7 @@ import type { CoverageCell, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { runtimeConfig } from '../config'
+import { runtimeConfig, useMapStyleUrl } from '../config'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
@@ -47,6 +47,7 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
   const cellsRef = useRef(cells)
   const onSelectCellRef = useRef(onSelectCell)
   const [mapError, setMapError] = useState(false)
+  const mapStyleUrl = useMapStyleUrl()
 
   useImperativeHandle(forwardedRef, () => ({
     getViewport: () => {
@@ -85,7 +86,7 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
     if (!containerRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: runtimeConfig().mapStyleUrl,
+      style: mapStyleUrl,
       center: [runtimeConfig().receiver.longitude, runtimeConfig().receiver.latitude],
       zoom: 6,
       attributionControl: false,
@@ -160,7 +161,8 @@ export const CoverageMap = forwardRef<CoverageMapHandle, { cells: CoverageCell[]
       map.remove()
       mapRef.current = null
     }
-  }, [])
+    // A style change replaces every layer, so the map is rebuilt rather than patched.
+  }, [mapStyleUrl])
 
   return (
     <div className="coverage-map-wrap">

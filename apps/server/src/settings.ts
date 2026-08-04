@@ -44,6 +44,7 @@ const settingsShape = {
   receiverStatsIntervalMs: z.number().int().min(10_000).max(86_400_000),
   displayTimeZone: timeZoneSchema,
   mapStyleUrl: httpUrlSchema,
+  mapStyleUrlLight: httpUrlSchema,
   rangeRingsNm: z
     .array(z.number().positive().max(1_000))
     .min(1)
@@ -120,6 +121,7 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   receiverStatsIntervalMs: 60_000,
   displayTimeZone: "Europe/London",
   mapStyleUrl: "https://tiles.openfreemap.org/styles/dark",
+  mapStyleUrlLight: "https://tiles.openfreemap.org/styles/bright",
   rangeRingsNm: [5, 10, 25, 50, 100],
   mapWaypoints: [...defaultMapWaypoints],
   historyRetentionDays: 30,

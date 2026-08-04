@@ -25,7 +25,7 @@
   border: 1px solid var(--line);
   border-radius: 15px;
   color: var(--muted-bright);
-  background: #0c1319;
+  background: var(--surface-12);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 14px;
   text-transform: capitalize;
@@ -38,9 +38,9 @@
 }
 
 .status-pill-good {
-  color: #a4e9d5;
-  border-color: rgba(88, 213, 177, 0.22);
-  background: rgba(88, 213, 177, 0.07);
+  color: var(--hue-24);
+  border-color: rgb(var(--accent-rgb) / 0.22);
+  background: rgb(var(--accent-rgb) / 0.07);
 }
 
 .status-pill-good .status-dot {
@@ -48,9 +48,9 @@
 }
 
 .status-pill-warn {
-  color: #e4c48d;
-  border-color: rgba(242, 184, 94, 0.22);
-  background: rgba(242, 184, 94, 0.06);
+  color: var(--hue-13);
+  border-color: rgb(var(--amber-rgb) / 0.22);
+  background: rgb(var(--amber-rgb) / 0.06);
 }
 
 .status-pill-warn .status-dot {
@@ -58,9 +58,9 @@
 }
 
 .status-pill-bad {
-  color: #f09ba4;
-  border-color: rgba(255, 97, 113, 0.22);
-  background: rgba(255, 97, 113, 0.06);
+  color: var(--hue-5);
+  border-color: rgb(var(--red-rgb) / 0.22);
+  background: rgb(var(--red-rgb) / 0.06);
 }
 
 .status-pill-bad .status-dot {
@@ -75,9 +75,9 @@
   margin: 15px auto 0;
   padding: 11px 13px;
   color: var(--red);
-  border: 1px solid rgba(255, 97, 113, 0.25);
+  border: 1px solid rgb(var(--red-rgb) / 0.25);
   border-radius: 8px;
-  background: rgba(255, 97, 113, 0.06);
+  background: rgb(var(--red-rgb) / 0.06);
 }
 
 .system-error span {
@@ -91,7 +91,7 @@
 
 .system-error small {
   margin-top: 2px;
-  color: #bd858b;
+  color: var(--hue-4);
   font-size: 12px;
 }
 
@@ -126,7 +126,7 @@
   padding: 14px 18px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0d141b;
+  background: var(--surface-14);
 }
 
 .health-overview > div {
@@ -170,22 +170,22 @@
   width: 48px;
   height: 48px;
   color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.25);
+  border: 1px solid rgb(var(--accent-rgb) / 0.25);
   border-radius: 50%;
-  background: rgba(88, 213, 177, 0.07);
-  box-shadow: inset 0 0 0 5px rgba(88, 213, 177, 0.025);
+  background: rgb(var(--accent-rgb) / 0.07);
+  box-shadow: inset 0 0 0 5px rgb(var(--accent-rgb) / 0.025);
 }
 
 .health-degraded {
   color: var(--amber);
-  border-color: rgba(242, 184, 94, 0.25);
-  background: rgba(242, 184, 94, 0.07);
+  border-color: rgb(var(--amber-rgb) / 0.25);
+  background: rgb(var(--amber-rgb) / 0.07);
 }
 
 .health-offline {
   color: var(--red);
-  border-color: rgba(255, 97, 113, 0.25);
-  background: rgba(255, 97, 113, 0.07);
+  border-color: rgb(var(--red-rgb) / 0.25);
+  background: rgb(var(--red-rgb) / 0.07);
 }
 
 .system-grid {
@@ -202,7 +202,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0d141b;
+  background: var(--surface-14);
 }
 
 .system-card > header {
@@ -212,7 +212,7 @@
   min-height: 67px;
   padding: 11px 13px;
   border-bottom: 1px solid var(--line);
-  background: #0e161d;
+  background: var(--surface-15);
 }
 
 .system-card > header > div {
@@ -231,27 +231,27 @@
   width: 39px;
   height: 39px;
   color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.17);
+  border: 1px solid rgb(var(--accent-rgb) / 0.17);
   border-radius: 9px;
-  background: rgba(88, 213, 177, 0.06);
+  background: rgb(var(--accent-rgb) / 0.06);
 }
 
 .system-card-icon.collector {
   color: var(--blue);
-  border-color: rgba(98, 169, 255, 0.17);
-  background: rgba(98, 169, 255, 0.06);
+  border-color: rgb(var(--blue-rgb) / 0.17);
+  background: rgb(var(--blue-rgb) / 0.06);
 }
 
 .system-card-icon.database {
-  color: #ae90ef;
-  border-color: rgba(174, 144, 239, 0.17);
-  background: rgba(174, 144, 239, 0.06);
+  color: var(--hue-30);
+  border-color: rgb(var(--purple-rgb) / 0.17);
+  background: rgb(var(--purple-rgb) / 0.06);
 }
 
 .system-card-icon.metadata {
   color: var(--amber);
-  border-color: rgba(242, 184, 94, 0.17);
-  background: rgba(242, 184, 94, 0.06);
+  border-color: rgb(var(--amber-rgb) / 0.17);
+  background: rgb(var(--amber-rgb) / 0.06);
 }
 
 .system-card-body {
@@ -271,7 +271,7 @@
   gap: 15px;
   min-height: 50px;
   padding: 9px 0;
-  border-bottom: 1px solid rgba(29, 42, 53, 0.72);
+  border-bottom: 1px solid rgb(var(--line-soft-rgb) / 0.72);
 }
 
 .system-data-row > span {
@@ -283,14 +283,14 @@
 
 .system-data-row small {
   margin-top: 2px;
-  color: #596a76;
+  color: var(--ink-31);
   font-size: 12px;
 }
 
 .system-data-row strong {
   overflow: hidden;
   max-width: 60%;
-  color: #c2cdd5;
+  color: var(--ink-12);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 14px;
   font-weight: 500;
@@ -305,10 +305,10 @@
   gap: 10px;
   margin: 8px 0 4px;
   padding: 11px;
-  color: #ae90ef;
-  border: 1px solid rgba(174, 144, 239, 0.13);
+  color: var(--hue-30);
+  border: 1px solid rgb(var(--purple-rgb) / 0.13);
   border-radius: 8px;
-  background: rgba(174, 144, 239, 0.04);
+  background: rgb(var(--purple-rgb) / 0.04);
 }
 
 .database-size span {
@@ -323,7 +323,7 @@
 
 .database-size strong {
   margin-top: 2px;
-  color: #d7c9f3;
+  color: var(--hue-31);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 18px;
 }
@@ -334,9 +334,9 @@
   gap: 7px;
   margin-top: 11px;
   padding: 9px;
-  color: #78aa9c;
+  color: var(--hue-25);
   border-radius: 7px;
-  background: rgba(88, 213, 177, 0.05);
+  background: rgb(var(--accent-rgb) / 0.05);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -352,6 +352,6 @@
   gap: 6px;
   max-width: 1194px;
   margin: 17px auto 0;
-  color: #647581;
+  color: var(--ink-27);
   font-size: 12px;
 }

@@ -1,4 +1,5 @@
 import { altitudeBands } from './altitude-bands'
+import { currentTheme, type ResolvedTheme } from './theme'
 import {
   formatSpeed,
   formatVerticalRateValue,
@@ -12,7 +13,7 @@ import type { TrackPoint } from '../types'
 export type TrackColourMode = 'altitude' | 'speed' | 'verticalRate'
 
 /** The colour every mode gives a point whose value the receiver never decoded. */
-const UNKNOWN = '#8090a0'
+const UNKNOWN: Record<ResolvedTheme, string> = { dark: '#8090a0', light: '#586e84' }
 
 /**
  * One step of a colour ramp: the colour applies from `minimum` up to the next
@@ -49,63 +50,89 @@ interface RampMode extends ColourMode {
  * around level flight on an orange/blue axis that survives the common forms of
  * colour blindness — a red-to-green axis would not.
  */
-const speedSteps: readonly ColourStep[] = [
-  { key: 'ground', minimum: 0, colour: '#b7c0c8' },
-  { key: 'slow', minimum: 60, colour: '#ffe08a' },
-  { key: 'moderate', minimum: 150, colour: '#ffbe63' },
-  { key: 'brisk', minimum: 250, colour: '#ff9350' },
-  { key: 'fast', minimum: 350, colour: '#ff6f6b' },
-  { key: 'veryFast', minimum: 450, colour: '#ff5f9e' },
-]
+const speedSteps: Record<ResolvedTheme, readonly ColourStep[]> = {
+  dark: [
+    { key: 'ground', minimum: 0, colour: '#b7c0c8' },
+    { key: 'slow', minimum: 60, colour: '#ffe08a' },
+    { key: 'moderate', minimum: 150, colour: '#ffbe63' },
+    { key: 'brisk', minimum: 250, colour: '#ff9350' },
+    { key: 'fast', minimum: 350, colour: '#ff6f6b' },
+    { key: 'veryFast', minimum: 450, colour: '#ff5f9e' },
+  ],
+  light: [
+    { key: 'ground', minimum: 0, colour: '#76828d' },
+    { key: 'slow', minimum: 60, colour: '#ab7f00' },
+    { key: 'moderate', minimum: 150, colour: '#ad5f00' },
+    { key: 'brisk', minimum: 250, colour: '#ad3d00' },
+    { key: 'fast', minimum: 350, colour: '#a51e26' },
+    { key: 'veryFast', minimum: 450, colour: '#950e50' },
+  ],
+}
 
-const verticalRateSteps: readonly ColourStep[] = [
-  { key: 'steepDescent', minimum: Number.NEGATIVE_INFINITY, colour: '#ff9d4d' },
-  { key: 'descent', minimum: -2_000, colour: '#ffcf8f' },
-  { key: 'level', minimum: -500, colour: '#b7c0c8' },
-  { key: 'climb', minimum: 500, colour: '#8fd0ff' },
-  { key: 'steepClimb', minimum: 2_000, colour: '#3fa0ff' },
-]
+const verticalRateSteps: Record<ResolvedTheme, readonly ColourStep[]> = {
+  dark: [
+    { key: 'steepDescent', minimum: Number.NEGATIVE_INFINITY, colour: '#ff9d4d' },
+    { key: 'descent', minimum: -2_000, colour: '#ffcf8f' },
+    { key: 'level', minimum: -500, colour: '#b7c0c8' },
+    { key: 'climb', minimum: 500, colour: '#8fd0ff' },
+    { key: 'steepClimb', minimum: 2_000, colour: '#3fa0ff' },
+  ],
+  light: [
+    { key: 'steepDescent', minimum: Number.NEGATIVE_INFINITY, colour: '#962e00' },
+    { key: 'descent', minimum: -2_000, colour: '#b87600' },
+    { key: 'level', minimum: -500, colour: '#67737e' },
+    { key: 'climb', minimum: 500, colour: '#0f88c9' },
+    { key: 'steepClimb', minimum: 2_000, colour: '#004da8' },
+  ],
+}
 
-export const trackColourModes: {
+/**
+ * Built per call, like `altitudeBands`: every ramp has a variant per theme so
+ * a track stays legible on a pale basemap as well as a dark one, and a
+ * constant would freeze whichever theme loaded first.
+ */
+export function trackColourModes(theme: ResolvedTheme = currentTheme()): {
   altitude: ColourMode
   speed: RampMode
   verticalRate: RampMode
-} = {
-  altitude: {
-    label: 'Altitude',
-    // The ground band shares its floor with the band above it; ordering keeps
-    // it first, so a point at zero feet reads as on the ground.
-    steps: altitudeBands.map((band) => ({
-      key: band.key,
-      minimum: band.minimumFt,
-      colour: band.colour,
-    })),
-    value: (point) => point.altitudeFt,
-  },
-  speed: {
-    label: 'Ground speed',
-    steps: speedSteps,
-    value: (point) => point.groundSpeedKt,
-    tick: (step, units) => speedDisplayValue(step.minimum, units).toLocaleString('en-GB'),
-    description: (step, next, units) =>
-      describeRange(formatSpeed(step.minimum, units), next && formatSpeed(next.minimum, units)),
-  },
-  verticalRate: {
-    label: 'Vertical rate',
-    steps: verticalRateSteps,
-    value: (point) => point.verticalRateFpm,
-    tick: (step, units) =>
-      Number.isFinite(step.minimum)
-        ? verticalRateDisplayValue(step.minimum, units).toLocaleString('en-GB')
-        : '',
-    description: (step, next, units) =>
-      step.key === 'level'
-        ? 'flying level'
-        : describeRange(
-            Number.isFinite(step.minimum) ? formatVerticalRateValue(step.minimum, units) : null,
-            next && formatVerticalRateValue(next.minimum, units),
-          ),
-  },
+} {
+  return {
+    altitude: {
+      label: 'Altitude',
+      // The ground band shares its floor with the band above it; ordering keeps
+      // it first, so a point at zero feet reads as on the ground.
+      steps: altitudeBands(theme).map((band) => ({
+        key: band.key,
+        minimum: band.minimumFt,
+        colour: band.colour,
+      })),
+      value: (point) => point.altitudeFt,
+    },
+    speed: {
+      label: 'Ground speed',
+      steps: speedSteps[theme],
+      value: (point) => point.groundSpeedKt,
+      tick: (step, units) => speedDisplayValue(step.minimum, units).toLocaleString('en-GB'),
+      description: (step, next, units) =>
+        describeRange(formatSpeed(step.minimum, units), next && formatSpeed(next.minimum, units)),
+    },
+    verticalRate: {
+      label: 'Vertical rate',
+      steps: verticalRateSteps[theme],
+      value: (point) => point.verticalRateFpm,
+      tick: (step, units) =>
+        Number.isFinite(step.minimum)
+          ? verticalRateDisplayValue(step.minimum, units).toLocaleString('en-GB')
+          : '',
+      description: (step, next, units) =>
+        step.key === 'level'
+          ? 'flying level'
+          : describeRange(
+              Number.isFinite(step.minimum) ? formatVerticalRateValue(step.minimum, units) : null,
+              next && formatVerticalRateValue(next.minimum, units),
+            ),
+    },
+  }
 }
 
 function describeRange(from: string | null, to: string | undefined): string {
@@ -118,11 +145,16 @@ function describeRange(from: string | null, to: string | undefined): string {
  * value clears wins; a value the receiver never reported is grey in every mode
  * rather than borrowing the colour of the bottom step.
  */
-export function trackColour(mode: TrackColourMode, point: TrackPoint): string {
-  const definition = trackColourModes[mode]
+export function trackColour(
+  mode: TrackColourMode,
+  point: TrackPoint,
+  theme: ResolvedTheme = currentTheme(),
+): string {
+  const definition = trackColourModes(theme)[mode]
   const value = definition.value(point)
-  if (value == null || !Number.isFinite(value)) return UNKNOWN
-  let colour = UNKNOWN
+  const unknown = UNKNOWN[theme]
+  if (value == null || !Number.isFinite(value)) return unknown
+  let colour = unknown
   for (const step of definition.steps) {
     if (value >= step.minimum) colour = step.colour
   }
@@ -138,12 +170,13 @@ export function trackColour(mode: TrackColourMode, point: TrackPoint): string {
 export function colourSpans(
   points: readonly TrackPoint[],
   mode: TrackColourMode,
+  theme: ResolvedTheme = currentTheme(),
 ): Array<{ start: number; end: number; colour: string }> {
   const spans: Array<{ start: number; end: number; colour: string }> = []
   for (const point of points) {
     const time = Date.parse(point.recordedAt)
     if (!Number.isFinite(time)) continue
-    const colour = trackColour(mode, point)
+    const colour = trackColour(mode, point, theme)
     const last = spans[spans.length - 1]
     if (!last) spans.push({ start: time, end: time, colour })
     else if (last.colour === colour) last.end = time

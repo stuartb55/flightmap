@@ -14,7 +14,8 @@ import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
 import { Focus, Info, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
-import { defaultReceiver, useRuntimeConfig } from '../config'
+import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
+import { useResolvedTheme, type ResolvedTheme } from '../lib/theme'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
 import { Link } from '../lib/router'
 import {
@@ -96,7 +97,10 @@ const layerIds = {
  * would multiply the feature count by the buffer length for a difference nobody
  * can see on a trail this short.
  */
-export function allTrailsData(trails: Record<string, TrailPoint[]>): FeatureCollection<LineString> {
+export function allTrailsData(
+  trails: Record<string, TrailPoint[]>,
+  theme?: ResolvedTheme,
+): FeatureCollection<LineString> {
   const features: Feature<LineString>[] = []
   for (const [icao, points] of Object.entries(trails)) {
     if (points.length < 2) continue
@@ -104,7 +108,7 @@ export function allTrailsData(trails: Record<string, TrailPoint[]>): FeatureColl
       type: 'Feature',
       properties: {
         icao,
-        colour: altitudeColour(points[points.length - 1]!.altitudeBaro),
+        colour: altitudeColour(points[points.length - 1]!.altitudeBaro, theme),
       },
       geometry: {
         type: 'LineString',
@@ -235,6 +239,31 @@ const shapeDecorations: Partial<Record<AircraftShape, (context: CanvasRenderingC
     context.fillRect(13.4, 29.6, 7.2, 1.6)
   },
 }
+
+/**
+ * Colours for the layers MapLibre paints itself. These sit on the basemap
+ * rather than on a panel, so they cannot read a CSS token — and a pale label
+ * with a dark halo, which is right over a dark basemap, reads as a smudge over
+ * a pale one.
+ */
+const mapLabelColours = {
+  dark: {
+    halo: '#091015',
+    aircraft: '#d7e3eb',
+    replay: '#ffffff',
+    arrival: '#ffd287',
+    departure: '#7ce8c9',
+    trackCasing: '#020406',
+  },
+  light: {
+    halo: '#ffffff',
+    aircraft: '#16202a',
+    replay: '#101820',
+    arrival: '#814300',
+    departure: '#006d4b',
+    trackCasing: '#ffffff',
+  },
+} as const satisfies Record<ResolvedTheme, Record<string, string>>
 
 function aircraftImage(shape: AircraftShape, colour: string): ImageData {
   const canvas = document.createElement('canvas')
@@ -439,6 +468,7 @@ function receiverData(receiver?: Receiver | null): FeatureCollection<Point> {
 function trackData(
   tracks: TrackResponse[],
   colourMode: TrackColourMode,
+  theme?: ResolvedTheme,
 ): FeatureCollection<LineString> {
   const features: Feature<LineString>[] = []
   for (const track of tracks) {
@@ -451,7 +481,7 @@ function trackData(
         properties: {
           sessionId: track.session.id,
           icao: track.session.icao,
-          colour: trackColour(colourMode, point),
+          colour: trackColour(colourMode, point, theme),
         },
         geometry: {
           type: 'LineString',
@@ -600,6 +630,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   forwardedRef,
 ) {
   const runtime = useRuntimeConfig()
+  const mapStyleUrl = useMapStyleUrl()
+  // The data ramps have a variant per theme, so a change must recolour them.
+  const theme = useResolvedTheme()
   const runtimeRef = useRef(runtime)
   runtimeRef.current = runtime
   const units = useUnitPreferences()
@@ -614,6 +647,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const onClearSelectionRef = useRef(onClearSelection)
   const tracksRef = useRef(tracks)
   const trackColourModeRef = useRef(trackColourMode)
+  const themeRef = useRef(theme)
   const replayTimeRef = useRef(replayTime)
   const selectedIcaoRef = useRef(selectedIcao)
   const mapLayersRef = useRef(mapLayers)
@@ -640,6 +674,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   rulerActiveRef.current = rulerActive
   tracksRef.current = tracks
   trackColourModeRef.current = trackColourMode
+  themeRef.current = theme
   replayTimeRef.current = replayTime
   selectedIcaoRef.current = selectedIcao
   mapLayersRef.current = mapLayers
@@ -714,11 +749,12 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!containerRef.current) return
+    const labels = mapLabelColours[theme]
     let map: MapLibreMap
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: runtime.mapStyleUrl,
+        style: mapStyleUrl,
         center: [
           receiverRef.current?.longitude ?? defaultReceiver().longitude,
           receiverRef.current?.latitude ?? defaultReceiver().latitude,
@@ -846,10 +882,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
             'match',
             ['get', 'kind'],
             'arrival',
-            '#ffd287',
-            '#7ce8c9',
+            labels.arrival,
+            labels.departure,
           ],
-          'text-halo-color': '#071014',
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.2,
           'text-opacity': 0.88,
         },
@@ -857,7 +893,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(ALL_TRAILS_SOURCE, {
         type: 'geojson',
-        data: allTrailsData(trailsRef.current),
+        data: allTrailsData(trailsRef.current, themeRef.current),
       })
       map.addLayer({
         id: 'all-aircraft-trails',
@@ -874,13 +910,13 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(TRACK_SOURCE, {
         type: 'geojson',
-        data: trackData(tracksRef.current, trackColourModeRef.current),
+        data: trackData(tracksRef.current, trackColourModeRef.current, themeRef.current),
       })
       map.addLayer({
         id: 'history-track-shadow',
         type: 'line',
         source: TRACK_SOURCE,
-        paint: { 'line-color': '#020406', 'line-width': 5, 'line-opacity': 0.5 },
+        paint: { 'line-color': labels.trackCasing, 'line-width': 5, 'line-opacity': 0.5 },
       })
       map.addLayer({
         id: 'history-track',
@@ -992,8 +1028,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           'text-optional': true,
         },
         paint: {
-          'text-color': '#d7e3eb',
-          'text-halo-color': '#091015',
+          'text-color': labels.aircraft,
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.2,
           'text-opacity': ['get', 'opacity'],
         },
@@ -1028,8 +1064,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           'text-allow-overlap': true,
         },
         paint: {
-          'text-color': '#ffffff',
-          'text-halo-color': '#071014',
+          'text-color': labels.replay,
+          'text-halo-color': labels.halo,
           'text-halo-width': 1.5,
         },
       })
@@ -1106,7 +1142,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
     // A style change replaces every layer, so the map is rebuilt rather than
     // patched; every other runtime setting is applied by the effects below.
-  }, [runtime.mapStyleUrl])
+    // Switching theme changes the style and these colours, so it rebuilds
+    // through the same path.
+  }, [mapStyleUrl, theme])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1131,8 +1169,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
-    setSourceData(mapRef.current, TRACK_SOURCE, trackData(tracks, trackColourMode))
-  }, [tracks, trackColourMode, mapReady])
+    setSourceData(mapRef.current, TRACK_SOURCE, trackData(tracks, trackColourMode, theme))
+  }, [tracks, trackColourMode, theme, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1146,7 +1184,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     if (!mapReady || !mapRef.current || !mapLayers.allTrails) return
     const publish = () => {
       if (mapRef.current) {
-        setSourceData(mapRef.current, ALL_TRAILS_SOURCE, allTrailsData(trailsRef.current))
+        setSourceData(mapRef.current, ALL_TRAILS_SOURCE, allTrailsData(trailsRef.current, themeRef.current))
       }
     }
     publish()
@@ -1411,7 +1449,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
               className="map-altitude-scale"
               aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
             >
-              {altitudeBands.map((band) => {
+              {altitudeBands(theme).map((band) => {
                 const description = bandDescription(band, units)
                 return onAltitudeBandChange ? (
                   <button
@@ -1440,7 +1478,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
               })}
             </div>
           ) : (() => {
-            const ramp = trackColourModes[trackColourMode]
+            const ramp = trackColourModes(theme)[trackColourMode]
             return (
               <div
                 className="map-altitude-scale"

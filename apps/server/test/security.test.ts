@@ -75,6 +75,26 @@ describe("content security policy", () => {
     expect(policy).not.toContain(" http:");
   });
 
+  it("names the light map style origin as well, since either can be in force", () => {
+    const policy = contentSecurityPolicy(
+      "https://tiles.openfreemap.org/styles/dark",
+      "https://tiles.example.net/styles/bright"
+    );
+    expect(policy).toContain(
+      "connect-src 'self' ws: wss: https://tiles.openfreemap.org https://tiles.example.net"
+    );
+  });
+
+  it("lists a shared origin once when both styles come from it", () => {
+    const policy = contentSecurityPolicy(
+      "https://tiles.openfreemap.org/styles/dark",
+      "https://tiles.openfreemap.org/styles/bright"
+    );
+    expect(policy).toContain(
+      "img-src 'self' data: blob: https://tiles.openfreemap.org;"
+    );
+  });
+
   it("falls back to same-origin only when the map style URL is unusable", () => {
     const policy = contentSecurityPolicy("not a url");
     expect(policy).toContain("connect-src 'self' ws: wss:;");

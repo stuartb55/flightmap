@@ -91,6 +91,15 @@ Changes saved on the Settings page take effect in the running server, and the
 saving tab applies map style, time zone, range ring and waypoint changes
 immediately. Other open tabs pick them up on their next load.
 
+Theme, density and units are stored in the browser under `flightmap.appearance.v1`
+and `flightmap.units.v1`, not in the server settings, so they follow the reader
+rather than the installation. Clearing site data restores the dark theme at a
+comfortable density.
+
+`mapStyleUrl` is used under the dark theme and `mapStyleUrlLight` under the
+light one. Both origins are named in the content security policy, so a style
+moved to a new host needs the setting changed rather than the policy edited.
+
 The map's arrival and departure fixes are the `mapWaypoints` setting. It ships
 with the reference deployment's Manchester fixes and can be replaced — or
 emptied — for any receiver:

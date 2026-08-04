@@ -188,7 +188,7 @@ describe('rulerData', () => {
 })
 
 describe('altitude legend labels', () => {
-  const band = (key: string) => altitudeBands.find((item) => item.key === key)!
+  const band = (key: string) => altitudeBands().find((item) => item.key === key)!
 
   it('labels each segment with the floor of its band', () => {
     expect(bandLabel(band('ground'), aviationUnits)).toBe('GND')

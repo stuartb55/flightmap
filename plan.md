@@ -331,7 +331,7 @@ needs server support.
 
 ### 12. Theme, density, and display preferences — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The interface is dark-only (`color-scheme: dark`,
 `styles/base.css:4`). A dark radar map is the right default, but the app is
