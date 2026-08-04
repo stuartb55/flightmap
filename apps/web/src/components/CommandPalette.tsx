@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { SavedView } from '@flightmap/shared'
 import { Bookmark, Plane, Search, SquareArrowOutUpRight } from 'lucide-react'
-import { api } from '../lib/api'
 import { nextSelectionIndex, type SelectionMove } from '../lib/aircraft-filter'
 import { publishAppCommand } from '../lib/app-commands'
 import { aircraftLabel } from '../lib/format'
 import { useLocation } from '../lib/router'
+import { refreshSavedViews, useSavedViews } from '../lib/saved-views'
 import { useModalFocus } from '../lib/use-modal-focus'
 import { useLiveAircraft } from '../state/LiveContext'
 import type { Aircraft } from '../types'
@@ -81,7 +81,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
-  const [views, setViews] = useState<SavedView[]>([])
+  const { views } = useSavedViews()
   const dialogRef = useRef<HTMLDivElement>(null)
 
   const close = () => setOpen(false)
@@ -102,16 +102,11 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', keydown)
   }, [])
 
-  // Views load when the palette first opens rather than on every app load: the
-  // palette is optional, and an unavailable list must not break it.
+  // Views refresh when the palette opens rather than on every app load: the
+  // palette is optional, and an unavailable list must not break it — the shared
+  // store keeps an empty list on failure.
   useEffect(() => {
-    if (!open) return
-    const controller = new AbortController()
-    void api
-      .savedViews(controller.signal)
-      .then(setViews)
-      .catch(() => setViews([]))
-    return () => controller.abort()
+    if (open) void refreshSavedViews()
   }, [open])
 
   if (!open) return null
@@ -149,8 +144,15 @@ export function CommandPalette() {
       id: `view:${view.id}`,
       group: 'Saved views' as const,
       label: view.name,
-      detail: `${view.surface} view`,
-      score: 0,
+      detail: [
+        `${view.surface} view`,
+        view.pinnedAt ? 'pinned' : null,
+        view.isDefault ? 'default' : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      // Pinned views are the ones someone reaches for, so they lead the group.
+      score: view.pinnedAt ? 10 : view.isDefault ? 5 : 0,
       run: () => {
         const path = surfacePaths[view.configuration.surface]
         close()

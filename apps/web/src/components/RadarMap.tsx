@@ -13,7 +13,7 @@ import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
-import { Focus, Info, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
+import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
 import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
 import { useResolvedTheme, type ResolvedTheme } from '../lib/theme'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
@@ -34,6 +34,14 @@ import { waypointData } from './waypoints'
 import { isTextEntryTarget } from './KeyboardShortcuts'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
+import {
+  composeSnapshot,
+  copyToClipboard,
+  downloadBlob,
+  mapAttribution,
+  snapshotFilename,
+  type SnapshotCaption,
+} from '../lib/map-snapshot'
 import { trackColour, trackColourModes, type TrackColourMode } from '../lib/track-colour'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
@@ -46,6 +54,8 @@ export interface RadarMapHandle {
   centerReceiver: () => void
   getViewport: () => MapViewport | null
   applyViewport: (viewport: MapViewport) => void
+  /** The current frame with its caption strip, as a PNG. */
+  captureImage: () => Promise<Blob | null>
 }
 
 interface Props {
@@ -71,6 +81,22 @@ interface Props {
   trails?: Record<string, TrailPoint[]>
   /** What a history track's colour along its length means. Altitude by default. */
   trackColourMode?: TrackColourMode
+  /**
+   * Applied once, when the map is created — a viewport carried by the URL of a
+   * shared link. Later changes are ignored: after that the user owns the view.
+   */
+  initialViewport?: MapViewport | null
+  /**
+   * Enables the copy-link and download-image controls. The page supplies what
+   * only it knows: how its state is written into a URL, and what the picture
+   * should say it is showing.
+   */
+  share?: {
+    surface: string
+    /** The page's own link, with the viewport it is asked for folded in. */
+    linkFor: (viewport: MapViewport | null) => string
+    caption: () => Omit<SnapshotCaption, 'attribution'>
+  }
 }
 
 const AIRCRAFT_SOURCE = 'live-aircraft'
@@ -626,6 +652,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     coverageCells = [],
     trails = emptyTrails,
     trackColourMode = 'altitude',
+    initialViewport = null,
+    share,
   },
   forwardedRef,
 ) {
@@ -662,6 +690,14 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [rulerActive, setRulerActive] = useState(false)
   const [rulerPoints, setRulerPoints] = useState<Array<[number, number]>>([])
   const rulerActiveRef = useRef(rulerActive)
+  const shareRef = useRef(share)
+  shareRef.current = share
+  const initialViewportRef = useRef(initialViewport)
+  // Only set when the view was restored from a link: see the recentre effect.
+  const restoredSelectionRef = useRef(initialViewport ? selectedIcao ?? null : null)
+  const [shareStatus, setShareStatus] = useState<string | null>(null)
+  const [shareLink, setShareLink] = useState<string | null>(null)
+  const shareLinkRef = useRef<HTMLInputElement>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
   const popupHostRef = useRef<HTMLDivElement | null>(null)
   popupHostRef.current ??= typeof document === 'undefined' ? null : document.createElement('div')
@@ -745,21 +781,113 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     })
   }
 
-  useImperativeHandle(forwardedRef, () => ({ fitAircraft, centerReceiver, getViewport, applyViewport }))
+  /*
+   * The map is created without `preserveDrawingBuffer`, so its drawing buffer
+   * is cleared as soon as the browser has composited a frame and reading it
+   * afterwards returns a blank image. Rather than pay for that flag on every
+   * frame of every session, a snapshot forces one repaint and copies the pixels
+   * out inside the render handler, while the buffer still holds the frame.
+   * The copy is synchronous for the same reason: awaiting anything here — even
+   * a microtask — can land after the clear.
+   */
+  const captureMap = (): Promise<HTMLCanvasElement | null> =>
+    new Promise((resolve) => {
+      const map = mapRef.current
+      if (!map) return resolve(null)
+      map.once('render', () => {
+        const source = map.getCanvas()
+        const copy = document.createElement('canvas')
+        copy.width = source.width
+        copy.height = source.height
+        const context = copy.getContext('2d')
+        if (!context) return resolve(null)
+        context.drawImage(source, 0, 0)
+        resolve(copy)
+      })
+      map.triggerRepaint()
+    })
+
+  const captureImage = async (): Promise<Blob | null> => {
+    const source = await captureMap()
+    if (!source) return null
+    const caption = shareRef.current?.caption() ?? { title: 'Flightmap', detail: '' }
+    return composeSnapshot(source, {
+      ...caption,
+      // Read from the control the map itself renders, so the picture cannot
+      // credit a provider the tiles did not come from.
+      attribution:
+        containerRef.current?.querySelector('.maplibregl-ctrl-attrib-inner')?.textContent?.trim() ||
+        mapAttribution,
+    })
+  }
+
+  /*
+   * A message that reports an outcome clears itself; one carrying a link to be
+   * copied by hand stays until it is dismissed, because it is still needed.
+   */
+  useEffect(() => {
+    if (!shareStatus || shareLink) return
+    const timer = window.setTimeout(() => setShareStatus(null), 6_000)
+    return () => window.clearTimeout(timer)
+  }, [shareStatus, shareLink])
+
+  const copyLink = async () => {
+    const link = shareRef.current?.linkFor(getViewport()) ?? window.location.href
+    setShareLink(null)
+    if (await copyToClipboard(link)) {
+      setShareStatus('Link copied. It restores this view.')
+      return
+    }
+    // http:// on a LAN has no clipboard API at all, which is the normal
+    // deployment rather than an edge case: show the link to be copied by hand.
+    setShareLink(link)
+    setShareStatus('Copying is unavailable here. Select the link below to copy it.')
+  }
+
+  const downloadImage = async () => {
+    setShareLink(null)
+    setShareStatus('Preparing image…')
+    try {
+      const blob = await captureImage()
+      if (!blob) {
+        setShareStatus('The map image could not be captured.')
+        return
+      }
+      downloadBlob(blob, snapshotFilename(shareRef.current?.surface ?? 'map'))
+      setShareStatus('Image saved.')
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : 'The map image could not be saved.')
+    }
+  }
+
+  useImperativeHandle(forwardedRef, () => ({
+    fitAircraft,
+    centerReceiver,
+    getViewport,
+    applyViewport,
+    captureImage
+  }))
 
   useEffect(() => {
     if (!containerRef.current) return
     const labels = mapLabelColours[theme]
     let map: MapLibreMap
     try {
+      const restored = initialViewportRef.current
       map = new maplibregl.Map({
         container: containerRef.current,
         style: mapStyleUrl,
-        center: [
-          receiverRef.current?.longitude ?? defaultReceiver().longitude,
-          receiverRef.current?.latitude ?? defaultReceiver().latitude,
-        ],
-        zoom: 7.7,
+        // A shared link's viewport is applied at construction rather than after
+        // the first render, so the map never shows the receiver's default view
+        // and then jumps to the one that was shared.
+        center: restored
+          ? [restored.longitude, restored.latitude]
+          : [
+              receiverRef.current?.longitude ?? defaultReceiver().longitude,
+              receiverRef.current?.latitude ?? defaultReceiver().latitude,
+            ],
+        zoom: restored?.zoom ?? 7.7,
+        bearing: restored?.bearing ?? 0,
         attributionControl: false,
         pitchWithRotate: false,
         dragRotate: false,
@@ -1215,6 +1343,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map || !selectedIcao) return
+    /*
+     * A shared link carries both a viewport and the aircraft that was selected
+     * in it. The viewport is what the sender framed, so the selection arriving
+     * with it must not pull the camera off it — only selections made afterwards
+     * recentre.
+     */
+    if (restoredSelectionRef.current === selectedIcao) {
+      restoredSelectionRef.current = null
+      return
+    }
     const selected = aircraftRef.current.find((item) => item.icao === selectedIcao)
     if (selected?.longitude == null || selected.latitude == null) return
     // Recentring on an aircraft that is already comfortably on screen throws
@@ -1351,6 +1489,16 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <Maximize2 size={20} />
         </button>
         {selectedIcao ? <button type="button" className={followSelected ? 'active' : ''} title="Follow selected aircraft" aria-label="Follow selected aircraft" aria-pressed={followSelected} onClick={() => setFollowSelected((value) => !value)}><Focus size={20} /></button> : null}
+        {share ? (
+          <>
+            <button type="button" title="Copy a link to this view" aria-label="Copy a link to this view" onClick={() => void copyLink()}>
+              <Link2 size={20} />
+            </button>
+            <button type="button" title="Download this view as an image" aria-label="Download this view as an image" onClick={() => void downloadImage()}>
+              <Camera size={20} />
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className={rulerActive ? 'active' : ''}
@@ -1364,6 +1512,38 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         >
           <Ruler size={20} />
         </button>
+      </div>
+      {/* Outcomes of a share are announced rather than shown silently: neither
+          the clipboard nor a download changes anything on screen. */}
+      <div className="map-share-status" role="status" aria-live="polite">
+        {shareStatus ? (
+          <div className="map-share-readout">
+            <div className="map-share-line">
+              {shareLink ? <Info size={14} aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
+              <span>{shareStatus}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShareStatus(null)
+                  setShareLink(null)
+                }}
+                aria-label="Dismiss the share message"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {shareLink ? (
+              <input
+                ref={shareLinkRef}
+                type="text"
+                readOnly
+                value={shareLink}
+                aria-label="Link to this view"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {rulerActive ? (
         <div className="map-ruler-readout" role="status">

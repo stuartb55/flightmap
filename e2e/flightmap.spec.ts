@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Response } from '@playwright/test'
 
@@ -301,6 +302,49 @@ test('measures distance and bearing with the ruler', async ({ page }, testInfo) 
   await expect(readout).toBeHidden()
 })
 
+test('shares the live map as a link and as a captioned image', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Sharing is exercised once on desktop Chromium')
+  await openFlightmap(page)
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0003')
+  await expect(page.locator('.detail-panel')).toBeVisible()
+
+  /*
+   * The tests run over http://127.0.0.1, where `navigator.clipboard` does not
+   * exist — the same as a LAN deployment — so this is the fallback path, and
+   * the link has to be readable rather than lost.
+   */
+  await page.getByRole('button', { name: 'Copy a link to this view' }).click()
+  const readout = page.locator('.map-share-readout')
+  await expect(readout).toContainText('Select the link below to copy it')
+  const link = await page.getByRole('textbox', { name: 'Link to this view' }).inputValue()
+  expect(new URL(link).searchParams.get('view')).toMatch(/^-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d/)
+  expect(new URL(link).searchParams.get('aircraft')).toBeTruthy()
+
+  // Opening the link restores the same view: asking the restored page for its
+  // own link is the check, because it re-reads the map rather than the URL.
+  const opened = await context.newPage()
+  await opened.goto(link)
+  await expect(opened.locator('.detail-panel')).toBeVisible({ timeout: 15_000 })
+  await opened.waitForTimeout(1_500)
+  await opened.getByRole('button', { name: 'Copy a link to this view' }).click()
+  const restored = await opened.getByRole('textbox', { name: 'Link to this view' }).inputValue()
+  expect(new URL(restored).search).toBe(new URL(link).search)
+  await opened.close()
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download this view as an image' }).click()
+  const file = await download
+  expect(file.suggestedFilename()).toMatch(/^flightmap-live-.*\.png$/)
+  const path = await file.path()
+  // A blank capture is the failure this guards: reading a WebGL canvas after
+  // the frame has been composited returns an empty image, and an empty PNG of
+  // one solid colour compresses to a few hundred bytes.
+  const { size } = await stat(path)
+  expect(size).toBeGreaterThan(20_000)
+})
+
 test('opens aircraft profiles and synchronised flight analysis', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The analysis workflow is exercised once on desktop Chromium')
   await openFlightmap(page)
@@ -309,6 +353,13 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(page.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Lifetime aircraft statistics' })).toBeVisible()
 
+  // The observation bars carry their figures in a title attribute, which a
+  // keyboard user never reaches; the table beneath them is the equivalent.
+  await page.getByText('View observation data table').click()
+  await expect(
+    page.getByRole('table', { name: /Observations of this aircraft over time/ }),
+  ).toBeVisible()
+
   await page.getByRole('link', { name: 'History' }).last().click()
   const session = page.locator('.session-card button:enabled').first()
   await expect(session).toBeVisible({ timeout: 15_000 })
@@ -316,6 +367,13 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(page.getByRole('region', { name: 'Flight profile and event timeline' })).toBeVisible()
   await page.getByRole('button', { name: /Receiver distance/ }).click()
   await expect(page.getByRole('button', { name: /Receiver distance/ })).toHaveAttribute('aria-pressed', 'true')
+
+  await page.getByText('View flight profile data table').click()
+  const profileTable = page.getByRole('table', { name: /Flight profile values/ })
+  await expect(profileTable).toBeVisible()
+  // Values route through the same formatters as the chart, so the units the
+  // rest of the page is showing are the units in the table.
+  await expect(profileTable.locator('tbody td').first()).toContainText('ft')
 })
 
 test('previews, creates, toggles, and removes a custom alert rule', async ({ page, request }, testInfo) => {
@@ -407,6 +465,25 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   await page.getByRole('button', { name: /Saved views/ }).click()
   await page.getByRole('button', { name: 'Apply E2E Insights saved view' }).click()
   await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+
+  // Pinning promotes the view to a chip beside the button; making it the
+  // default is what the next arrival opens on.
+  await page.getByRole('button', { name: /Saved views/ }).click()
+  await page.getByRole('button', { name: 'Pin E2E Insights beside the saved views button' }).click()
+  await page.getByRole('button', { name: 'Open insights with E2E Insights by default' }).click()
+  await page.getByRole('button', { name: 'Close saved views' }).click()
+  const chip = page.getByRole('button', { name: 'Apply pinned view E2E Insights' })
+  await expect(chip).toBeVisible()
+
+  await page.getByRole('button', { name: '7 days' }).click()
+  await chip.click()
+  await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+
+  // A full document load, so this exercises the default from a cold start
+  // rather than from state the page already held.
+  await page.goto('/insights')
+  await expect(page.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Apply pinned view E2E Insights' })).toBeVisible()
 
   const csvDownload = page.waitForEvent('download')
   await page.getByRole('link', { name: 'CSV' }).click()

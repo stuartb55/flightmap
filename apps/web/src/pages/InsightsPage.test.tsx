@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InsightsPage, insightRangeForPreset } from './InsightsPage'
 import { Router } from '../lib/router'
 import { api } from '../lib/api'
+import { resetSavedViews } from '../lib/saved-views'
+import { defaultMapLayers } from '../lib/map-preferences'
 
 vi.mock('../components/CoverageMap', () => ({
   CoverageMap: ({ cells }: { cells: unknown[] }) => <div data-testid="coverage-map">{cells.length} cells</div>,
@@ -110,6 +112,8 @@ function renderPage() {
 
 describe('InsightsPage', () => {
   beforeEach(() => {
+    resetSavedViews()
+    vi.mocked(api.savedViews).mockResolvedValue([])
     window.history.replaceState(null, '', '/insights')
     vi.mocked(api.insightsOverview).mockResolvedValue(overview())
     vi.mocked(api.insightsCoverage).mockResolvedValue(coverage)
@@ -221,6 +225,42 @@ describe('InsightsPage', () => {
     const coverageAircraft = await screen.findByRole('link', { name: /G-CVRG/ })
     expect(fireEvent.click(coverageAircraft)).toBe(false)
     expect(window.location.pathname).toBe('/aircraft/abc123')
+  })
+
+  // The whole point of a default is that the surface opens on it. Querying the
+  // built-in range first and the default's range second would show the wrong
+  // numbers before the right ones.
+  it('queries the default view range first, without a request for the built-in range', async () => {
+    vi.mocked(api.savedViews).mockResolvedValue([
+      {
+        id: '2b0b6b9c-2a49-4e6f-9d5a-9f8d1a44e0b2',
+        name: 'Last 30 days',
+        surface: 'insights',
+        configuration: {
+          surface: 'insights',
+          from: '2026-07-02T00:00:00.000Z',
+          to: '2026-08-01T00:00:00.000Z',
+          bucket: 'day',
+          preset: '30d',
+          sort: 'reports_desc',
+          compare: false,
+          mapLayers: defaultMapLayers,
+          viewport: null,
+        },
+        isDefault: true,
+        pinnedAt: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      },
+    ])
+    vi.mocked(api.insightsOverview).mockClear()
+    renderPage()
+    await screen.findByText('1,250')
+    expect(api.insightsOverview).toHaveBeenCalledTimes(1)
+    expect(api.insightsOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '2026-07-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' }),
+      expect.any(AbortSignal),
+    )
   })
 
   it('leaves modifier and middle clicks to the browser so links still open in a new tab', async () => {

@@ -76,7 +76,7 @@ turns up.
 
 ### 15. Saved views: defaults and pinning — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Saved views exist for Live, History, and Insights
 (`SavedViewsControl.tsx`) but every visit starts from the built-in default, and
@@ -115,7 +115,7 @@ chips beside the Saved views button and are registered as commands
 
 ### 16. Map snapshot and share — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The URL already describes the view on Live and History, but nothing
 in the UI says so, and there is no way to save a picture of what the map is
@@ -193,7 +193,7 @@ the others sit at reduced opacity.
 
 ### 23. Chart accessibility and data-table parity — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Insights sets the pattern — every chart has a keyboard-reachable
 `details.chart-data-table` fallback (`InsightsPage.tsx:173`, `:608`). Four charts

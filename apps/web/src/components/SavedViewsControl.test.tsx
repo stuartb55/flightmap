@@ -2,17 +2,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { SavedView, SavedViewConfiguration } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SavedViewsControl } from './SavedViewsControl'
-import { api } from '../lib/api'
+import { ApiError, api } from '../lib/api'
+import { resetSavedViews } from '../lib/saved-views'
 import { defaultMapLayers } from '../lib/map-preferences'
 
-vi.mock('../lib/api', () => ({
-  api: {
-    savedViews: vi.fn(),
-    createSavedView: vi.fn(),
-    updateSavedView: vi.fn(),
-    deleteSavedView: vi.fn(),
-  },
-}))
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
+  return {
+    ApiError: actual.ApiError,
+    api: {
+      savedViews: vi.fn(),
+      createSavedView: vi.fn(),
+      updateSavedView: vi.fn(),
+      deleteSavedView: vi.fn(),
+    },
+  }
+})
 
 const configuration: SavedViewConfiguration = {
   surface: 'insights',
@@ -31,6 +36,8 @@ const view: SavedView = {
   name: 'Monthly coverage',
   surface: 'insights',
   configuration,
+  isDefault: false,
+  pinnedAt: null,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
 }
@@ -40,6 +47,9 @@ afterEach(cleanup)
 describe('SavedViewsControl', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // The list is installation state cached for every consumer at once, so each
+    // test starts from an empty cache rather than the previous test's views.
+    resetSavedViews()
     vi.mocked(api.savedViews).mockResolvedValue([view])
   })
 
@@ -70,7 +80,9 @@ describe('SavedViewsControl', () => {
         configuration,
       }),
     )
-    expect(await screen.findByText('Monthly coverage')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Apply Monthly coverage saved view' }),
+    ).toBeInTheDocument()
   })
 
   // On a phone this panel and the map layer panel are both full width, so the
@@ -111,5 +123,70 @@ describe('SavedViewsControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete Summer coverage' }))
     await waitFor(() => expect(api.deleteSavedView).toHaveBeenCalledWith(view.id))
     expect(await screen.findByText('No insights views saved yet.')).toBeInTheDocument()
+  })
+
+  it('marks a view as the surface default and clears the previous one', async () => {
+    const other: SavedView = {
+      ...view,
+      id: 'f2ac0b3e-6c0e-4a6a-9d24-3a2b0e5d7f11',
+      name: 'Last week',
+      isDefault: true,
+    }
+    vi.mocked(api.savedViews).mockResolvedValue([view, other])
+    vi.mocked(api.updateSavedView).mockResolvedValue({ ...view, isDefault: true })
+
+    render(
+      <SavedViewsControl surface="insights" configuration={() => configuration} onApply={vi.fn()} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Saved views/ }))
+    const toggle = await screen.findByRole('button', {
+      name: 'Open insights with Monthly coverage by default',
+    })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(api.updateSavedView).toHaveBeenCalledWith(view.id, { isDefault: true }),
+    )
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'))
+    // One default per surface: the server clears the previous one, and the list
+    // has to say so without refetching.
+    expect(
+      screen.getByRole('button', { name: 'Open insights with Last week by default' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('pins a view as a chip and reports the cap the server enforces', async () => {
+    vi.mocked(api.updateSavedView).mockResolvedValue({
+      ...view,
+      pinnedAt: '2026-08-02T00:00:00.000Z',
+    })
+    const onApply = vi.fn()
+    render(
+      <SavedViewsControl surface="insights" configuration={() => configuration} onApply={onApply} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Saved views/ }))
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Pin Monthly coverage beside the saved views button',
+      }),
+    )
+    await waitFor(() => expect(api.updateSavedView).toHaveBeenCalledWith(view.id, { pinned: true }))
+    const chip = await screen.findByRole('button', { name: 'Apply pinned view Monthly coverage' })
+    fireEvent.click(chip)
+    expect(onApply).toHaveBeenCalledWith(configuration)
+
+    vi.mocked(api.updateSavedView).mockRejectedValueOnce(
+      new ApiError(
+        'Each surface supports up to 3 pinned views; unpin one first',
+        'SAVED_VIEW_PIN_LIMIT',
+        400,
+      ),
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Pin Monthly coverage beside the saved views button' }),
+    )
+    expect(
+      await screen.findByText('Each surface supports up to 3 pinned views; unpin one first'),
+    ).toBeInTheDocument()
   })
 })

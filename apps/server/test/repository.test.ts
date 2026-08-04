@@ -117,4 +117,81 @@ describe("saved-view persistence", () => {
     expect(client.query).toHaveBeenCalledTimes(2);
     expect(client.query.mock.calls[0]?.[0]).toContain("pg_advisory_xact_lock");
   });
+
+  it("clears the previous default under the same lock that serialises writers", async () => {
+    const client = {
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ surface: "live", pinned_at: null }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+    };
+    const repository = new FlightRepository(
+      {
+        transaction: vi.fn(async (callback: (value: typeof client) => Promise<unknown>) =>
+          callback(client)
+        )
+      } as never,
+      {
+        sessionGapSeconds: 300,
+        currentAircraftTtlSeconds: 60,
+        historyRetentionDays: 30
+      }
+    );
+
+    await repository.updateSavedView("view-1", { isDefault: true });
+
+    expect(client.query.mock.calls[0]?.[0]).toContain("pg_advisory_xact_lock");
+    expect(client.query.mock.calls[2]?.[0]).toContain("SET is_default = false");
+    expect(client.query.mock.calls[2]?.[1]).toEqual(["live", "view-1"]);
+  });
+
+  it("refuses a fourth pin on a surface with a message naming the limit", async () => {
+    const client = {
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ surface: "history", pinned_at: null }] })
+        .mockResolvedValueOnce({ rows: [{ count: "3" }] })
+    };
+    const repository = new FlightRepository(
+      {
+        transaction: vi.fn(async (callback: (value: typeof client) => Promise<unknown>) =>
+          callback(client)
+        )
+      } as never,
+      {
+        sessionGapSeconds: 300,
+        currentAircraftTtlSeconds: 60,
+        historyRetentionDays: 30
+      }
+    );
+
+    await expect(
+      repository.updateSavedView("view-1", { pinned: true })
+    ).rejects.toMatchObject({
+      code: "SAVED_VIEW_PIN_LIMIT",
+      message: "Each surface supports up to 3 pinned views; unpin one first"
+    });
+    // The count is scoped to the surface being pinned, not the installation.
+    expect(client.query.mock.calls[2]?.[1]).toEqual(["history"]);
+  });
+
+  it("leaves a name change on the single-statement path", async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+      transaction: vi.fn()
+    };
+    const repository = new FlightRepository(database as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+
+    await repository.updateSavedView("view-1", { name: "Renamed" });
+
+    expect(database.transaction).not.toHaveBeenCalled();
+    expect(database.query).toHaveBeenCalledTimes(1);
+  });
 });

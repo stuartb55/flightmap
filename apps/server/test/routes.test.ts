@@ -213,6 +213,38 @@ describe("structured route errors", () => {
     await server.close();
   });
 
+  it("passes default and pin changes through, and rejects anything else", async () => {
+    const deps = dependencies();
+    deps.repository.updateSavedView.mockResolvedValue({ id: "view-1" });
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    const id = "9b7dc991-58bf-4c42-b033-40c637d3f09a";
+    const pinned = await server.inject({
+      method: "PATCH",
+      url: `/api/v1/saved-views/${id}`,
+      headers: sameOrigin,
+      payload: { isDefault: true, pinned: true }
+    });
+    expect(pinned.statusCode).toBe(200);
+    expect(deps.repository.updateSavedView).toHaveBeenCalledWith(id, {
+      isDefault: true,
+      pinned: true
+    });
+
+    const unknown = await server.inject({
+      method: "PATCH",
+      url: `/api/v1/saved-views/${id}`,
+      headers: sameOrigin,
+      payload: { pinnedAt: "2026-08-01T00:00:00.000Z" }
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(deps.repository.updateSavedView).toHaveBeenCalledTimes(1);
+    await server.close();
+  });
+
   it("validates and previews custom alert rules without persisting them", async () => {
     const deps = dependencies();
     const server = await buildApp({

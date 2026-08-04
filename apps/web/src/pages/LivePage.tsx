@@ -17,7 +17,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react'
-import type { SavedViewConfiguration } from '@flightmap/shared'
+import type { MapViewport, SavedViewConfiguration } from '@flightmap/shared'
 import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
@@ -29,18 +29,22 @@ import { api } from '../lib/api'
 import {
   activeFilterCount,
   defaultAircraftFilters,
+  filtersFromParams,
   nextSelectionIndex,
+  writeFiltersToParams,
   type AircraftFilters as AircraftFilterState,
   type AircraftSort,
   type SelectionMove,
 } from '../lib/aircraft-filter'
+import { shareUrl, viewportFromSearch } from '../lib/map-snapshot'
 import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
 import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-bands'
-import { aircraftLabel, formatAltitude } from '../lib/format'
+import { aircraftLabel, formatAltitude, formatDateTime } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useSearchParams } from '../lib/router'
 import { useModalFocus } from '../lib/use-modal-focus'
 import { useAppCommands } from '../lib/app-commands'
+import { useDefaultSavedView } from '../lib/saved-views'
 import { mobileColumns, useAircraftColumns } from '../lib/table-columns'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
 import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
@@ -80,7 +84,15 @@ export function LivePage() {
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
   const dispatch = useLiveDispatch()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [filters, setFilters] = useState<AircraftFilterState>(storedFilters)
+  /*
+   * A shared link outranks this browser's stored filters — someone opening it
+   * is asking to see the sender's view, not their own — and the viewport it
+   * carries is handed to the map at construction so there is no jump.
+   */
+  const [filters, setFilters] = useState<AircraftFilterState>(
+    () => filtersFromParams(new URLSearchParams(window.location.search)) ?? storedFilters(),
+  )
+  const sharedViewport = useMemo(() => viewportFromSearch(window.location.search), [])
   const [sort, setSort] = useState<AircraftSort>({ key: 'distance', direction: 'asc' })
   const [columns, setColumns] = useAircraftColumns()
   const [listCollapsed, setListCollapsed] = useState(false)
@@ -257,6 +269,44 @@ export function LivePage() {
     setMapDisplay(configuration.display ?? defaultMapDisplay)
     if (configuration.viewport) mapRef.current?.applyViewport(configuration.viewport)
   }
+
+  /*
+   * A deep link — `?aircraft=…` from the palette, a shared selection — is an
+   * explicit request, and the default view's filters could hide the aircraft it
+   * names, so the URL wins.
+   */
+  useDefaultSavedView('live', searchParams.toString() !== '', applySavedView)
+
+  /*
+   * What a shared Live link has to reproduce: the viewport, the filters the
+   * sender was looking through, and the aircraft they had selected. The link is
+   * built on demand rather than written into the address bar continuously,
+   * which keeps panning out of the history stack.
+   */
+  const liveShare = useMemo(
+    () => ({
+      surface: 'live',
+      linkFor: (viewport: MapViewport | null) => {
+        const url = new URL(shareUrl(viewport))
+        for (const key of [...url.searchParams.keys()]) {
+          if (key !== 'view' && key !== 'aircraft') url.searchParams.delete(key)
+        }
+        writeFiltersToParams(filters, url.searchParams)
+        return url.toString()
+      },
+      caption: () => ({
+        title: `${receiver?.name ?? 'Flightmap'} · Live traffic`,
+        detail: [
+          formatDateTime(new Date().toISOString()),
+          `${filtered.length.toLocaleString('en-GB')} of ${aircraftList.length.toLocaleString('en-GB')} aircraft`,
+          filterCount ? `${filterCount} filter${filterCount === 1 ? '' : 's'} applied` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      }),
+    }),
+    [aircraftList.length, filterCount, filtered.length, filters, receiver?.name],
+  )
 
   // Commands raised by the command palette, which lives in the app shell and
   // can reach neither this page's state nor the map's imperative handle.
@@ -506,6 +556,8 @@ export function LivePage() {
           onMapDisplayChange={setMapDisplay}
           coverageCells={coverage.cells}
           trails={mapLayers.allTrails ? trails : undefined}
+          initialViewport={sharedViewport}
+          share={liveShare}
         />
         <SavedViewsControl
           surface="live"

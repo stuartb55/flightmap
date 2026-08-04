@@ -440,6 +440,15 @@
   border-top: 1px solid var(--line);
 }
 
+/* Says what a capped table left out, so a truncated list is never mistaken for
+   the whole series. */
+.chart-data-table-cap {
+  display: block;
+  padding: 6px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .chart-data-table summary {
   width: max-content;
   padding: 12px 0 4px;

@@ -4,11 +4,13 @@ import {
   aircraftFilterErrors,
   defaultAircraftFilters,
   filterAircraft,
+  filtersFromParams,
   membershipKey,
   nextSelectionIndex,
   orderAircraft,
   reorderIntervalMs,
   sortAircraft,
+  writeFiltersToParams,
   type AircraftSort,
 } from './aircraft-filter'
 import { aircraft } from '../test/fixtures'
@@ -248,5 +250,61 @@ describe('orderAircraft', () => {
 
   it('distinguishes a different live set of the same size', () => {
     expect(membershipKey(snapshot)).not.toBe(membershipKey([far, aircraft({ icao: '3c6444' })]))
+  })
+})
+
+/*
+ * Live filters normally live in this browser's storage. A shared link is the
+ * one place they travel, so the two directions have to agree exactly — the
+ * person opening the link is meant to see what the sender saw.
+ */
+describe('filters carried by a shared link', () => {
+  it('writes only what differs from the defaults', () => {
+    const params = new URLSearchParams()
+    writeFiltersToParams(defaultAircraftFilters, params)
+    expect(params.toString()).toBe('')
+
+    writeFiltersToParams(
+      { ...defaultAircraftFilters, minimumAltitude: '20000', watchedOnly: true, position: 'positioned' },
+      params,
+    )
+    expect(params.get('alt-min')).toBe('20000')
+    expect(params.get('watched')).toBe('1')
+    expect(params.get('pos')).toBe('positioned')
+    expect(params.has('alt-max')).toBe(false)
+  })
+
+  it('round-trips every filter it carries', () => {
+    const filters = {
+      ...defaultAircraftFilters,
+      query: 'EZY',
+      minimumAltitude: '10000',
+      maximumAltitude: '38000',
+      minimumSpeed: '200',
+      maximumDistance: '80',
+      maximumFreshness: '30',
+      position: 'positioned' as const,
+      source: 'adsb_icao',
+      category: 'A3',
+      watchedOnly: true,
+      alertsOnly: true,
+    }
+    const params = new URLSearchParams()
+    writeFiltersToParams(filters, params)
+    expect(filtersFromParams(params)).toEqual(filters)
+  })
+
+  // A URL naming no filter at all leaves the browser's stored filters in place;
+  // one naming any filter describes the whole set, so the rest are defaults.
+  it('returns null for a URL that names no filter, and a full set otherwise', () => {
+    expect(filtersFromParams(new URLSearchParams('?aircraft=abc123'))).toBeNull()
+    expect(filtersFromParams(new URLSearchParams('?alt-min=20000'))).toEqual({
+      ...defaultAircraftFilters,
+      minimumAltitude: '20000',
+    })
+  })
+
+  it('ignores a position it does not recognise', () => {
+    expect(filtersFromParams(new URLSearchParams('?pos=sideways'))?.position).toBe('all')
   })
 })

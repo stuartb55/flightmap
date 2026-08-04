@@ -553,6 +553,8 @@ export const savedViewSchema = z
     name: z.string().trim().min(1).max(80),
     surface: z.enum(["live", "history", "insights"]),
     configuration: savedViewConfigurationSchema,
+    isDefault: z.boolean(),
+    pinnedAt: isoDateTimeSchema.nullable(),
     createdAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema
   })
@@ -578,15 +580,30 @@ export const savedViewInputSchema = z
   })
   .strict();
 
+/**
+ * Pinned views are chips shown beside the saved-views button on the surface
+ * itself. Three is what fits next to the button on a phone without pushing the
+ * map controls into a second row; the cap is enforced in the database writer.
+ */
+export const savedViewPinLimit = 3;
+
 export const savedViewPatchSchema = z
   .object({
     name: z.string().trim().min(1).max(80).optional(),
-    configuration: savedViewConfigurationSchema.optional()
+    configuration: savedViewConfigurationSchema.optional(),
+    /** True makes this the surface's default, clearing any previous one. */
+    isDefault: z.boolean().optional(),
+    pinned: z.boolean().optional()
   })
   .strict()
-  .refine((patch) => patch.name !== undefined || patch.configuration !== undefined, {
-    message: "At least one saved-view field is required"
-  });
+  .refine(
+    (patch) =>
+      patch.name !== undefined ||
+      patch.configuration !== undefined ||
+      patch.isDefault !== undefined ||
+      patch.pinned !== undefined,
+    { message: "At least one saved-view field is required" }
+  );
 
 export const insightBackfillStatusSchema = z.enum([
   "pending",
