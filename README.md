@@ -24,6 +24,9 @@ history indefinitely.
 - Browser-local map layer preferences plus installation-wide saved views for
   Live, History, and Insights workflows, one of which can open its surface by
   default while up to three per surface sit pinned beside the control.
+- Shareable map views: a link that restores the viewport, filters, selection and
+  replay position, and a PNG snapshot captioned with the receiver, the time, the
+  aircraft count and the map attribution.
 - Installable progressive web app with standalone display, app shortcuts,
   branded icons, automatic updates, and an offline application shell.
 - Focused in-app alerts for 7500/7600/7700 squawks, explicit emergencies, and

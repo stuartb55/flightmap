@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SavedViewConfiguration, SessionSort } from '@flightmap/shared'
+import type { MapViewport, SavedViewConfiguration, SessionSort } from '@flightmap/shared'
 import {
   ArrowDownWideNarrow,
   CalendarClock,
@@ -31,6 +31,7 @@ import {
   dateTimeInputToIso,
   formatAltitude,
   formatDate,
+  formatDateTime,
   formatDateTimeInput,
   formatDistance,
   formatDuration,
@@ -40,6 +41,8 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
+import { shareUrl, viewportFromSearch } from '../lib/map-snapshot'
+import { defaultReceiver } from '../config'
 import { defaultSessionSort, parseSessionSort, sessionSortOptions } from '../lib/session-sort'
 import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 import type {
@@ -583,6 +586,29 @@ export function HistoryPage() {
   }
 
   const selectedTracks = useMemo(() => Object.values(tracks), [tracks])
+  /*
+   * History already describes itself in the URL — filters, selection, replay
+   * position — so a shared link only has to add the viewport. It is written on
+   * demand: panning the map is not a navigation.
+   */
+  const sharedViewport = useMemo(() => viewportFromSearch(window.location.search), [])
+  const historyShare = useMemo(
+    () => ({
+      surface: 'history',
+      linkFor: (viewport: MapViewport | null) => shareUrl(viewport),
+      caption: () => ({
+        title: `${defaultReceiver().name} · Flight history`,
+        detail: [
+          `${formatDateTime(dateTimeInputToIso(appliedFilters.from))} — ${formatDateTime(dateTimeInputToIso(appliedFilters.to))}`,
+          `${selectedTracks.length} track${selectedTracks.length === 1 ? '' : 's'}`,
+          replayTime ? `replay at ${formatTime(new Date(replayTime).toISOString())}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      }),
+    }),
+    [appliedFilters.from, appliedFilters.to, replayTime, selectedTracks.length],
+  )
   const focusedTrack = focusedTrackId ? tracks[focusedTrackId] ?? null : null
   const selectedMetrics = useMemo(() => {
     const uniqueAircraft = new Set(selectedTracks.map((track) => track.session.icao)).size
@@ -968,6 +994,8 @@ export function HistoryPage() {
           mapLayers={mapLayers}
           onMapLayersChange={setMapLayers}
           coverageCells={coverage.cells}
+          initialViewport={sharedViewport}
+          share={historyShare}
         />
         <SavedViewsControl
           surface="history"

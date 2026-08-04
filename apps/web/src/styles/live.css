@@ -1035,6 +1035,73 @@
   color: var(--text);
 }
 
+/* Above the ruler readout and the reconnection banner, both of which own the
+   bottom of the map, and clear of the emergency banner at the top, which
+   appears without being asked for and must never be covered. The container is
+   always in the tree so the live region is not created at the moment it has
+   something to announce, which some screen readers miss. */
+.map-share-status {
+  position: absolute;
+  z-index: 9;
+  bottom: 132px;
+  left: 50%;
+  width: min(440px, calc(100% - 140px));
+  transform: translateX(-50%);
+}
+
+.map-share-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+  border-radius: 9px;
+  background: var(--veil-16);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  backdrop-filter: blur(10px);
+}
+
+.map-share-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-share-line > span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.map-share-readout input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--muted-bright);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-3);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+.map-share-readout button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 3px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.map-share-readout button:hover {
+  color: var(--text);
+}
+
 .map-legend {
   position: absolute;
   z-index: 3;

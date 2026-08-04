@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Response } from '@playwright/test'
 
@@ -299,6 +300,49 @@ test('measures distance and bearing with the ruler', async ({ page }, testInfo) 
   await expect(readout).toContainText('Click two points to measure')
   await page.keyboard.press('Escape')
   await expect(readout).toBeHidden()
+})
+
+test('shares the live map as a link and as a captioned image', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Sharing is exercised once on desktop Chromium')
+  await openFlightmap(page)
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0003')
+  await expect(page.locator('.detail-panel')).toBeVisible()
+
+  /*
+   * The tests run over http://127.0.0.1, where `navigator.clipboard` does not
+   * exist — the same as a LAN deployment — so this is the fallback path, and
+   * the link has to be readable rather than lost.
+   */
+  await page.getByRole('button', { name: 'Copy a link to this view' }).click()
+  const readout = page.locator('.map-share-readout')
+  await expect(readout).toContainText('Select the link below to copy it')
+  const link = await page.getByRole('textbox', { name: 'Link to this view' }).inputValue()
+  expect(new URL(link).searchParams.get('view')).toMatch(/^-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d/)
+  expect(new URL(link).searchParams.get('aircraft')).toBeTruthy()
+
+  // Opening the link restores the same view: asking the restored page for its
+  // own link is the check, because it re-reads the map rather than the URL.
+  const opened = await context.newPage()
+  await opened.goto(link)
+  await expect(opened.locator('.detail-panel')).toBeVisible({ timeout: 15_000 })
+  await opened.waitForTimeout(1_500)
+  await opened.getByRole('button', { name: 'Copy a link to this view' }).click()
+  const restored = await opened.getByRole('textbox', { name: 'Link to this view' }).inputValue()
+  expect(new URL(restored).search).toBe(new URL(link).search)
+  await opened.close()
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download this view as an image' }).click()
+  const file = await download
+  expect(file.suggestedFilename()).toMatch(/^flightmap-live-.*\.png$/)
+  const path = await file.path()
+  // A blank capture is the failure this guards: reading a WebGL canvas after
+  // the frame has been composited returns an empty image, and an empty PNG of
+  // one solid colour compresses to a few hundred bytes.
+  const { size } = await stat(path)
+  expect(size).toBeGreaterThan(20_000)
 })
 
 test('opens aircraft profiles and synchronised flight analysis', async ({ page }, testInfo) => {

@@ -264,6 +264,55 @@ export function aircraftFilterErrors(filters: AircraftFilters): Partial<
   return errors
 }
 
+/*
+ * Live filters live in this browser's storage, because they are a working
+ * preference rather than a place. A shared link is the exception: the point of
+ * sending one is that the other person sees what the sender was looking at, so
+ * a link carries whichever filters are not at their default. Anything left at
+ * its default is omitted, keeping an unfiltered link as short as it was before.
+ */
+const FILTER_PARAMS: Record<keyof AircraftFilters, string> = {
+  query: 'q',
+  minimumAltitude: 'alt-min',
+  maximumAltitude: 'alt-max',
+  minimumSpeed: 'spd-min',
+  maximumDistance: 'dist-max',
+  maximumFreshness: 'fresh-max',
+  position: 'pos',
+  source: 'src',
+  category: 'cat',
+  watchedOnly: 'watched',
+  alertsOnly: 'alerts',
+}
+
+export function writeFiltersToParams(filters: AircraftFilters, params: URLSearchParams): void {
+  for (const [key, name] of Object.entries(FILTER_PARAMS) as [keyof AircraftFilters, string][]) {
+    const value = filters[key]
+    const fallback = defaultAircraftFilters[key]
+    if (value === fallback) continue
+    params.set(name, typeof value === 'boolean' ? '1' : String(value))
+  }
+}
+
+/** Null when the URL names no filter at all, so stored filters still apply. */
+export function filtersFromParams(params: URLSearchParams): AircraftFilters | null {
+  const entries = Object.entries(FILTER_PARAMS) as [keyof AircraftFilters, string][]
+  if (!entries.some(([, name]) => params.has(name))) return null
+  const filters = { ...defaultAircraftFilters }
+  for (const [key, name] of entries) {
+    const value = params.get(name)
+    if (value === null) continue
+    if (typeof defaultAircraftFilters[key] === 'boolean') {
+      ;(filters[key] as boolean) = value !== '0' && value !== 'false'
+    } else if (key === 'position') {
+      if (['all', 'positioned', 'unpositioned'].includes(value)) filters.position = value as PositionFilter
+    } else {
+      ;(filters[key] as string) = value.slice(0, 128)
+    }
+  }
+  return filters
+}
+
 export function activeFilterCount(filters: AircraftFilters): number {
   return Object.entries(filters).filter(([key, value]) => {
     if (key === 'query') return false

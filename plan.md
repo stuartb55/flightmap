@@ -115,7 +115,7 @@ chips beside the Saved views button and are registered as commands
 
 ### 16. Map snapshot and share — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The URL already describes the view on Live and History, but nothing
 in the UI says so, and there is no way to save a picture of what the map is
