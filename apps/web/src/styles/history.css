@@ -87,10 +87,11 @@
 
 .results-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   min-height: 56px;
-  padding: 0 16px;
+  padding: 8px 16px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: #0a1016;
@@ -100,6 +101,9 @@
   display: flex;
   align-items: baseline;
   gap: 7px;
+  /* Pushes the controls to the trailing edge and keeps them together there
+     when a narrow sidebar wraps them onto their own row. */
+  margin-right: auto;
 }
 
 .results-heading h2 {

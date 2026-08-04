@@ -17,6 +17,7 @@ import type {
   SavedView,
   SavedViewInput,
   SavedViewPatch,
+  SessionSort,
 } from '@flightmap/shared'
 import {
   aircraftActivityResponseSchema,
@@ -192,9 +193,15 @@ export const api = {
     )
   },
 
-  sessions(filters: HistoryFilters, cursor?: string | null, signal?: AbortSignal) {
+  sessions(
+    filters: HistoryFilters,
+    sort: SessionSort,
+    cursor?: string | null,
+    signal?: AbortSignal,
+  ) {
     return request<{ items: WireSession[]; nextCursor: string | null }>(
       `/sessions${queryString({
+        sort,
         q: filters.query,
         icao: filters.icao,
         callsign: filters.callsign,
