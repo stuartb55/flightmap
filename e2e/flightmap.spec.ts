@@ -673,7 +673,7 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
     }
   })
   expect(collapsed.sheetHeight).toBeLessThan(collapsed.pageHeight * 0.5)
-  expect(collapsed.mapVisible).toBeGreaterThan(100)
+  expect(collapsed.mapVisible).toBeGreaterThan(140)
   expect(collapsed.sheetBottom).toBeLessThanOrEqual(collapsed.actionsTop + 0.5)
   await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
 

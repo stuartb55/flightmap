@@ -538,8 +538,16 @@
     width: auto;
     height: auto;
     /* Sized to the hero, but never past the point where the map stops being
-       the thing on screen — a short phone gives the hero a scrollbar instead. */
-    max-height: min(48%, 360px);
+       the thing on screen — a short phone gives the hero a scrollbar instead.
+       What the map can spare is measured from the map itself rather than the
+       page, so banners taking their own rows above it come out of the sheet's
+       allowance and not out of the map: 150px of map, or a clear majority of
+       it where the map is too short to give 150px away. */
+    --sheet-cap: max(
+      calc(var(--map-stage-height, 100%) * 0.45),
+      calc(var(--map-stage-height, 100%) - 150px)
+    );
+    max-height: min(48%, 360px, var(--sheet-cap));
     border: 1px solid var(--line-bright);
     border-bottom: 0;
     border-radius: 15px 15px 0 0;

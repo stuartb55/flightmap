@@ -147,6 +147,12 @@ export function LivePage() {
    * from the breakpoint: beside the map it covers nothing, over it as a sheet
    * it covers whatever its current stop comes to. The map aims its camera at
    * what is left.
+   *
+   * The same pass publishes the map's own height, which a banner above it can
+   * take a bite out of. The collapsed sheet is capped against that rather than
+   * against the page, so a run of banners on a short screen cannot leave the
+   * map a strip. It cannot feed back: the sheet floats over the map and so has
+   * no say in its height.
    */
   useEffect(() => {
     const stage = mapStageRef.current
@@ -158,6 +164,7 @@ export function LivePage() {
     const measure = () => {
       const stageBox = stage.getBoundingClientRect()
       const panelBox = panel.getBoundingClientRect()
+      livePageRef.current?.style.setProperty('--map-stage-height', `${Math.round(stageBox.height)}px`)
       const overlapsAcross = panelBox.left < stageBox.right - 1 && panelBox.right > stageBox.left + 1
       setMapBottomInset(
         overlapsAcross ? Math.max(0, Math.round(stageBox.bottom - panelBox.top)) : 0,
