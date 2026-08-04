@@ -1,0 +1,462 @@
+/*
+ * Design tokens. Every colour the interface paints comes from here, so a theme
+ * is a set of token values rather than a second copy of the stylesheets.
+ *
+ * The ladders are ordered by lightness as the dark theme sees them:
+ * `--surface-1` is the darkest background, `--ink-1` the brightest text. The
+ * light theme mirrors each ladder, which preserves the relationships the dark
+ * palette was authored with — a hovered row stays one visible step away from
+ * the row beneath it whichever way round the interface is.
+ *
+ * Ladder steps are deliberately fine-grained: the dark palette was authored by
+ * eye and holds many near-identical values, and keeping one token per value
+ * leaves the dark theme pixel-for-pixel as it was. The light theme collapses
+ * the near-duplicates, which is why its steps repeat.
+ *
+ * Tints share a base colour through `--*-rgb` channels, so `rgb(var(--red-rgb)
+ * / 0.07)` and `var(--red)` cannot drift apart when a theme changes one of
+ * them.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --surface-1: #05080b;
+  --surface-2: #070b10;
+  --surface-3: #080e13;
+  --surface-4: #090e13;
+  --surface-5: #090f14;
+  --surface-6: #0a0f14;
+  --surface-7: #091015;
+  --surface-8: #0a1015;
+  --surface-9: #0a1016;
+  --surface-10: #0b1117;
+  --surface-11: #0c1218;
+  --surface-12: #0c1319;
+  --surface-13: #0d131a;
+  --surface-14: #0d141b;
+  --surface-15: #0e161d;
+  --surface-16: #0f161d;
+  --surface-17: #14151b;
+  --surface-18: #0f171e;
+  --surface-19: #10171e;
+  --surface-20: #101820;
+  --surface-21: #111820;
+  --surface-22: #101a21;
+  --surface-23: #111a22;
+  --surface-24: #111b23;
+  --surface-25: #121b23;
+  --surface-26: #131d25;
+  --surface-27: #151e27;
+  --surface-28: #151f28;
+  --surface-29: #14231f;
+  --surface-30: #16222c;
+  --surface-31: #16251f;
+  --surface-32: #17232c;
+  --surface-33: #18232c;
+  --surface-34: #172720;
+  --surface-35: #273541;
+  --surface-36: #4a5b67;
+  --surface-37: #82919c;
+
+  /* Borders and strokes */
+  --edge-1: #080d12;
+  --edge-2: #0a0e13;
+  --edge-3: #08110f;
+  --edge-4: #17222b;
+  --edge-5: #17232d;
+  --edge-6: #192630;
+  --edge-7: #1a2731;
+  --edge-8: #1b2731;
+  --edge-9: #493740;
+  --edge-10: #33434f;
+  --edge-11: #34434e;
+  --edge-12: #354550;
+  --edge-13: #3b4d5b;
+  --edge-14: #42515d;
+  --edge-15: #657682;
+
+  /* Text and icons */
+  --ink-1: #fff;
+  --ink-2: #dffbf3;
+  --ink-3: #e1faf3;
+  --ink-4: #e0e9ef;
+  --ink-5: #dce6ec;
+  --ink-6: #d9e2e8;
+  --ink-7: #d0dbe2;
+  --ink-8: #cbd5dc;
+  --ink-9: #c7d2da;
+  --ink-10: #c6d1d9;
+  --ink-11: #c2ced6;
+  --ink-12: #c2cdd5;
+  --ink-13: #bac5cd;
+  --ink-14: #aebbc4;
+  --ink-15: #a7b4bd;
+  --ink-16: #9fb0bc;
+  --ink-17: #8da5b4;
+  --ink-18: #8e9ba6;
+  --ink-19: #8c9ba6;
+  --ink-20: #8596a2;
+  --ink-21: #81909d;
+  --ink-22: #7a8995;
+  --ink-23: #74838f;
+  --ink-24: #6e7e8b;
+  --ink-25: #687984;
+  --ink-26: #667783;
+  --ink-27: #647581;
+  --ink-28: #647480;
+  --ink-29: #62727e;
+  --ink-30: #61707c;
+  --ink-31: #596a76;
+  --ink-32: #52636f;
+  --ink-33: #51616d;
+
+  /* Text and icons that sit on a saturated fill rather than on a surface. */
+  --on-fill-1: #04100c;
+  --on-fill-2: #06110e;
+  --on-fill-3: #05120e;
+
+  /* Hued text, fills and borders, grouped by hue: red, amber, green, blue,
+     purple. These carry meaning — alert severity, climb state, emergency —
+     so the light theme darkens them rather than washing them out. */
+  --hue-1: #c99ca2;
+  --hue-2: #ffd3d8;
+  --hue-3: #ffd4d8;
+  --hue-4: #bd858b;
+  --hue-5: #f09ba4;
+  --hue-6: #ff929e;
+  --hue-7: #ff9ba5;
+  --hue-8: #ff929d;
+  --hue-9: #f2a76e;
+  --hue-10: #957d58;
+  --hue-11: #ddb26b;
+  --hue-12: #ffd287;
+  --hue-13: #e4c48d;
+  --hue-14: #e7c98f;
+  --hue-15: #f4c86e;
+  --hue-16: #ead4a9;
+  --hue-17: #6fdcb0;
+  --hue-18: #76dfbd;
+  --hue-19: #4ec5a3;
+  --hue-20: #50c7a5;
+  --hue-21: #7ce8c9;
+  --hue-22: #76e2c4;
+  --hue-23: #8edcc5;
+  --hue-24: #a4e9d5;
+  --hue-25: #78aa9c;
+  --hue-26: #375f56;
+  --hue-27: #73aef5;
+  --hue-28: #163d6a;
+  --hue-29: #b9d7ff;
+  --hue-30: #ae90ef;
+  --hue-31: #d7c9f3;
+
+  /* Translucent panels that float over the map. */
+  --veil-1: rgba(2, 5, 8, 0.72);
+  --veil-2: rgba(2, 5, 8, 0.36);
+  --veil-3: rgba(2, 5, 8, 0.57);
+  --veil-4: rgba(7, 11, 15, 0.8);
+  --veil-5: rgba(7, 12, 17, 0.62);
+  --veil-6: rgba(8, 12, 17, 0.97);
+  --veil-7: rgba(8, 12, 17, 0.98);
+  --veil-8: rgba(8, 13, 18, 0.86);
+  --veil-9: rgba(8, 13, 18, 0.54);
+  --veil-10: rgba(8, 13, 18, 0.94);
+  --veil-11: rgba(9, 14, 19, 0.88);
+  --veil-12: rgba(9, 14, 19, 0.72);
+  --veil-13: rgba(9, 14, 19, 0.62);
+  --veil-14: rgba(9, 14, 20, 0.94);
+  --veil-15: rgb(9 16 21 / 94%);
+  --veil-16: rgb(9 16 21 / 92%);
+  --veil-17: rgba(10, 16, 22, 0.9);
+  --veil-18: rgba(10, 16, 22, 0.92);
+  --veil-19: rgba(11, 16, 22, 0.985);
+  --veil-20: rgba(11, 17, 23, 0.97);
+  --veil-21: rgba(11, 17, 23, 0.98);
+  --veil-22: rgba(12, 19, 25, 0.94);
+  --veil-23: rgba(22, 17, 22, 0.93);
+  --veil-24: rgba(9, 22, 19, 0.9);
+  --veil-25: rgba(13, 20, 27, 0.98);
+  --veil-26: rgba(37, 15, 20, 0.92);
+  --veil-27: rgba(37, 15, 20, 0.94);
+  --veil-28: rgba(14, 25, 38, 0.92);
+  --veil-29: rgba(31, 24, 14, 0.9);
+  --veil-30: rgba(45, 17, 22, 0.92);
+  --veil-31: rgba(35, 27, 14, 0.94);
+  --veil-32: rgba(35, 27, 14, 0.92);
+  --veil-33: rgba(31, 69, 60, 0.15);
+  --veil-34: rgba(36, 72, 67, 0.09);
+  --veil-35: rgba(39, 177, 139, 0.14);
+
+  /* Channels behind every tint of a colour. */
+  --accent-rgb: 88 213 177;
+  --red-rgb: 255 97 113;
+  --amber-rgb: 242 184 94;
+  --blue-rgb: 98 169 255;
+  --purple-rgb: 174 144 239;
+  --line-soft-rgb: 29 42 53;
+  --line-mid-rgb: 53 70 82;
+  --line-cool-rgb: 51 70 83;
+  --line-bright-rgb: 57 74 86;
+  --line-dim-rgb: 46 63 75;
+  --line-pale-rgb: 126 142 154;
+  --shadow-rgb: 0 0 0;
+  --wash-rgb: 255 255 255;
+
+  /* The named roles the stylesheets reach for most. */
+  --bg: #070a0e;
+  --bg-raised: #0b1016;
+  --panel: var(--surface-13);
+  --panel-strong: #111922;
+  --panel-soft: #121b24;
+  --line: #1d2a35;
+  --line-bright: #2a3a47;
+  --text: #e8eff4;
+  --muted: var(--ink-21);
+  --muted-bright: #a6b4bf;
+  --accent: #58d5b1;
+  --accent-bright: var(--hue-21);
+  --accent-dim: rgb(var(--accent-rgb) / 0.12);
+  --blue: #62a9ff;
+  --amber: #f2b85e;
+  --red: #ff6171;
+  --red-dim: rgb(var(--red-rgb) / 0.12);
+  --shadow: 0 16px 42px rgb(var(--shadow-rgb) / 0.38);
+
+  /* Type and spacing, which the density preference rewrites. */
+  --type-min: 12px;
+  --type-body: 14px;
+  --type-control: 14px;
+  --type-head: 13px;
+  --row-height: 70px;
+  --row-head-height: 44px;
+  --row-pad-y: 10px;
+  --header-height: 72px;
+  --mobile-nav-height: 0px;
+}
+
+/*
+ * The light theme. Backgrounds and text swap ends of their ladders; hues keep
+ * their meaning and darken enough to stay legible on a pale surface. Every
+ * value here was checked against WCAG AA for body text on both the page
+ * background and the raised panel colour.
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* Backgrounds */
+  --surface-1: #f1f4f7;
+  --surface-2: #edf0f3;
+  --surface-3: #eaedf0;
+  --surface-4: #eaedf0;
+  --surface-5: #e9ecef;
+  --surface-6: #e9ecef;
+  --surface-7: #e8ebee;
+  --surface-8: #e8ebee;
+  --surface-9: #e8ebee;
+  --surface-10: #e7eaed;
+  --surface-11: #e6e9ec;
+  --surface-12: #e5e8eb;
+  --surface-13: #e5e7eb;
+  --surface-14: #e4e7ea;
+  --surface-15: #e2e5e8;
+  --surface-16: #e2e5e7;
+  --surface-17: #e3e4e7;
+  --surface-18: #e1e4e7;
+  --surface-19: #e1e4e6;
+  --surface-20: #e0e3e6;
+  --surface-21: #e0e2e5;
+  --surface-22: #dee1e4;
+  --surface-23: #dee1e4;
+  --surface-24: #dde0e3;
+  --surface-25: #dde0e3;
+  --surface-26: #dbdee1;
+  --surface-27: #dadde0;
+  --surface-28: #d9dcdf;
+  --surface-29: #d7dbda;
+  --surface-30: #d6d9dc;
+  --surface-31: #d5d9d7;
+  --surface-32: #d5d8db;
+  --surface-33: #d5d8db;
+  --surface-34: #d4d8d6;
+  /* A scrollbar thumb, a 1px divider and a toggle knob: shapes rather than
+     surfaces, so they stay mid-grey instead of joining the page. */
+  --surface-35: #b4bcc4;
+  --surface-36: #96a1ab;
+  --surface-37: #8a95a0;
+
+  /* Borders and strokes */
+  --edge-1: #d2d9e0;
+  --edge-2: #d2d8df;
+  --edge-3: #ced8d6;
+  --edge-4: #bdc5cb;
+  --edge-5: #bcc4ca;
+  --edge-6: #bac1c7;
+  --edge-7: #b9c0c6;
+  --edge-8: #b9c0c6;
+  --edge-9: #b0a7ab;
+  --edge-10: #a0a8ad;
+  --edge-11: #a0a8ad;
+  --edge-12: #9ea6ac;
+  --edge-13: #989fa5;
+  --edge-14: #959ca2;
+  --edge-15: #7a8187;
+
+  /* Text and icons. `--ink-1` is the exception to the flip: it labels the
+     alert badge, which stays a saturated red in both themes. */
+  --ink-1: #ffffff;
+  --ink-2: #11201c;
+  --ink-3: #11201c;
+  --ink-4: #1b2226;
+  --ink-5: #1c2328;
+  --ink-6: #1e2529;
+  --ink-7: #1f282d;
+  --ink-8: #222a2f;
+  --ink-9: #232b31;
+  --ink-10: #232c32;
+  --ink-11: #242d33;
+  --ink-12: #252d34;
+  --ink-13: #283137;
+  --ink-14: #2b353d;
+  --ink-15: #2e3840;
+  --ink-16: #2e3b43;
+  --ink-17: #334048;
+  --ink-18: #38434d;
+  --ink-19: #37444d;
+  --ink-20: #3a464f;
+  --ink-21: #3d4852;
+  --ink-22: #404c55;
+  --ink-23: #434f58;
+  --ink-24: #45515b;
+  --ink-25: #47545d;
+  --ink-26: #48555e;
+  --ink-27: #49565f;
+  --ink-28: #4a5660;
+  --ink-29: #4b5761;
+  --ink-30: #4c5862;
+  --ink-31: #4f5c65;
+  --ink-32: #525f69;
+  --ink-33: #53606a;
+
+  /* The fills these sit on darken, so their text turns white. */
+  --on-fill-1: #ffffff;
+  --on-fill-2: #ffffff;
+  --on-fill-3: #ffffff;
+
+  /* Hues */
+  --hue-1: #7c3e49;
+  --hue-2: #794049;
+  --hue-3: #784149;
+  --hue-4: #7d2d3c;
+  --hue-5: #98193a;
+  --hue-6: #981939;
+  --hue-7: #981939;
+  --hue-8: #981938;
+  --hue-9: #913100;
+  --hue-10: #5e3a00;
+  --hue-11: #814200;
+  --hue-12: #814300;
+  --hue-13: #774900;
+  --hue-14: #764a00;
+  --hue-15: #7c4600;
+  --hue-16: #6d4e00;
+  --hue-17: #006d3c;
+  --hue-18: #006d46;
+  --hue-19: #006d48;
+  --hue-20: #006d48;
+  --hue-21: #006d4b;
+  --hue-22: #006d4c;
+  --hue-23: #006a4d;
+  --hue-24: #00684f;
+  --hue-25: #00604e;
+  --hue-26: #004f42;
+  --hue-27: #0051a9;
+  --hue-28: #003f8b;
+  --hue-29: #29548c;
+  --hue-30: #60389f;
+  --hue-31: #5d4680;
+
+  /* Translucent panels over the map */
+  --veil-1: rgba(245, 250, 254, 0.72);
+  --veil-2: rgba(245, 250, 254, 0.36);
+  --veil-3: rgba(245, 250, 254, 0.57);
+  --veil-4: rgba(244, 248, 252, 0.8);
+  --veil-5: rgba(243, 248, 252, 0.62);
+  --veil-6: rgba(244, 248, 252, 0.97);
+  --veil-7: rgba(244, 248, 252, 0.98);
+  --veil-8: rgba(243, 247, 252, 0.86);
+  --veil-9: rgba(243, 247, 252, 0.54);
+  --veil-10: rgba(243, 247, 252, 0.94);
+  --veil-11: rgba(243, 247, 251, 0.88);
+  --veil-12: rgba(243, 247, 251, 0.72);
+  --veil-13: rgba(243, 247, 251, 0.62);
+  --veil-14: rgba(243, 247, 252, 0.94);
+  --veil-15: rgb(241 247 251 / 94%);
+  --veil-16: rgb(241 247 251 / 92%);
+  --veil-17: rgba(242, 247, 252, 0.9);
+  --veil-18: rgba(242, 247, 252, 0.92);
+  --veil-19: rgba(242, 246, 252, 0.985);
+  --veil-20: rgba(242, 246, 252, 0.97);
+  --veil-21: rgba(242, 246, 252, 0.98);
+  --veil-22: rgba(240, 246, 251, 0.94);
+  --veil-23: rgba(248, 244, 248, 0.93);
+  --veil-24: rgba(238, 248, 245, 0.9);
+  --veil-25: rgba(240, 246, 252, 0.98);
+  --veil-26: rgba(255, 239, 242, 0.92);
+  --veil-27: rgba(255, 239, 242, 0.94);
+  --veil-28: rgba(236, 245, 255, 0.92);
+  --veil-29: rgba(248, 243, 235, 0.9);
+  --veil-30: rgba(255, 236, 239, 0.92);
+  --veil-31: rgba(248, 242, 232, 0.94);
+  --veil-32: rgba(248, 242, 232, 0.92);
+  --veil-33: rgba(218, 241, 234, 0.15);
+  --veil-34: rgba(219, 241, 237, 0.09);
+  --veil-35: rgba(217, 242, 232, 0.14);
+
+  /* Channels. The line channels lighten so a border reads as a border on a
+     pale surface; the brand channels darken so a 6% tint is still tinted. */
+  --accent-rgb: 10 111 84;
+  --red-rgb: 195 35 56;
+  --amber-rgb: 160 96 0;
+  --blue-rgb: 18 99 201;
+  --purple-rgb: 96 56 159;
+  --line-soft-rgb: 205 213 220;
+  --line-mid-rgb: 190 199 208;
+  --line-cool-rgb: 188 197 206;
+  --line-bright-rgb: 178 188 198;
+  --line-dim-rgb: 196 205 213;
+  --line-pale-rgb: 120 134 146;
+  --shadow-rgb: 15 27 38;
+  --wash-rgb: 15 27 38;
+
+  /* Named roles */
+  --bg: #ffffff;
+  --bg-raised: #f6f8fa;
+  --panel-strong: #eaeef2;
+  --panel-soft: #eef2f5;
+  --line: #d5dbe1;
+  --line-bright: #bcc5cd;
+  --text: #101820;
+  --muted-bright: #4c5964;
+  --accent: #0a6f54;
+  --blue: #1263c9;
+  --amber: #8a5a05;
+  --red: #c32338;
+  --shadow: 0 12px 30px rgb(var(--shadow-rgb) / 0.13);
+}
+
+/*
+ * Compact density. Type and row heights shrink together; interactive targets
+ * keep their comfortable size so the setting never costs anyone a tap target.
+ */
+:root[data-density='compact'] {
+  --type-min: 11px;
+  --type-body: 13px;
+  --type-control: 13px;
+  --type-head: 12px;
+  --row-height: 54px;
+  --row-head-height: 38px;
+  --row-pad-y: 7px;
+  --header-height: 62px;
+}

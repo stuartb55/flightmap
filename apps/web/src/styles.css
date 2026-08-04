@@ -4,6 +4,7 @@
  * profile.css must stay last.
  */
 
+@import './styles/tokens.css';
 @import './styles/base.css';
 @import './styles/live.css';
 @import './styles/history.css';

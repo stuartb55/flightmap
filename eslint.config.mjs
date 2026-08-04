@@ -30,6 +30,14 @@ export default tseslint.config(
     },
   },
   {
+    // A classic script the browser runs before the bundle, so it is authored
+    // against the browser globals rather than Node's.
+    files: ['apps/web/public/*.js'],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+  {
     files: ['apps/web/src/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {

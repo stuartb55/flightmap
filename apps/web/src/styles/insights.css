@@ -43,7 +43,7 @@
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: #0a1016;
+  background: var(--surface-9);
 }
 
 .preset-tabs button {
@@ -59,9 +59,9 @@
 }
 
 .preset-tabs button.active {
-  color: #dffbf3;
-  background: #172720;
-  box-shadow: inset 0 0 0 1px rgba(88, 213, 177, 0.15);
+  color: var(--ink-2);
+  background: var(--surface-34);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.15);
 }
 
 .insight-custom-range {
@@ -84,7 +84,7 @@
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #0b1117;
+  background: var(--surface-10);
   color-scheme: dark;
   font-size: 13px;
 }
@@ -112,10 +112,10 @@
   gap: 9px;
   margin-bottom: 12px;
   padding: 11px 13px;
-  color: #e7c98f;
-  border: 1px solid rgba(242, 184, 94, 0.25);
+  color: var(--hue-14);
+  border: 1px solid rgb(var(--amber-rgb) / 0.25);
   border-radius: 8px;
-  background: rgba(242, 184, 94, 0.065);
+  background: rgb(var(--amber-rgb) / 0.065);
 }
 
 .insight-notice svg {
@@ -123,9 +123,9 @@
 }
 
 .insight-notice.error {
-  color: #ff9ba5;
-  border-color: rgba(255, 97, 113, 0.28);
-  background: rgba(255, 97, 113, 0.065);
+  color: var(--hue-7);
+  border-color: rgb(var(--red-rgb) / 0.28);
+  background: rgb(var(--red-rgb) / 0.065);
 }
 
 .insight-notice button {
@@ -142,9 +142,9 @@
 .backfill-progress {
   margin-bottom: 14px;
   padding: 13px 15px;
-  border: 1px solid rgba(98, 169, 255, 0.24);
+  border: 1px solid rgb(var(--blue-rgb) / 0.24);
   border-radius: 9px;
-  background: rgba(98, 169, 255, 0.055);
+  background: rgb(var(--blue-rgb) / 0.055);
 }
 
 .backfill-progress > div {
@@ -189,7 +189,7 @@
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: linear-gradient(145deg, #101820, #0c1218);
+  background: linear-gradient(145deg, var(--surface-20), var(--surface-11));
 }
 
 .metric-card > svg {
@@ -220,9 +220,9 @@
 .comparison-panel {
   margin-bottom: 14px;
   overflow: hidden;
-  border: 1px solid rgba(98, 169, 255, 0.22);
+  border: 1px solid rgb(var(--blue-rgb) / 0.22);
   border-radius: 10px;
-  background: rgba(98, 169, 255, 0.035);
+  background: rgb(var(--blue-rgb) / 0.035);
 }
 
 .comparison-panel > header {
@@ -276,11 +276,11 @@
 }
 
 .comparison-panel article.positive strong {
-  color: #76dfbd;
+  color: var(--hue-18);
 }
 
 .comparison-panel article.negative strong {
-  color: #ff929e;
+  color: var(--hue-6);
 }
 
 .insight-panel {
@@ -288,8 +288,8 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 11px;
-  background: #0c1218;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  background: var(--surface-11);
+  box-shadow: 0 10px 32px rgb(var(--shadow-rgb) / 0.12);
 }
 
 .insight-panel > header {
@@ -299,7 +299,7 @@
   gap: 12px;
   padding: 15px 18px;
   border-bottom: 1px solid var(--line);
-  background: #0f161d;
+  background: var(--surface-16);
 }
 
 .insight-panel h2 {
@@ -379,18 +379,18 @@
 }
 
 .chart-axis {
-  stroke: #42515d;
+  stroke: var(--edge-14);
   stroke-width: 1;
 }
 
 .chart-grid {
-  stroke: #1a2731;
+  stroke: var(--edge-7);
   stroke-width: 1;
   stroke-dasharray: 3 5;
 }
 
 .chart-bar {
-  fill: #50c7a5;
+  fill: var(--hue-20);
   opacity: 0.82;
 }
 
@@ -401,15 +401,15 @@
 
 .receiver-availability-line {
   fill: none;
-  stroke: #73aef5;
+  stroke: var(--hue-27);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .receiver-availability-point {
-  fill: #b9d7ff;
-  stroke: #163d6a;
+  fill: var(--hue-29);
+  stroke: var(--hue-28);
   stroke-width: 1.5;
 }
 
@@ -426,11 +426,11 @@
 .chart-legend i {
   width: 18px;
   height: 2px;
-  background: #73aef5;
+  background: var(--hue-27);
 }
 
 .chart-label {
-  fill: #8596a2;
+  fill: var(--ink-20);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 11px;
 }
@@ -487,7 +487,7 @@
   z-index: 1;
   top: 0;
   color: var(--muted-bright);
-  background: #121b23;
+  background: var(--surface-25);
 }
 
 .table-scroll tbody th {
@@ -571,7 +571,7 @@
   margin-top: 4px;
   overflow: hidden;
   border-radius: 2px;
-  background: #17232c;
+  background: var(--surface-32);
 }
 
 .leader-meter i {
@@ -595,7 +595,7 @@
   position: relative;
   height: min(52vh, 520px);
   min-height: 350px;
-  background: #080d12;
+  background: var(--edge-1);
 }
 
 .coverage-map {
@@ -611,10 +611,10 @@
   left: 12px;
   margin: 0;
   padding: 9px 11px;
-  color: #ffd3d8;
-  border: 1px solid rgba(255, 97, 113, 0.3);
+  color: var(--hue-2);
+  border: 1px solid rgb(var(--red-rgb) / 0.3);
   border-radius: 7px;
-  background: rgba(45, 17, 22, 0.92);
+  background: var(--veil-30);
 }
 
 .coverage-summary {
@@ -656,7 +656,7 @@
   margin-bottom: 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0c1218;
+  background: var(--surface-11);
 }
 
 .export-units-note {

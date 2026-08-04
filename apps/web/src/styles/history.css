@@ -7,7 +7,7 @@
   grid-template-columns: minmax(390px, 31vw) minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  background: #070b10;
+  background: var(--surface-2);
 }
 
 /* Both panes are visible side by side here, so the narrow-layout switch that
@@ -82,7 +82,7 @@
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0d141b;
+  background: var(--surface-14);
 }
 
 .results-heading {
@@ -94,7 +94,7 @@
   padding: 8px 16px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: #0a1016;
+  background: var(--surface-9);
 }
 
 .results-heading > div:first-child {
@@ -136,7 +136,7 @@
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #0d141b;
+  background: var(--surface-14);
 }
 
 .compact-select select {
@@ -154,13 +154,13 @@
 
 .session-card {
   border-bottom: 1px solid var(--line);
-  background: #0b1117;
+  background: var(--surface-10);
   transition: background 120ms ease;
 }
 
 .session-card:hover,
 .session-card.selected {
-  background: #101a21;
+  background: var(--surface-22);
 }
 
 .session-card.selected {
@@ -172,7 +172,7 @@
   grid-template-columns: 26px minmax(0, 1fr) 18px;
   gap: 10px;
   width: 100%;
-  padding: 16px 15px;
+  padding: calc(var(--row-pad-y) + 6px) 15px;
   color: inherit;
   border: 0;
   background: transparent;
@@ -191,10 +191,10 @@
   width: 24px;
   height: 24px;
   margin-top: 1px;
-  color: #06110e;
-  border: 1px solid #354550;
+  color: var(--on-fill-2);
+  border: 1px solid var(--edge-12);
   border-radius: 5px;
-  background: #111b23;
+  background: var(--surface-24);
 }
 
 .session-card.selected .session-select {
@@ -226,10 +226,10 @@
 
 .alert-tag {
   padding: 3px 6px;
-  color: #ff929d;
-  border: 1px solid rgba(255, 97, 113, 0.22);
+  color: var(--hue-8);
+  border: 1px solid rgb(var(--red-rgb) / 0.22);
   border-radius: 4px;
-  background: rgba(255, 97, 113, 0.07);
+  background: rgb(var(--red-rgb) / 0.07);
   font-size: 12px;
   text-transform: uppercase;
 }
@@ -239,7 +239,7 @@
   align-items: center;
   gap: 6px;
   margin-top: 6px;
-  color: #aebbc4;
+  color: var(--ink-14);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
 }
@@ -247,7 +247,7 @@
 .session-time i {
   width: 14px;
   height: 1px;
-  background: #4a5b67;
+  background: var(--surface-36);
 }
 
 .session-time small {
@@ -267,7 +267,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  color: #bac5cd;
+  color: var(--ink-13);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
   white-space: nowrap;
@@ -275,14 +275,14 @@
 
 .session-stats small {
   margin-bottom: 3px;
-  color: #62727e;
+  color: var(--ink-29);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;
 }
 
 .session-chevron {
   align-self: center;
-  color: #51616d;
+  color: var(--ink-33);
 }
 
 .expired-track {
@@ -297,7 +297,7 @@
 .mini-spinner {
   width: 9px;
   height: 9px;
-  border: 1px solid rgba(88, 213, 177, 0.3);
+  border: 1px solid rgb(var(--accent-rgb) / 0.3);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 700ms linear infinite;
@@ -309,7 +309,7 @@
   min-height: 116px;
   overflow: hidden;
   border-bottom: 1px solid var(--line);
-  background: #0c1319;
+  background: var(--surface-12);
 }
 
 .alerts-load-more {
@@ -324,13 +324,13 @@
   position: absolute;
   inset: 0;
   content: '';
-  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.035) 46%, transparent 72%);
+  background: linear-gradient(100deg, transparent 20%, rgb(var(--wash-rgb) / 0.035) 46%, transparent 72%);
   animation: shimmer 1.5s infinite;
   transform: translateX(-100%);
 }
 
 .summary-results {
-  border-top: 8px solid #080d12;
+  border-top: 8px solid var(--edge-1);
 }
 
 .summary-card {
@@ -338,7 +338,7 @@
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0c1319;
+  background: var(--surface-12);
 }
 
 .summary-card > div:first-child {
@@ -393,7 +393,7 @@
 .summary-card > p {
   margin: 10px 0 0;
   padding-top: 8px;
-  color: #957d58;
+  color: var(--hue-10);
   border-top: 1px solid var(--line);
   font-size: 12px;
 }
@@ -426,9 +426,9 @@
   align-items: center;
   width: min(310px, calc(100% - 40px));
   padding: 22px;
-  border: 1px solid rgba(46, 63, 75, 0.72);
+  border: 1px solid rgb(var(--line-dim-rgb) / 0.72);
   border-radius: 11px;
-  background: rgba(9, 14, 19, 0.88);
+  background: var(--veil-11);
   box-shadow: var(--shadow);
   text-align: center;
   transform: translate(-50%, -50%);
@@ -442,9 +442,9 @@
   height: 43px;
   margin-bottom: 10px;
   color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.22);
+  border: 1px solid rgb(var(--accent-rgb) / 0.22);
   border-radius: 50%;
-  background: rgba(88, 213, 177, 0.08);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .history-map-empty strong {
@@ -462,10 +462,10 @@
 .replay-panel {
   position: relative;
   padding: 13px 15px 12px;
-  border: 1px solid rgba(51, 70, 83, 0.78);
+  border: 1px solid rgb(var(--line-cool-rgb) / 0.78);
   border-radius: 11px;
-  background: rgba(9, 14, 20, 0.94);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  background: var(--veil-14);
+  box-shadow: 0 18px 44px rgb(var(--shadow-rgb) / 0.42);
   backdrop-filter: blur(15px);
 }
 
@@ -474,9 +474,9 @@
   align-self: flex-end;
   width: min(520px, 100%);
   padding: 11px 12px;
-  border: 1px solid rgba(51, 70, 83, 0.78);
+  border: 1px solid rgb(var(--line-cool-rgb) / 0.78);
   border-radius: 10px;
-  background: rgba(9, 14, 20, 0.94);
+  background: var(--veil-14);
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
@@ -519,7 +519,7 @@
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #101820;
+  background: var(--surface-20);
   cursor: pointer;
 }
 
@@ -528,7 +528,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #101820;
+  background: var(--surface-20);
 }
 
 .selected-track-chips article button {
@@ -641,7 +641,7 @@
 .time-slider::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 3px;
-  background: linear-gradient(90deg, #375f56, var(--accent));
+  background: linear-gradient(90deg, var(--hue-26), var(--accent));
 }
 
 .time-slider::-webkit-slider-thumb {
@@ -649,10 +649,10 @@
   height: 13px;
   margin-top: -5px;
   appearance: none;
-  border: 2px solid #08110f;
+  border: 2px solid var(--edge-3);
   border-radius: 50%;
   background: var(--accent-bright);
-  box-shadow: 0 0 0 2px rgba(88, 213, 177, 0.28);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.28);
 }
 
 .time-slider::-moz-range-track {
@@ -664,7 +664,7 @@
 .time-slider::-moz-range-thumb {
   width: 11px;
   height: 11px;
-  border: 2px solid #08110f;
+  border: 2px solid var(--edge-3);
   border-radius: 50%;
   background: var(--accent-bright);
 }
@@ -672,7 +672,7 @@
 .replay-ticks {
   display: flex;
   justify-content: space-between;
-  color: #647480;
+  color: var(--ink-28);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
 }
@@ -690,11 +690,11 @@
   width: 44px;
   height: 44px;
   padding: 0;
-  color: #06110e;
+  color: var(--on-fill-2);
   border: 0;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(88, 213, 177, 0.08);
+  box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.08);
   cursor: pointer;
 }
 
@@ -704,10 +704,10 @@
   gap: 2px;
   height: 40px;
   padding: 0 4px 0 7px;
-  color: #647480;
+  color: var(--ink-28);
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #0a1015;
+  background: var(--surface-8);
 }
 
 .speed-control button {
@@ -724,8 +724,8 @@
 }
 
 .speed-control button.active {
-  color: #dffbf3;
-  background: rgba(88, 213, 177, 0.13);
+  color: var(--ink-2);
+  background: rgb(var(--accent-rgb) / 0.13);
 }
 
 .follow-toggle {
@@ -806,8 +806,8 @@
 }
 
 .timeline-lane.focused .timeline-label {
-  border-color: rgba(88, 213, 177, 0.4);
-  background: rgba(88, 213, 177, 0.1);
+  border-color: rgb(var(--accent-rgb) / 0.4);
+  background: rgb(var(--accent-rgb) / 0.1);
 }
 
 .timeline-bar {
@@ -815,7 +815,7 @@
   flex: 1 1 auto;
   height: 16px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--wash-rgb) / 0.05);
   cursor: ew-resize;
   touch-action: none;
 }

@@ -1,33 +1,9 @@
-/* Design tokens, resets, application shell, and shared controls. */
+/* Resets, application shell, and shared controls. Tokens live in tokens.css. */
 
 :root {
-  color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --bg: #070a0e;
-  --bg-raised: #0b1016;
-  --panel: #0d131a;
-  --panel-strong: #111922;
-  --panel-soft: #121b24;
-  --line: #1d2a35;
-  --line-bright: #2a3a47;
-  --text: #e8eff4;
-  --muted: #81909d;
-  --muted-bright: #a6b4bf;
-  --accent: #58d5b1;
-  --accent-bright: #7ce8c9;
-  --accent-dim: rgba(88, 213, 177, 0.12);
-  --blue: #62a9ff;
-  --amber: #f2b85e;
-  --red: #ff6171;
-  --red-dim: rgba(255, 83, 101, 0.12);
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.38);
-  --type-min: 12px;
-  --type-body: 14px;
-  --type-control: 14px;
-  --header-height: 72px;
-  --mobile-nav-height: 0px;
 }
 
 * {
@@ -108,7 +84,7 @@ textarea:focus-visible {
   top: 8px;
   left: 8px;
   padding: 10px 14px;
-  color: #05120e;
+  color: var(--on-fill-3);
   border-radius: 6px;
   background: var(--accent);
   font-weight: 700;
@@ -129,7 +105,7 @@ button:disabled {
 }
 
 ::selection {
-  color: #04100c;
+  color: var(--on-fill-1);
   background: var(--accent);
 }
 
@@ -143,7 +119,7 @@ button:disabled {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #273541;
+  background: var(--surface-35);
   border: 2px solid transparent;
   border-radius: 10px;
   background-clip: padding-box;
@@ -161,7 +137,7 @@ button:disabled {
   min-height: 100dvh;
   padding: 24px;
   background:
-    radial-gradient(circle at 50% 35%, rgba(88, 213, 177, 0.09), transparent 32rem),
+    radial-gradient(circle at 50% 35%, rgb(var(--accent-rgb) / 0.09), transparent 32rem),
     var(--bg);
 }
 
@@ -185,7 +161,7 @@ button:disabled {
   gap: 8px;
   min-height: 44px;
   padding: 0 16px;
-  color: #05120e;
+  color: var(--on-fill-3);
   border: 0;
   border-radius: 7px;
   background: var(--accent);
@@ -214,9 +190,9 @@ button:disabled {
   align-items: center;
   height: var(--header-height);
   padding: 0 20px;
-  border-bottom: 1px solid #17222b;
-  background: rgba(8, 12, 17, 0.97);
-  box-shadow: 0 2px 18px rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--edge-4);
+  background: var(--veil-6);
+  box-shadow: 0 2px 18px rgb(var(--shadow-rgb) / 0.18);
 }
 
 .brand {
@@ -233,16 +209,16 @@ button:disabled {
   width: 36px;
   height: 36px;
   color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.34);
+  border: 1px solid rgb(var(--accent-rgb) / 0.34);
   border-radius: 50%;
-  background: rgba(88, 213, 177, 0.08);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .brand-mark::before,
 .brand-mark::after {
   position: absolute;
   content: '';
-  border: 1px solid rgba(88, 213, 177, 0.25);
+  border: 1px solid rgb(var(--accent-rgb) / 0.25);
   border-radius: 50%;
 }
 
@@ -254,7 +230,7 @@ button:disabled {
 .brand-mark::after {
   width: 44px;
   height: 44px;
-  border-color: rgba(88, 213, 177, 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.08);
 }
 
 .brand > span:last-child {
@@ -281,9 +257,9 @@ button:disabled {
   align-items: center;
   gap: 3px;
   padding: 4px;
-  border: 1px solid #17232d;
+  border: 1px solid var(--edge-5);
   border-radius: 10px;
-  background: #0a0f14;
+  background: var(--surface-6);
 }
 
 .nav-item {
@@ -293,22 +269,22 @@ button:disabled {
   gap: 7px;
   height: 42px;
   padding: 0 13px;
-  color: #81909d;
+  color: var(--ink-21);
   border-radius: 7px;
-  font-size: 14px;
+  font-size: var(--type-control);
   font-weight: 600;
   transition: color 160ms ease, background 160ms ease;
 }
 
 .nav-item:hover {
   color: var(--text);
-  background: #101820;
+  background: var(--surface-20);
 }
 
 .nav-item.active {
-  color: #dffbf3;
-  background: #14231f;
-  box-shadow: inset 0 0 0 1px rgba(88, 213, 177, 0.13);
+  color: var(--ink-2);
+  background: var(--surface-29);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.13);
 }
 
 .nav-item.active svg {
@@ -319,7 +295,7 @@ button:disabled {
   min-width: 22px;
   height: 22px;
   padding: 0 4px;
-  color: #fff;
+  color: var(--ink-1);
   border-radius: 9px;
   background: var(--red);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
@@ -334,9 +310,9 @@ button:disabled {
   gap: 9px;
   min-width: 148px;
   padding: 7px 11px;
-  border: 1px solid #192630;
+  border: 1px solid var(--edge-6);
   border-radius: 9px;
-  background: #0c1218;
+  background: var(--surface-11);
 }
 
 .receiver-actions {
@@ -357,7 +333,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(2, 5, 8, 0.72);
+  background: var(--veil-1);
   backdrop-filter: blur(6px);
 }
 
@@ -366,7 +342,7 @@ button:disabled {
   overflow: hidden;
   border: 1px solid var(--line-bright);
   border-radius: 11px;
-  background: #0c1319;
+  background: var(--surface-12);
   box-shadow: var(--shadow);
 }
 
@@ -414,8 +390,8 @@ button:disabled {
   color: var(--accent-bright);
   border: 1px solid var(--line-bright);
   border-radius: 5px;
-  background: #121b23;
-  box-shadow: 0 2px 0 #05080b;
+  background: var(--surface-25);
+  box-shadow: 0 2px 0 var(--surface-1);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
 }
 
@@ -435,7 +411,7 @@ button:disabled {
 
 .receiver-chip strong {
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--type-control);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -456,25 +432,25 @@ button:disabled {
   height: 7px;
   border-radius: 50%;
   background: var(--muted);
-  box-shadow: 0 0 0 4px rgba(126, 142, 154, 0.08);
+  box-shadow: 0 0 0 4px rgb(var(--line-pale-rgb) / 0.08);
 }
 
 .status-dot.status-live,
 .status-dot.status-online {
   background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(88, 213, 177, 0.09), 0 0 10px rgba(88, 213, 177, 0.55);
+  box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.09), 0 0 10px rgb(var(--accent-rgb) / 0.55);
 }
 
 .status-dot.status-degraded,
 .status-dot.status-reconnecting,
 .status-dot.status-connecting {
   background: var(--amber);
-  box-shadow: 0 0 0 4px rgba(242, 184, 94, 0.1);
+  box-shadow: 0 0 0 4px rgb(var(--amber-rgb) / 0.1);
 }
 
 .status-dot.status-offline {
   background: var(--red);
-  box-shadow: 0 0 0 4px rgba(255, 97, 113, 0.1);
+  box-shadow: 0 0 0 4px rgb(var(--red-rgb) / 0.1);
 }
 
 .app-content {
@@ -500,9 +476,9 @@ button:disabled {
   width: 48px;
   height: 48px;
   color: var(--accent);
-  border: 1px solid rgba(88, 213, 177, 0.26);
+  border: 1px solid rgb(var(--accent-rgb) / 0.26);
   border-radius: 50%;
-  background: rgba(88, 213, 177, 0.07);
+  background: rgb(var(--accent-rgb) / 0.07);
   animation: loading-pulse 1.3s ease-in-out infinite;
 }
 
@@ -534,7 +510,7 @@ button:disabled {
   color: var(--muted-bright);
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #10171e;
+  background: var(--surface-19);
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
 }
@@ -542,7 +518,7 @@ button:disabled {
 .icon-button:hover {
   color: var(--text);
   border-color: var(--line-bright);
-  background: #151f28;
+  background: var(--surface-28);
 }
 
 .primary-button,
@@ -555,16 +531,16 @@ button:disabled {
   min-height: 44px;
   padding: 0 13px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: var(--type-control);
   font-weight: 700;
   cursor: pointer;
 }
 
 .primary-button {
-  color: #06110e;
-  border: 1px solid #76e2c4;
+  color: var(--on-fill-2);
+  border: 1px solid var(--hue-22);
   background: var(--accent);
-  box-shadow: 0 7px 18px rgba(39, 177, 139, 0.14);
+  box-shadow: 0 7px 18px var(--veil-35);
 }
 
 .primary-button:hover {
@@ -574,13 +550,13 @@ button:disabled {
 .secondary-button {
   color: var(--muted-bright);
   border: 1px solid var(--line-bright);
-  background: #10171e;
+  background: var(--surface-19);
 }
 
 .secondary-button:hover {
   color: var(--text);
-  border-color: #3b4d5b;
-  background: #151e27;
+  border-color: var(--edge-13);
+  background: var(--surface-27);
 }
 
 .secondary-button.small {
