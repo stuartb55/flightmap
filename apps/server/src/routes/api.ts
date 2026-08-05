@@ -170,6 +170,9 @@ export async function registerApiRoutes(
     return repository.rangeProfile(query);
   });
 
+  // All-time and range-independent, so it takes no query at all.
+  app.get("/api/v1/insights/records", async () => repository.receiverRecords());
+
   app.get("/api/v1/insights/coverage-cell", async (request) => {
     const query = coverageCellDetailQuerySchema.parse(request.query);
     return repository.coverageCellDetail(query);

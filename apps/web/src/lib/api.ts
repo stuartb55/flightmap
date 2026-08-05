@@ -14,6 +14,7 @@ import type {
   InsightOverview,
   InsightPatternsResponse,
   RangeProfileResponse,
+  ReceiverRecordsResponse,
   SavedView,
   SavedViewInput,
   SavedViewPatch,
@@ -34,6 +35,7 @@ import {
   insightOverviewSchema,
   insightPatternsResponseSchema,
   rangeProfileResponseSchema,
+  receiverRecordsResponseSchema,
   savedViewSchema,
   savedViewsResponseSchema,
   sessionsResponseSchema,
@@ -384,6 +386,15 @@ export const api = {
       `/insights/range-profile${queryString({ ...range, compare: range.compare ? 'true' : undefined })}`,
       { signal },
       rangeProfileResponseSchema,
+    )
+  },
+
+  /** All-time and range-independent, so it takes nothing but a signal. */
+  receiverRecords(signal?: AbortSignal) {
+    return request<ReceiverRecordsResponse>(
+      '/insights/records',
+      { signal },
+      receiverRecordsResponseSchema,
     )
   },
 

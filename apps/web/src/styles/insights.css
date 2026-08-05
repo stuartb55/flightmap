@@ -22,6 +22,7 @@
 .insight-notice,
 .backfill-progress,
 .insight-empty,
+.records-panel,
 .comparison-panel {
   width: calc(100% - 56px);
   max-width: 1194px;
@@ -672,4 +673,131 @@
   align-self: center;
   color: var(--muted);
   font-size: 11px;
+}
+
+
+/*
+ * All-time records. Visually separated from everything below it because it is
+ * the one panel on the page the date controls do not govern; the note in the
+ * header says so, and the border keeps saying it after the note is skimmed.
+ */
+.records-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-9);
+}
+
+.records-panel.skeleton-card {
+  min-height: 132px;
+}
+
+.records-panel > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 18px;
+}
+
+.records-panel h2 {
+  margin: 2px 0 0;
+  font-size: 17px;
+}
+
+.records-panel > header p,
+.records-empty {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.records-empty {
+  margin-top: 12px;
+}
+
+.records-panel ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.records-panel li {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.record-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 3px;
+  color: var(--accent);
+  border-radius: 7px;
+  background: var(--accent-dim);
+}
+
+.records-panel li > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.records-panel li > strong {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 20px;
+}
+
+.record-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.record-context b {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-context i,
+.record-context time {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 7px;
+}
+
+.record-links a {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.record-links em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }

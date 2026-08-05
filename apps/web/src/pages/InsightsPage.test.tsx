@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InsightsPage, insightRangeForPreset } from './InsightsPage'
@@ -18,6 +18,7 @@ vi.mock('../lib/api', () => ({
     insightPatterns: vi.fn(),
     rangeProfile: vi.fn(),
     coverageCellDetail: vi.fn(),
+    receiverRecords: vi.fn(),
     savedViews: vi.fn().mockResolvedValue([]),
     createSavedView: vi.fn(),
     updateSavedView: vi.fn(),
@@ -110,6 +111,33 @@ function renderPage() {
   )
 }
 
+const records = {
+  records: [
+    {
+      kind: 'farthest_contact' as const,
+      value: 248.4,
+      unit: 'distance_nm' as const,
+      occurredOn: '2026-03-14',
+      icao: 'abc123',
+      label: 'G-FARR',
+      secondary: 'B788 · Test Air',
+      detailedTrackAvailable: false,
+    },
+    {
+      kind: 'busiest_day' as const,
+      value: 1_240_000,
+      unit: 'count' as const,
+      occurredOn: '2026-08-01',
+      icao: null,
+      label: null,
+      secondary: null,
+      detailedTrackAvailable: true,
+    },
+  ],
+  availableFrom: '2026-01-01',
+  detailedFrom: '2026-07-01',
+}
+
 describe('InsightsPage', () => {
   beforeEach(() => {
     resetSavedViews()
@@ -125,6 +153,7 @@ describe('InsightsPage', () => {
       cell: coverage.cells[0]!,
       aircraft: [{ icao: 'abc123', registration: 'G-CVRG', typeCode: 'A320', operator: 'Test Air' }],
     })
+    vi.mocked(api.receiverRecords).mockResolvedValue(records)
   })
 
   it('renders chart summaries, equivalent data tables, leaders, and coverage', async () => {
@@ -273,6 +302,56 @@ describe('InsightsPage', () => {
       expect(fireEvent.click(aircraft, modifier)).toBe(true)
       expect(window.location.pathname).toBe('/insights')
     }
+  })
+
+  it('shows all-time records, says they ignore the range, and degrades expired links', async () => {
+    // Call counts accumulate across this file's tests; this one counts them.
+    vi.mocked(api.receiverRecords).mockClear()
+    vi.mocked(api.insightsOverview).mockClear()
+    renderPage()
+    const panel = await screen.findByRole('region', { name: 'All-time receiver records' })
+    // The panel is above the date controls and does not move with them, which
+    // reads as a bug unless it is said out loud.
+    expect(panel).toHaveTextContent(/do not change with the date range below/)
+    expect(panel).toHaveTextContent('248 nm')
+    expect(panel).toHaveTextContent('1.2M reports')
+
+    // The record is kept for ever; the track that set it was not, so the link
+    // degrades to the profile rather than landing on an empty search.
+    expect(within(panel).getByRole('link', { name: 'Aircraft profile' })).toHaveAttribute(
+      'href',
+      '/aircraft/abc123',
+    )
+    expect(panel).toHaveTextContent('Detailed track expired')
+    // The busiest day is still inside retention, so it drills through.
+    expect(within(panel).getByRole('link', { name: 'History' })).toHaveAttribute(
+      'href',
+      '/history?from=2026-08-01T00%3A00%3A00.000Z&to=2026-08-01T23%3A59%3A59.999Z',
+    )
+    // All-time means all-time: changing the range must not refetch them.
+    expect(api.receiverRecords).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }))
+    await waitFor(() => expect(api.insightsOverview).toHaveBeenCalledTimes(2))
+    expect(api.receiverRecords).toHaveBeenCalledTimes(1)
+  })
+
+  it('explains an empty record set rather than showing a row of zeros', async () => {
+    vi.mocked(api.receiverRecords).mockResolvedValue({
+      records: [],
+      availableFrom: null,
+      detailedFrom: '2026-07-01',
+    })
+    renderPage()
+    const panel = await screen.findByRole('region', { name: 'All-time receiver records' })
+    expect(panel).toHaveTextContent(/No records yet/)
+    expect(panel).not.toHaveTextContent('0 nm')
+  })
+
+  it('keeps the rest of Insights when records are unavailable', async () => {
+    vi.mocked(api.receiverRecords).mockRejectedValue(new Error('Records unavailable'))
+    renderPage()
+    expect(await screen.findByText('1,250')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'All-time receiver records' })).toBeNull()
   })
 })
 

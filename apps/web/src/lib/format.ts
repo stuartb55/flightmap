@@ -241,6 +241,20 @@ export function formatDuration(start: string, end: string | null): string {
 }
 
 /**
+ * A length of time from a count of seconds, in the same shape `formatDuration`
+ * gives a pair of timestamps. Seconds survive below a minute: a thirty-second
+ * contact is a real figure, and "0m" is not.
+ */
+export function formatDurationSeconds(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return '—'
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return `${total}s`
+  const minutes = Math.round(total / 60)
+  if (minutes < 60) return `${minutes}m`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+/**
  * Time since a series began, for an axis that has been aligned on start. It is
  * a difference rather than a clock reading, so it carries no time zone and
  * keeps seconds: aligned approach profiles are compared at a scale where a

@@ -85,6 +85,8 @@ export class FlightRepository {
     this.insights.insightsCoverage(...args);
   coverageCellDetail = (...args: Parameters<InsightsRepository["coverageCellDetail"]>) =>
     this.insights.coverageCellDetail(...args);
+  receiverRecords = (...args: Parameters<InsightsRepository["receiverRecords"]>) =>
+    this.insights.receiverRecords(...args);
 
   // Alerts and watchlist
   alerts = (...args: Parameters<AlertsRepository["alerts"]>) =>

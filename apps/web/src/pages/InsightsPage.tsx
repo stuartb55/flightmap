@@ -7,6 +7,9 @@ import type {
   InsightOverview,
   InsightPatternsResponse,
   RangeProfileResponse,
+  ReceiverRecord,
+  ReceiverRecordKind,
+  ReceiverRecordsResponse,
   InsightSeriesPoint,
   SavedViewConfiguration,
 } from '@flightmap/shared'
@@ -22,6 +25,7 @@ import {
   RadioTower,
   RefreshCw,
   Route,
+  Timer,
 } from 'lucide-react'
 import { CoverageMap } from '../components/CoverageMap'
 import { ActivityPattern } from '../components/ActivityPattern'
@@ -34,9 +38,11 @@ import {
   compactNumber,
   dateTimeInputToIso,
   formatAltitude,
+  formatDate,
   formatDateTime,
   formatDateTimeInput,
   formatDistance,
+  formatDurationSeconds,
 } from '../lib/format'
 import {
   convertAltitude,
@@ -279,6 +285,101 @@ function ComparisonPanel({ overview }: { overview: InsightOverview }) {
   )
 }
 
+/*
+ * All-time records, above the date controls and deliberately outside them.
+ * Every figure comes from an aggregate that is retained indefinitely, so these
+ * numbers do not move when the range does — which reads as a bug unless the
+ * panel says so, hence the standing note rather than a tooltip.
+ */
+const recordDefinitions: Record<
+  ReceiverRecordKind,
+  { title: string; icon: typeof Activity; describe: (record: ReceiverRecord) => string }
+> = {
+  farthest_contact: { title: 'Farthest contact', icon: Route, describe: (record) => formatDistance(record.value) },
+  highest_altitude: { title: 'Highest altitude', icon: Activity, describe: (record) => formatAltitude(record.value) },
+  closest_approach: { title: 'Closest approach', icon: MapPinned, describe: (record) => formatDistance(record.value) },
+  longest_contact: { title: 'Longest contact', icon: Timer, describe: (record) => formatDurationSeconds(record.value) },
+  busiest_day: { title: 'Busiest day', icon: BarChart3, describe: (record) => `${compactNumber(record.value)} reports` },
+  most_observed_airframe: { title: 'Most-observed airframe', icon: Plane, describe: (record) => `${compactNumber(record.value)} reports` },
+}
+
+/** The History range for the UTC day a record was set. */
+function recordDayHref(record: ReceiverRecord) {
+  const start = `${record.occurredOn}T00:00:00.000Z`
+  const end = `${record.occurredOn}T23:59:59.999Z`
+  const params = new URLSearchParams({ from: start, to: end })
+  if (record.icao) params.set('icao', record.icao)
+  return `/history?${params.toString()}`
+}
+
+function RecordsPanel({
+  records,
+  loading,
+}: {
+  records: ReceiverRecordsResponse | null
+  loading: boolean
+}) {
+  useUnitPreferences()
+  if (loading && !records) {
+    return <div className="records-panel skeleton-card" role="status" aria-label="Loading receiver records" />
+  }
+  if (!records) return null
+  return (
+    <section className="records-panel" aria-label="All-time receiver records">
+      <header>
+        <div>
+          <span className="eyebrow">ALL-TIME RECORDS</span>
+          <h2>Receiver records</h2>
+        </div>
+        <p>
+          {records.availableFrom
+            ? `Every observation since ${formatDate(records.availableFrom)}. These do not change with the date range below.`
+            : 'Every observation this receiver has kept. These do not change with the date range below.'}
+        </p>
+      </header>
+      {records.records.length ? (
+        <ol>
+          {records.records.map((record) => {
+            const definition = recordDefinitions[record.kind]
+            return (
+              <li key={record.kind}>
+                <span className="record-icon" aria-hidden="true"><definition.icon size={15} /></span>
+                <small>{definition.title}</small>
+                <strong>{definition.describe(record)}</strong>
+                <span className="record-context">
+                  {record.label ? <b>{record.label}</b> : null}
+                  {record.secondary ? <i>{record.secondary}</i> : null}
+                  <time dateTime={record.occurredOn}>{formatDate(record.occurredOn)}</time>
+                </span>
+                <span className="record-links">
+                  {record.icao ? (
+                    <Link to={`/aircraft/${encodeURIComponent(record.icao)}`}>
+                      Aircraft profile
+                    </Link>
+                  ) : null}
+                  {record.detailedTrackAvailable ? (
+                    <Link to={recordDayHref(record)}>History</Link>
+                  ) : (
+                    // The record itself is kept for ever; the track behind it
+                    // is not, and saying so is better than a link that lands
+                    // on an empty search.
+                    <em>Detailed track expired</em>
+                  )}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      ) : (
+        <p className="records-empty">
+          No records yet. They appear once this receiver has aggregated its first day of
+          observations, and are kept for ever after that.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function exportHref(path: string, values: Record<string, string | boolean>) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(values)) params.set(key, String(value))
@@ -325,6 +426,8 @@ export function InsightsPage() {
   const [coverage, setCoverage] = useState<InsightCoverageResponse | null>(null)
   const [patterns, setPatterns] = useState<InsightPatternsResponse | null>(null)
   const [rangeProfile, setRangeProfile] = useState<RangeProfileResponse | null>(null)
+  const [records, setRecords] = useState<ReceiverRecordsResponse | null>(null)
+  const [recordsLoading, setRecordsLoading] = useState(true)
   const [altitudeBand, setAltitudeBand] = useState<'all' | 'ground' | 'low' | 'medium' | 'high'>('all')
   const [selectedCoverage, setSelectedCoverage] = useState<CoverageCellDetailResponse | null>(null)
   const [coverageDetailLoading, setCoverageDetailLoading] = useState(false)
@@ -355,6 +458,30 @@ export function InsightsPage() {
    * range it carries is the range the server should be asked about.
    */
   const defaultReady = useDefaultSavedView('insights', search !== '', applySavedView)
+
+  /*
+   * Records are all-time, so they are fetched once per visit and not again
+   * when the range changes — refetching them alongside the range would imply
+   * to anyone watching the network that they depend on it.
+   */
+  useEffect(() => {
+    const controller = new AbortController()
+    setRecordsLoading(true)
+    void api
+      .receiverRecords(controller.signal)
+      .then((response) => {
+        if (!controller.signal.aborted) setRecords(response)
+      })
+      .catch(() => {
+        // A records failure must not take the rest of Insights with it: the
+        // panel simply does not render.
+        if (!controller.signal.aborted) setRecords(null)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecordsLoading(false)
+      })
+    return () => controller.abort()
+  }, [refreshKey])
 
   useEffect(() => {
     if (!defaultReady) return
@@ -479,6 +606,8 @@ export function InsightsPage() {
           </button>
         </div>
       </header>
+
+      <RecordsPanel records={records} loading={recordsLoading} />
 
       <section className="insight-controls" aria-label="Insight date range">
         <div className="preset-tabs" role="group" aria-label="Date range presets">
