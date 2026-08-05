@@ -150,6 +150,7 @@ export function normaliseAircraft(
     stale: (record.seen ?? 0) > staleAfterSeconds,
     watched: false,
     hasActiveAlert: false,
+    firstSeenAt: null,
     metadata: null
   };
 }

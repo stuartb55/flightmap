@@ -297,6 +297,27 @@
   color: var(--ink-24);
 }
 
+/*
+ * A first sighting by this receiver. Deliberately a word rather than a colour
+ * or an icon: it has to survive a monochrome screen and a screen reader, and
+ * the row's own label repeats it so the badge itself stays aria-hidden. The
+ * purple channel is not used by any other aircraft state, so it cannot be
+ * mistaken for the watchlist amber or an alert.
+ */
+.new-sighting-badge {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid rgb(var(--purple-rgb) / 0.3);
+  border-radius: 4px;
+  background: rgb(var(--purple-rgb) / 0.12);
+  color: var(--hue-30);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+}
+
 .aircraft-identity small,
 .aircraft-table td > small {
   display: block;
@@ -1240,6 +1261,11 @@
 .map-waypoint-key i.departure {
   border-color: var(--hue-21);
   background: rgb(var(--accent-rgb) / 0.16);
+}
+
+.map-waypoint-key i.new-sighting {
+  border-color: var(--hue-30);
+  background: rgb(var(--purple-rgb) / 0.16);
 }
 
 .map-error {

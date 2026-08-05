@@ -68,6 +68,42 @@ describe('AircraftTable', () => {
     expect(screen.getByText('18,000 ft')).toBeInTheDocument()
   })
 
+  /*
+   * "NEW" has to reach a screen reader as part of the row it belongs to, not as
+   * a loose word after it, so the badge itself is hidden and the row's own
+   * label carries the fact. That also keeps it off colour alone.
+   */
+  it('marks a new sighting in the row label as well as on screen', () => {
+    const cutoff = Date.parse('2026-08-01T00:00:00.000Z')
+    renderTable({
+      aircraft: [aircraft({ firstSeenAt: '2026-08-04T09:00:00.000Z' })],
+      newSince: cutoff,
+    })
+    expect(screen.getByText('NEW')).toHaveAttribute('aria-hidden', 'true')
+    expect(
+      screen.getByRole('button', { name: 'Select EZY42KD, new to this receiver' }),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves an established airframe, and one with no summary row, unmarked', () => {
+    const cutoff = Date.parse('2026-08-01T00:00:00.000Z')
+    const { unmount } = renderTable({
+      aircraft: [aircraft({ firstSeenAt: '2019-01-02T09:00:00.000Z' })],
+      newSince: cutoff,
+    })
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument()
+    unmount()
+
+    renderTable({ aircraft: [aircraft({ firstSeenAt: null })], newSince: cutoff })
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument()
+  })
+
+  it('marks nothing at all when the preference is off', () => {
+    renderTable({ aircraft: [aircraft({ firstSeenAt: '2026-08-04T09:00:00.000Z' })] })
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select EZY42KD' })).toBeInTheDocument()
+  })
+
   it('shows climb state beside the altitude without needing a column for it', () => {
     renderTable({ aircraft: [aircraft({ verticalRate: 1_800 })] })
     // The tooltip carries the rate; the spoken text carries the direction.

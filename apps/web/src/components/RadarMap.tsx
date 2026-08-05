@@ -28,6 +28,7 @@ import {
 } from '../lib/aircraft-category'
 import { aircraftLabel, altitudeColour, altitudeDisplayValue, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
 import { unitLabels, useUnitPreferences, type UnitPreferences } from '../lib/unit-preferences'
+import { isNewSighting } from '../lib/sighting-preferences'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import type { TrailPoint } from '../state/live-reducer'
 import { waypointData } from './waypoints'
@@ -87,6 +88,12 @@ interface Props {
    * rather than the middle of the canvas, so a selection cannot land behind it.
    */
   bottomInset?: number
+  /**
+   * Cutoff from the sighting preference; null when the marker is off. Aircraft
+   * this receiver first heard at or after it get a halo, unless something more
+   * urgent already claims one.
+   */
+  newSince?: number | null
   /**
    * Applied once, when the map is created — a viewport carried by the URL of a
    * shared link. Later changes are ignored: after that the user owns the view.
@@ -449,10 +456,12 @@ function ringData(
   }
 }
 
-function liveAircraftData(
+/** Exported for the emphasis-precedence test; the map is its only caller. */
+export function liveAircraftData(
   aircraft: Aircraft[],
   units: UnitPreferences,
   selectedIcao?: string | null,
+  newSince: number | null = null,
 ): FeatureCollection<Point> {
   return {
     type: 'FeatureCollection',
@@ -481,6 +490,19 @@ function liveAircraftData(
           selected: item.icao === selectedIcao ? 1 : 0,
           emergency: isEmergencyAircraft(item) ? 1 : 0,
           watched: item.watched ? 1 : 0,
+          /*
+           * Emphasis precedence: emergency, then alert, then watchlist, then
+           * new. Resolved here rather than by layer order so an aircraft that
+           * is more than one thing wears exactly one halo — a first sighting
+           * must never be what someone sees instead of an alert.
+           */
+          newSighting:
+            isNewSighting(item.firstSeenAt, newSince) &&
+            !isEmergencyAircraft(item) &&
+            !item.hasActiveAlert &&
+            !item.watched
+              ? 1
+              : 0,
           opacity: item.seenPositionSeconds == null ? 0.65 : Math.max(0.25, 1 - item.seenPositionSeconds / 60),
         },
         geometry: { type: 'Point', coordinates: [item.longitude!, item.latitude!] },
@@ -669,6 +691,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     trails = emptyTrails,
     trackColourMode = 'altitude',
     bottomInset = 0,
+    newSince = null,
     initialViewport = null,
     share,
   },
@@ -709,6 +732,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const rulerActiveRef = useRef(rulerActive)
   const hoverPointerRef = useRef(hasHoverPointer())
   const bottomInsetRef = useRef(bottomInset)
+  const newSinceRef = useRef(newSince)
+  newSinceRef.current = newSince
   const shareRef = useRef(share)
   shareRef.current = share
   const initialViewportRef = useRef(initialViewport)
@@ -1107,7 +1132,28 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(AIRCRAFT_SOURCE, {
         type: 'geojson',
-        data: liveAircraftData(aircraftRef.current, unitsRef.current, selectedIcaoRef.current),
+        data: liveAircraftData(
+          aircraftRef.current,
+          unitsRef.current,
+          selectedIcaoRef.current,
+          newSinceRef.current,
+        ),
+      })
+      // Below the watched halo: lowest precedence of the four emphases, and the
+      // feature property above guarantees only one of them ever matches.
+      map.addLayer({
+        id: 'aircraft-new-halo',
+        type: 'circle',
+        source: AIRCRAFT_SOURCE,
+        filter: ['==', ['get', 'newSighting'], 1],
+        paint: {
+          'circle-radius': 17,
+          'circle-color': '#8f7ff0',
+          'circle-opacity': 0.08,
+          'circle-stroke-color': '#8f7ff0',
+          'circle-stroke-opacity': 0.72,
+          'circle-stroke-width': 1.5,
+        },
       })
       map.addLayer({
         id: 'aircraft-watched-halo',
@@ -1301,8 +1347,12 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
-    setSourceData(mapRef.current, AIRCRAFT_SOURCE, liveAircraftData(aircraft, units, selectedIcao))
-  }, [aircraft, selectedIcao, units, mapReady])
+    setSourceData(
+      mapRef.current,
+      AIRCRAFT_SOURCE,
+      liveAircraftData(aircraft, units, selectedIcao, newSince),
+    )
+  }, [aircraft, selectedIcao, units, newSince, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
@@ -1740,6 +1790,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           <div className="map-waypoint-key">
             <span><i className="arrival" />Arrival fix</span>
             <span><i className="departure" />Departure fix</span>
+            {/* Only while the marker is on, so the key never explains a colour
+                that is not on the map. */}
+            {newSince != null ? <span><i className="new-sighting" />New to this receiver</span> : null}
           </div>
         </div>
       </div>

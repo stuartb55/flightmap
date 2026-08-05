@@ -18,6 +18,7 @@ let failures = 0;
 let next = 0;
 const ingestionScenarios = [];
 let clientRenderBudget = null;
+let liveSnapshotBudget = null;
 
 async function worker() {
   while (next < total) {
@@ -104,6 +105,49 @@ async function exerciseIngestion(target) {
   return snapshot;
 }
 
+/**
+ * What the 1 Hz snapshot itself costs, measured on its own rather than mixed in
+ * with the status requests the p95 above averages over. The query joins the
+ * watchlist, the alert events, the metadata and the summary in one statement,
+ * so this is the number that says whether a join added to it is affordable —
+ * it has to complete comfortably inside the one-second poll it feeds.
+ */
+async function measureLiveSnapshot(expectedAircraft) {
+  const samples = [];
+  let carriedFirstSeen = 0;
+  for (let pass = 0; pass < 20; pass += 1) {
+    const started = performance.now();
+    const response = await fetch(`${baseUrl}/api/v1/aircraft/live`, {
+      headers: { accept: "application/json" }
+    });
+    if (!response.ok) throw new Error(`Live snapshot failed (${response.status})`);
+    const snapshot = await response.json();
+    samples.push(performance.now() - started);
+    carriedFirstSeen = snapshot.aircraft.filter(
+      (item) => "firstSeenAt" in item
+    ).length;
+  }
+  samples.sort((left, right) => left - right);
+  const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))];
+  liveSnapshotBudget = {
+    aircraft: expectedAircraft,
+    medianMs: Number(samples[Math.floor(samples.length / 2)].toFixed(1)),
+    p95Ms: Number(p95.toFixed(1)),
+    carriedFirstSeen
+  };
+  // The join is only worth having if every row actually carries the field.
+  if (carriedFirstSeen < expectedAircraft) {
+    throw new Error(
+      `Only ${carriedFirstSeen} of ${expectedAircraft} live rows carried firstSeenAt`
+    );
+  }
+  if (p95 > 400) {
+    throw new Error(
+      `Live snapshot p95 was ${p95.toFixed(0)}ms with ${expectedAircraft} aircraft`
+    );
+  }
+}
+
 /** The subset of the client aircraft shape that filtering and sorting read. */
 function toClientAircraft(item) {
   return {
@@ -125,7 +169,8 @@ function toClientAircraft(item) {
     seenSeconds: item.seenSeconds,
     distanceNm: item.distanceNm,
     watched: item.watched,
-    hasActiveAlert: item.hasActiveAlert
+    hasActiveAlert: item.hasActiveAlert,
+    firstSeenAt: item.firstSeenAt
   };
 }
 
@@ -188,7 +233,9 @@ async function measureClientRenderBudget(snapshot) {
 
 if (fakeReceiverUrl) {
   await exerciseIngestion(250);
-  await measureClientRenderBudget(await exerciseIngestion(1_000));
+  const thousand = await exerciseIngestion(1_000);
+  await measureLiveSnapshot(thousand.aircraft.length);
+  await measureClientRenderBudget(thousand);
 }
 
 latencies.sort((left, right) => left - right);
@@ -205,6 +252,7 @@ process.stdout.write(
     p50Ms: Math.round(percentile(0.5)),
     p95Ms: Math.round(p95),
     ingestionScenarios,
+    liveSnapshotBudget,
     clientRenderBudget
   }) + "\n"
 );

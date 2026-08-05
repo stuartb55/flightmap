@@ -19,8 +19,9 @@ export function useOrderedAircraft(
   aircraft: Aircraft[],
   filters: AircraftFilters,
   sort: AircraftSort,
+  newSince: number | null = null,
 ): Aircraft[] {
   const cache = useRef<AircraftOrder | null>(null)
-  cache.current = orderAircraft(aircraft, filters, sort, cache.current, Date.now())
+  cache.current = orderAircraft(aircraft, filters, sort, cache.current, Date.now(), newSince)
   return cache.current.list
 }

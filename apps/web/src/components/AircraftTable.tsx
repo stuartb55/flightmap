@@ -10,6 +10,7 @@ import {
   verticalTrend,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { isNewSighting } from '../lib/sighting-preferences'
 import type { AircraftSort, AircraftSortKey } from '../lib/aircraft-filter'
 import { columnDefinitions, defaultColumns, type ColumnKey } from '../lib/table-columns'
 import { useWindowList } from '../lib/use-window-list'
@@ -21,6 +22,8 @@ interface Props {
   sort: AircraftSort
   onSort: (sort: AircraftSort) => void
   onSelect: (icao: string) => void
+  /** Cutoff from the sighting preference; null when the marker is off. */
+  newSince?: number | null
   columns?: readonly ColumnKey[]
   loading?: boolean
   emptyTitle?: string
@@ -67,7 +70,12 @@ function AltitudeCell({ item }: { item: Aircraft }) {
   )
 }
 
-function cellContent(key: ColumnKey, item: Aircraft, isSelected: boolean): ReactNode {
+function cellContent(
+  key: ColumnKey,
+  item: Aircraft,
+  isSelected: boolean,
+  isNew: boolean,
+): ReactNode {
   switch (key) {
     case 'identity': {
       const isStale = (item.seenSeconds ?? 0) > 15
@@ -75,11 +83,19 @@ function cellContent(key: ColumnKey, item: Aircraft, isSelected: boolean): React
         <button
           className="aircraft-identity"
           type="button"
-          aria-label={`Select ${aircraftLabel(item)}`}
+          // The badge below is decorative to a screen reader; the fact it
+          // carries belongs in the row's own label, where it is read once
+          // alongside the aircraft rather than as a stray word after it.
+          aria-label={`Select ${aircraftLabel(item)}${isNew ? ', new to this receiver' : ''}`}
           aria-pressed={isSelected}
         >
           <span className="aircraft-id-top">
             <strong>{aircraftLabel(item)}</strong>
+            {isNew ? (
+              <span className="new-sighting-badge" aria-hidden="true">
+                NEW
+              </span>
+            ) : null}
             {item.watched ? <Star size={14} fill="currentColor" aria-label="Watched" /> : null}
             {item.hasActiveAlert ? <AlertTriangle size={15} aria-label="Active alert" /> : null}
             {item.latitude == null || item.longitude == null ? (
@@ -138,12 +154,14 @@ function cellContent(key: ColumnKey, item: Aircraft, isSelected: boolean): React
 const AircraftRow = memo(function AircraftRow({
   item,
   isSelected,
+  isNew,
   columns,
   rowIndex,
   onSelect,
 }: {
   item: Aircraft
   isSelected: boolean
+  isNew: boolean
   columns: readonly ColumnKey[]
   rowIndex: number
   onSelect: (icao: string) => void
@@ -164,7 +182,7 @@ const AircraftRow = memo(function AircraftRow({
     >
       {columns.map((key) => (
         <td key={key} className={`col-${key}`}>
-          {cellContent(key, item, isSelected)}
+          {cellContent(key, item, isSelected, isNew)}
         </td>
       ))}
     </tr>
@@ -177,6 +195,7 @@ export function AircraftTable({
   sort,
   onSort,
   onSelect,
+  newSince = null,
   columns = defaultColumns,
   loading = false,
   emptyTitle = 'No aircraft match',
@@ -278,6 +297,7 @@ export function AircraftTable({
               key={item.icao}
               item={item}
               isSelected={selectedIcao === item.icao}
+              isNew={isNewSighting(item.firstSeenAt, newSince)}
               columns={columns}
               rowIndex={range.start + offset}
               onSelect={onSelect}

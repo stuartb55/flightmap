@@ -35,12 +35,15 @@ import {
   formatVerticalRate,
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { isNewSighting } from '../lib/sighting-preferences'
 import { useLiveDispatch } from '../state/LiveContext'
 import type { Aircraft, AircraftDetail } from '../types'
 
 interface Props {
   aircraft: Aircraft
   onClose: () => void
+  /** Cutoff from the sighting preference; null when the marker is off. */
+  newSince?: number | null
   /**
    * Supplied where the panel is a bottom sheet over the map rather than a
    * column beside it. Collapsed, it shows only the hero, so the map keeps most
@@ -135,6 +138,7 @@ function Metric({
 export function AircraftDetailPanel({
   aircraft,
   onClose,
+  newSince = null,
   expanded = false,
   onToggleExpanded,
   panelRef,
@@ -228,6 +232,9 @@ export function AircraftDetailPanel({
 
   const metadata = detail?.metadata
   const summary = detail?.summary
+  // Prefers the summary for the same reason the "First seen" row below does:
+  // it is the authoritative record, and it arrives a moment after the panel.
+  const isNew = isNewSighting(summary?.firstSeenAt ?? aircraft.firstSeenAt, newSince)
   const inferredOperator = airlineOperatorFromCallsign(aircraft.callsign)
   const operator = inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
@@ -266,6 +273,12 @@ export function AircraftDetailPanel({
             <span className="eyebrow">{aircraft.typeCode || 'AIRCRAFT'}</span>
             <div className="detail-identity-line">
               <h2>{aircraftLabel(aircraft)}</h2>
+              {isNew ? (
+                <span className="new-sighting-badge" title="First heard by this receiver recently">
+                  NEW
+                  <span className="visually-hidden"> to this receiver</span>
+                </span>
+              ) : null}
               <button
                 className={`watch-star ${aircraft.watched ? 'active' : ''}`}
                 type="button"

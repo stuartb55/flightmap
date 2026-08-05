@@ -25,6 +25,7 @@ export interface AircraftFilters {
   category: string
   watchedOnly: boolean
   alertsOnly: boolean
+  newOnly: boolean
 }
 
 export interface AircraftSort {
@@ -44,6 +45,7 @@ export const defaultAircraftFilters: AircraftFilters = {
   category: '',
   watchedOnly: false,
   alertsOnly: false,
+  newOnly: false,
 }
 
 function altitudeValue(aircraft: Aircraft): number | null {
@@ -51,7 +53,40 @@ function altitudeValue(aircraft: Aircraft): number | null {
   return aircraft.altitudeBaro
 }
 
-export function filterAircraft(aircraft: Aircraft[], filters: AircraftFilters): Aircraft[] {
+/**
+ * Whether this receiver first heard the airframe at or after `cutoff`, which
+ * comes from the sighting preference in `sighting-preferences.ts` — the module
+ * that owns the setting re-exports this, and is where every caller should
+ * import it from.
+ *
+ * It is defined here rather than there because this module has to stay free of
+ * runtime imports: the load smoke (`infra/scripts/load-smoke.mjs`) loads it
+ * directly under Node's type stripping to measure the ordering pass, and Node
+ * resolves neither extensionless specifiers nor React.
+ *
+ * An airframe with no `aircraft_summary` row has no first-seen time. That is
+ * unknown, not new: marking it would assert something the receiver never
+ * observed, which is the one thing this feature must not do.
+ */
+export function isNewSighting(
+  firstSeenAt: string | null | undefined,
+  cutoff: number | null,
+): boolean {
+  if (cutoff == null || firstSeenAt == null) return false
+  const seen = Date.parse(firstSeenAt)
+  return Number.isFinite(seen) && seen >= cutoff
+}
+
+/**
+ * `newSince` is the cutoff from the sighting preference, threaded in rather
+ * than read here so filtering stays a pure function of its arguments and the
+ * order cache can tell when the answer could have changed.
+ */
+export function filterAircraft(
+  aircraft: Aircraft[],
+  filters: AircraftFilters,
+  newSince: number | null = null,
+): Aircraft[] {
   const query = filters.query.trim().toLowerCase()
   const minimum = filters.minimumAltitude === '' ? null : Number(filters.minimumAltitude)
   const maximum = filters.maximumAltitude === '' ? null : Number(filters.maximumAltitude)
@@ -81,6 +116,16 @@ export function filterAircraft(aircraft: Aircraft[], filters: AircraftFilters): 
     if (filters.category && item.category !== filters.category) return false
     if (filters.watchedOnly && !item.watched) return false
     if (filters.alertsOnly && !item.hasActiveAlert) return false
+    /*
+     * Inert rather than exclusive when there is no cutoff. Switching marking
+     * off in Settings while this filter is still ticked would otherwise empty
+     * the list behind a control that is by then disabled, leaving no way back
+     * except clearing storage. Unfiltered is the safe reading of "this filter
+     * cannot apply right now".
+     */
+    if (filters.newOnly && newSince != null && !isNewSighting(item.firstSeenAt, newSince)) {
+      return false
+    }
     return true
   })
 }
@@ -148,6 +193,7 @@ export interface AircraftOrder {
   filters: AircraftFilters
   sort: AircraftSort
   membership: string
+  newSince: number | null
   orderedAt: number
 }
 
@@ -180,6 +226,7 @@ export function orderAircraft(
   sort: AircraftSort,
   previous: AircraftOrder | null,
   now: number,
+  newSince: number | null = null,
 ): AircraftOrder {
   const membership = membershipKey(aircraft)
   const reusable =
@@ -187,6 +234,7 @@ export function orderAircraft(
     previous.filters === filters &&
     previous.sort === sort &&
     previous.membership === membership &&
+    previous.newSince === newSince &&
     now - previous.orderedAt < reorderIntervalMs
   if (reusable) {
     const byIcao = new Map(aircraft.map((item) => [item.icao, item]))
@@ -197,13 +245,14 @@ export function orderAircraft(
         .filter((item): item is Aircraft => item != null),
     }
   }
-  const list = sortAircraft(filterAircraft(aircraft, filters), sort)
+  const list = sortAircraft(filterAircraft(aircraft, filters, newSince), sort)
   return {
     list,
     icaos: list.map((item) => item.icao),
     filters,
     sort,
     membership,
+    newSince,
     orderedAt: now,
   }
 }
@@ -283,6 +332,7 @@ const FILTER_PARAMS: Record<keyof AircraftFilters, string> = {
   category: 'cat',
   watchedOnly: 'watched',
   alertsOnly: 'alerts',
+  newOnly: 'new',
 }
 
 export function writeFiltersToParams(filters: AircraftFilters, params: URLSearchParams): void {

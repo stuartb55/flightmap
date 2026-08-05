@@ -109,6 +109,7 @@ export function wireAircraft(overrides: Partial<WireAircraft> = {}): WireAircraf
     stale: false,
     watched: false,
     hasActiveAlert: false,
+    firstSeenAt: '2025-01-01T10:00:00.000Z',
     metadata: {
       icao: '406b90',
       registration: 'G-EZTH',

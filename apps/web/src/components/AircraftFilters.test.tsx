@@ -9,9 +9,11 @@ import { AircraftFilters } from './AircraftFilters'
 /** The drawer is controlled by LivePage, so the test owns the state too. */
 function Harness({
   initial,
+  newSightingsEnabled,
   onChange,
 }: {
   initial: Partial<AircraftFilterState>
+  newSightingsEnabled?: boolean
   onChange: (filters: AircraftFilterState) => void
 }) {
   const [filters, setFilters] = useState<AircraftFilterState>({
@@ -23,6 +25,7 @@ function Harness({
       filters={filters}
       sources={['adsb']}
       categories={['A3']}
+      newSightingsEnabled={newSightingsEnabled}
       onChange={(next) => {
         setFilters(next)
         onChange(next)
@@ -31,9 +34,14 @@ function Harness({
   )
 }
 
-function renderFilters(initial: Partial<AircraftFilterState> = {}) {
+function renderFilters(
+  initial: Partial<AircraftFilterState> = {},
+  newSightingsEnabled?: boolean,
+) {
   const onChange = vi.fn()
-  render(<Harness initial={initial} onChange={onChange} />)
+  render(
+    <Harness initial={initial} newSightingsEnabled={newSightingsEnabled} onChange={onChange} />,
+  )
   return onChange
 }
 
@@ -65,6 +73,32 @@ describe('AircraftFilters units', () => {
     )
     // What was typed survives the round trip rather than being reformatted.
     expect(screen.getByLabelText(/Minimum speed/)).toHaveValue(400)
+  })
+
+  /*
+   * With marking off there is nothing for this filter to select, so it is
+   * disabled with the reason stated rather than removed: a control that comes
+   * and goes is harder to find than one that explains itself.
+   */
+  it('disables the new-sighting filter, with a reason, when marking is off', async () => {
+    const onChange = renderFilters({}, false)
+    const toggle = screen.getByRole('checkbox', { name: /New sightings only/ })
+    expect(toggle).toBeDisabled()
+    expect(toggle.closest('label')).toHaveTextContent(
+      'Not applied — turn on new sighting marking in Settings',
+    )
+
+    await userEvent.click(toggle)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('offers the new-sighting filter when marking is on', async () => {
+    const onChange = renderFilters({}, true)
+    const toggle = screen.getByRole('checkbox', { name: /New sightings only/ })
+    expect(toggle).toBeEnabled()
+
+    await userEvent.click(toggle)
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ newOnly: true }))
   })
 
   it('leaves aviation units untouched', async () => {

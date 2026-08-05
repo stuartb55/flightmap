@@ -399,7 +399,10 @@ export class IngestRepository extends RepositoryBase {
           [json(sessionIdentityUpdates)]
         );
       }
-      await this.upsertAircraftSummaries(client, summarySamples);
+      const firstSeenByIcao = await this.upsertAircraftSummaries(
+        client,
+        summarySamples
+      );
       await this.upsertDailySummaries(client, dailySamples);
       await this.upsertHourlyActivity(client, hourlySamples);
       await this.upsertCoverageCells(
@@ -422,6 +425,9 @@ export class IngestRepository extends RepositoryBase {
       for (const aircraft of uniqueAircraft) {
         aircraft.hasActiveAlert =
           aircraft.hasActiveAlert || newlyAlertedIcaos.has(aircraft.icao);
+        // Static per airframe, so it rides along on rows already being sent
+        // without making an otherwise unchanged row look changed to the diff.
+        aircraft.firstSeenAt = firstSeenByIcao.get(aircraft.icao) ?? null;
       }
       await this.upsertCurrent(client, uniqueAircraft);
       await client.query(
@@ -637,11 +643,21 @@ export class IngestRepository extends RepositoryBase {
     );
   }
 
+  /**
+   * Returns the resulting first-seen time per ICAO so the caller can put it on
+   * the rows it publishes. The live delta carries whole aircraft, and a row
+   * built by `normalise` has no way to know when this receiver first heard the
+   * airframe — without this the field would be correct in the REST snapshot,
+   * which reads it through a join, and null a second later in every delta.
+   */
   private async upsertAircraftSummaries(
     client: Queryable,
     rows: Array<Record<string, unknown>>
-  ): Promise<void> {
-    await client.query(
+  ): Promise<Map<string, string>> {
+    const result = await client.query<{
+      icao: string;
+      first_seen_at: Date | string;
+    }>(
       `INSERT INTO aircraft_summary (
          icao, first_seen_at, last_seen_at, total_observations, session_count,
          closest_range_nm, latest_callsign, latest_registration,
@@ -668,7 +684,8 @@ export class IngestRepository extends RepositoryBase {
          latest_registration = COALESCE(EXCLUDED.latest_registration, aircraft_summary.latest_registration),
          latest_type_code = COALESCE(EXCLUDED.latest_type_code, aircraft_summary.latest_type_code),
          latest_operator = COALESCE(EXCLUDED.latest_operator, aircraft_summary.latest_operator),
-         updated_at = now()`,
+         updated_at = now()
+       RETURNING icao, first_seen_at`,
       [
         json(
           rows.map((row) => ({
@@ -683,6 +700,9 @@ export class IngestRepository extends RepositoryBase {
           }))
         )
       ]
+    );
+    return new Map(
+      result.rows.map((row) => [normaliseIcao(row.icao), iso(row.first_seen_at)])
     );
   }
 

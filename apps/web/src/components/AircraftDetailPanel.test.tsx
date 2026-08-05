@@ -78,6 +78,51 @@ describe('AircraftDetailPanel identity', () => {
     expect(await screen.findByRole('heading', { name: 'Aircraft identity' })).toBeInTheDocument()
   })
 
+  /*
+   * The summary is authoritative and arrives a moment after the panel opens, so
+   * the badge follows the same preference the "First seen" row does rather than
+   * settling on whatever the live payload happened to carry first.
+   */
+  it('marks a first sighting in the hero, preferring the summary once it lands', async () => {
+    const cutoff = Date.parse('2026-08-01T00:00:00.000Z')
+    vi.mocked(api.aircraft).mockResolvedValue({
+      aircraft: null,
+      metadata: null,
+      recentSessions: [],
+      alerts: [],
+      summary: {
+        firstSeenAt: '2026-08-04T09:00:00.000Z',
+        lastSeenAt: '2026-08-05T09:00:00.000Z',
+        observationCount: 12,
+        sessionCount: 1,
+        closestDistanceNm: 4,
+      },
+    })
+    render(
+      <Router>
+        <AircraftDetailPanel
+          aircraft={aircraft({ firstSeenAt: '2019-01-02T09:00:00.000Z' })}
+          newSince={cutoff}
+          onClose={vi.fn()}
+        />
+      </Router>,
+    )
+
+    const badge = await screen.findByText('NEW')
+    expect(badge.closest('.detail-hero')).not.toBeNull()
+    expect(badge).toHaveTextContent('to this receiver')
+  })
+
+  it('leaves the hero unmarked with no summary row and no preference', async () => {
+    render(
+      <Router>
+        <AircraftDetailPanel aircraft={aircraft({ firstSeenAt: null })} newSince={0} onClose={vi.fn()} />
+      </Router>,
+    )
+    expect(await screen.findByRole('heading', { name: 'Aircraft identity' })).toBeInTheDocument()
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument()
+  })
+
   it('keeps metadata as the fallback for an unknown callsign', async () => {
     render(
       <Router>

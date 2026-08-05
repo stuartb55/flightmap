@@ -59,6 +59,7 @@ function aircraft(
     stale: false,
     watched: false,
     hasActiveAlert: false,
+    firstSeenAt: null,
     metadata: null,
     ...overrides
   };
@@ -80,6 +81,28 @@ describe("live aircraft diffing", () => {
       aircraft("abc002", { altitudeBarometricFt: 11_000 })
     ]);
     expect(changed.map((item) => item.icao)).toEqual(["abc002"]);
+  });
+
+  /*
+   * `firstSeenAt` is static per airframe, which is the whole reason the client
+   * rather than the server decides what counts as a new sighting. Anything
+   * relative to now — an `isNew` flag, an age in seconds — would differ between
+   * two otherwise identical ticks and push every row onto the wire each second.
+   */
+  it("suppresses an unchanged aircraft that carries a first-seen time", () => {
+    const diff = new LiveAircraftDiff();
+    const seen = { firstSeenAt: "2025-06-01T09:30:00.000Z" };
+    expect(diff.changed([aircraft("abc001", seen)])).toHaveLength(1);
+    expect(diff.changed([aircraft("abc001", seen)])).toEqual([]);
+  });
+
+  it("publishes an aircraft whose first-seen time has only just arrived", () => {
+    const diff = new LiveAircraftDiff();
+    diff.changed([aircraft("abc001")]);
+    const changed = diff.changed([
+      aircraft("abc001", { firstSeenAt: "2026-01-01T00:00:00.000Z" })
+    ]);
+    expect(changed.map((item) => item.icao)).toEqual(["abc001"]);
   });
 
   it("republishes an aircraft that left and returned to the feed", () => {
