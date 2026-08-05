@@ -22,7 +22,6 @@ import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
 import { ColumnChooser } from '../components/ColumnChooser'
-import { SavedViewsControl } from '../components/SavedViewsControl'
 import { isFormTarget } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
 import { api } from '../lib/api'
@@ -607,19 +606,6 @@ export function LivePage() {
           initialViewport={sharedViewport}
           bottomInset={mapBottomInset}
           share={liveShare}
-        />
-        <SavedViewsControl
-          surface="live"
-          className="map-saved-views"
-          configuration={() => ({
-            surface: 'live',
-            filters,
-            sort,
-            display: mapDisplay,
-            mapLayers,
-            viewport: mapRef.current?.getViewport() ?? null,
-          })}
-          onApply={applySavedView}
         />
         {trackError || coverage.error ? <p className="map-data-warning" role="status">{trackError ?? coverage.error}</p> : null}
         {selected ? (

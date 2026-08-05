@@ -1,9 +1,18 @@
 import { airlineOperatorFromCallsign } from '@flightmap/shared'
-import { type FormEvent, type RefObject, useEffect, useState } from 'react'
+import {
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import {
   Activity,
   AlertTriangle,
   ArrowDownRight,
+  ArrowUpRight,
   Compass,
   Gauge,
   MapPin,
@@ -41,6 +50,66 @@ interface Props {
   onToggleExpanded?: () => void
   /** Set on the sheet so the map can measure how much of itself is covered. */
   panelRef?: RefObject<HTMLElement | null>
+}
+
+/** Far enough that a swipe cannot be mistaken for a tap on what it started on. */
+const SWIPE_THRESHOLD_PX = 40
+/** Where a press stops being a press and starts being a drag. */
+const DRAG_START_PX = 8
+
+/**
+ * Lets the sheet be dragged between its two stops rather than only tapped on
+ * the grab handle, which is a small target for the gesture people already
+ * expect. Attached to the handle and the hero — the parts of the sheet that
+ * are always on screen whichever stop it is at.
+ */
+function useSheetSwipe(expanded: boolean, onToggleExpanded?: () => void) {
+  const origin = useRef<{ y: number; pointerId: number; captured?: boolean } | null>(null)
+  const swiped = useRef(false)
+
+  return {
+    onPointerDown: (event: ReactPointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return
+      // Text entry keeps its own drag; everything else here is draggable, so a
+      // swipe that happens to begin on the star or a link still moves the sheet.
+      if ((event.target as HTMLElement).closest('input, textarea, select')) return
+      origin.current = { y: event.clientY, pointerId: event.pointerId }
+      swiped.current = false
+    },
+    onPointerMove: (event: ReactPointerEvent) => {
+      const start = origin.current
+      if (!start || start.pointerId !== event.pointerId || start.captured) return
+      if (Math.abs(event.clientY - start.y) < DRAG_START_PX) return
+      // An upward swipe ends over the map, so the gesture has to be followed
+      // off the element it started on to be seen through to its end. Capture
+      // waits for the drag to declare itself, because it also redirects the
+      // click — a press that never moves has to reach the button under it.
+      start.captured = true
+      event.currentTarget.setPointerCapture(event.pointerId)
+    },
+    onPointerUp: (event: ReactPointerEvent) => {
+      const start = origin.current
+      origin.current = null
+      if (!start || start.pointerId !== event.pointerId) return
+      const delta = event.clientY - start.y
+      if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return
+      swiped.current = true
+      const wantsExpanded = delta < 0
+      if (wantsExpanded !== expanded) onToggleExpanded?.()
+    },
+    onPointerCancel: () => {
+      origin.current = null
+    },
+    // A swipe still ends in a click on whatever it started on; the sheet has
+    // already answered the gesture, so that click is not also a tap. Anything
+    // stale is cleared by the next press, which always precedes its own click.
+    onClickCapture: (event: ReactMouseEvent) => {
+      if (!swiped.current) return
+      swiped.current = false
+      event.stopPropagation()
+      event.preventDefault()
+    },
+  }
 }
 
 function Metric({
@@ -162,6 +231,10 @@ export function AircraftDetailPanel({
   const inferredOperator = airlineOperatorFromCallsign(aircraft.callsign)
   const operator = inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
+  const swipe = useSheetSwipe(expanded, onToggleExpanded)
+  const climbing = aircraft.verticalRate == null || Math.abs(aircraft.verticalRate) < 64
+    ? null
+    : aircraft.verticalRate > 0
 
   return (
     <aside
@@ -175,22 +248,39 @@ export function AircraftDetailPanel({
           type="button"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
+          {...swipe}
         >
           <span className="detail-sheet-grip" aria-hidden="true" />
           <span className="visually-hidden">{expanded ? 'Collapse details' : 'Expand details'}</span>
         </button>
       ) : null}
-      <div className={`detail-hero ${aircraft.hasActiveAlert ? 'detail-hero-alert' : ''}`}>
+      <div
+        className={`detail-hero ${aircraft.hasActiveAlert ? 'detail-hero-alert' : ''}`}
+        {...(onToggleExpanded ? swipe : {})}
+      >
         <div className="panel-title-row">
           <span className="aircraft-category-icon" aria-hidden="true">
             <Plane size={23} />
           </span>
           <div className="detail-identity">
             <span className="eyebrow">{aircraft.typeCode || 'AIRCRAFT'}</span>
-            <h2>{aircraftLabel(aircraft)}</h2>
+            <div className="detail-identity-line">
+              <h2>{aircraftLabel(aircraft)}</h2>
+              <button
+                className={`watch-star ${aircraft.watched ? 'active' : ''}`}
+                type="button"
+                onClick={toggleWatch}
+                disabled={watchPending}
+                aria-pressed={aircraft.watched}
+                aria-label={aircraft.watched ? 'On watchlist' : 'Add to watchlist'}
+                title={aircraft.watched ? 'On watchlist' : 'Add to watchlist'}
+              >
+                <Star size={19} fill={aircraft.watched ? 'currentColor' : 'none'} />
+              </button>
+            </div>
             <p>
               {aircraft.registration || aircraft.icao.toUpperCase()}
-              {aircraft.country ? ` · ${aircraft.country}` : ''}
+              {operator ? ` · ${operator}` : aircraft.country ? ` · ${aircraft.country}` : ''}
             </p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close details">
@@ -198,28 +288,31 @@ export function AircraftDetailPanel({
           </button>
         </div>
 
-        <button
-          className={`watch-button ${aircraft.watched ? 'active' : ''}`}
-          type="button"
-          onClick={toggleWatch}
-          disabled={watchPending}
-          aria-pressed={aircraft.watched}
-        >
-          <Star size={16} fill={aircraft.watched ? 'currentColor' : 'none'} />
-          {aircraft.watched ? 'On watchlist' : 'Add to watchlist'}
-        </button>
+        {/* The sheet's collapsed stop shows the hero alone, so what the map
+            cannot say — how high, how fast, which way, how far — belongs here
+            rather than behind an expand. */}
+        <dl className="detail-hero-stats">
+          <div>
+            <dt>Altitude</dt>
+            <dd>
+              {formatAltitude(aircraft.altitudeBaro)}
+              {climbing == null ? null : (
+                <span className={`hero-trend ${climbing ? 'climb' : 'descent'}`} aria-hidden="true">
+                  {climbing ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                </span>
+              )}
+            </dd>
+          </div>
+          <div><dt>Speed</dt><dd>{formatSpeed(aircraft.groundSpeed)}</dd></div>
+          <div><dt>Track</dt><dd>{formatBearing(aircraft.track)}</dd></div>
+          <div><dt>Range</dt><dd>{formatDistance(aircraft.distanceNm)}</dd></div>
+        </dl>
+
         <div className="aircraft-workflow-links">
           <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>Live</Link>
           <Link to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}>Profile</Link>
           <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>History</Link>
         </div>
-        {aircraft.watched ? (
-          <form className="watchlist-detail-editor" onSubmit={saveWatchDetails}>
-            <label><span>Watchlist label</span><input value={watchFields.label} maxLength={100} onChange={(event) => setWatchFields({ ...watchFields, label: event.target.value })} placeholder="Optional name" /></label>
-            <label><span>Notes</span><textarea value={watchFields.notes} maxLength={1000} rows={2} onChange={(event) => setWatchFields({ ...watchFields, notes: event.target.value })} placeholder="Optional context" /></label>
-            <button type="submit" className="secondary-button small" disabled={watchPending || (watchFields.label === savedWatchFields.label && watchFields.notes === savedWatchFields.notes)}>Save watchlist details</button>
-          </form>
-        ) : null}
       </div>
 
       {aircraft.hasActiveAlert ? (
@@ -246,6 +339,17 @@ export function AircraftDetailPanel({
             <small>This aircraft remains visible from non-position messages.</small>
           </span>
         </div>
+      ) : null}
+
+      {aircraft.watched ? (
+        <section className="detail-section">
+          <div className="section-heading"><h3>Watchlist</h3></div>
+          <form className="watchlist-detail-editor" onSubmit={saveWatchDetails}>
+            <label><span>Watchlist label</span><input value={watchFields.label} maxLength={100} onChange={(event) => setWatchFields({ ...watchFields, label: event.target.value })} placeholder="Optional name" /></label>
+            <label><span>Notes</span><textarea value={watchFields.notes} maxLength={1000} rows={2} onChange={(event) => setWatchFields({ ...watchFields, notes: event.target.value })} placeholder="Optional context" /></label>
+            <button type="submit" className="secondary-button small" disabled={watchPending || (watchFields.label === savedWatchFields.label && watchFields.notes === savedWatchFields.notes)}>Save watchlist details</button>
+          </form>
+        </section>
       ) : null}
 
       <section className="detail-section">

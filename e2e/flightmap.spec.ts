@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
 
 async function openFlightmap(page: Page) {
   await page.goto('/')
@@ -21,16 +21,16 @@ async function selectLiveAircraft(page: Page, panel: string, callsign: string) {
   await row.click()
 }
 
-async function expectSavedViewsClearOfSelectedAircraft(page: Page) {
-  const layout = await page.locator('.map-stage').evaluate((element) => {
-    const savedViews = element.querySelector('.map-saved-views .saved-view-button')!.getBoundingClientRect()
-    const selectedAircraft = element.querySelector('.selected-map-card')!.getBoundingClientRect()
-    return {
-      savedViewsBottom: savedViews.bottom,
-      selectedAircraftTop: selectedAircraft.top,
-    }
-  })
-  expect(layout.selectedAircraftTop - layout.savedViewsBottom).toBeGreaterThanOrEqual(6)
+/** A drag in steps, which is what a sheet gesture has to look like to be one. */
+async function dragVertically(page: Page, target: Locator, distance: number) {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('The drag target is not on screen')
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 8; step += 1) await page.mouse.move(x, y + (distance * step) / 8)
+  await page.mouse.up()
 }
 
 test('loads live data and supports primary navigation', async ({ page }) => {
@@ -163,7 +163,6 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   const details = page.locator('.detail-panel')
   await expect(details).toBeVisible()
   await expect(page.locator('.selected-map-card')).toBeVisible()
-  await expectSavedViewsClearOfSelectedAircraft(page)
   await expect(details.getByRole('link', { name: 'Live' })).toBeVisible()
   await expect(details.getByRole('link', { name: 'History' })).toBeVisible()
 
@@ -677,7 +676,26 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(collapsed.sheetBottom).toBeLessThanOrEqual(collapsed.actionsTop + 0.5)
   await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
 
-  // The other stop: the full record, at the cost of the map.
+  // Collapsed, the sheet answers what the map cannot, without an expand.
+  for (const reading of ['Altitude', 'Speed', 'Track', 'Range']) {
+    await expect(detailSheet.getByRole('term').filter({ hasText: reading })).toBeVisible()
+  }
+  await expect(detailSheet.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
+
+  // The other stop: the full record, at the cost of the map. It is reached by
+  // dragging the sheet as well as by tapping the handle, and a swipe that
+  // begins on the star is a swipe rather than a watchlist toggle.
+  const star = detailSheet.getByRole('button', { name: 'Add to watchlist' })
+  await dragVertically(page, star, -170)
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
+  await expect(star).toHaveAttribute('aria-pressed', 'false')
+  const swipedTop = await page.evaluate(
+    () => document.querySelector('.detail-panel')!.getBoundingClientRect().top,
+  )
+  expect(swipedTop).toBeLessThan(collapsed.sheetTop)
+  await dragVertically(page, detailSheet.locator('.detail-hero-stats'), 170)
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
+
   await page.getByRole('button', { name: 'Expand details' }).click()
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
   const expandedTop = await page.evaluate(

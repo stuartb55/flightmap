@@ -56,6 +56,28 @@ describe('AircraftDetailPanel identity', () => {
     expect(within(section!).getByText('EZY callsign')).toBeInTheDocument()
   })
 
+  it('reads out the live figures beside the callsign it belongs to', async () => {
+    render(
+      <Router>
+        <AircraftDetailPanel
+          aircraft={aircraft({ altitudeBaro: 34875, groundSpeed: 412, track: 71, distanceNm: 12.4 })}
+          onClose={vi.fn()}
+        />
+      </Router>,
+    )
+
+    // The collapsed bottom sheet shows the hero alone, so these have to be in it.
+    const hero = document.querySelector('.detail-hero')
+    expect(hero).not.toBeNull()
+    expect(within(hero as HTMLElement).getByText('34,875 ft')).toBeInTheDocument()
+    expect(within(hero as HTMLElement).getByText('412 kt')).toBeInTheDocument()
+    expect(within(hero as HTMLElement).getByText('071°')).toBeInTheDocument()
+    expect(
+      within(hero as HTMLElement).getByRole('button', { name: 'Add to watchlist' }),
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Aircraft identity' })).toBeInTheDocument()
+  })
+
   it('keeps metadata as the fallback for an unknown callsign', async () => {
     render(
       <Router>

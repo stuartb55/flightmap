@@ -1374,6 +1374,13 @@
   min-width: 0;
 }
 
+.detail-identity-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .detail-identity h2 {
   overflow: hidden;
   margin: 4px 0 2px;
@@ -1381,6 +1388,36 @@
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The watchlist toggle reads as a property of the callsign it sits beside,
+   which is all a full-width button was ever saying. */
+.watch-star {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--muted);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.watch-star:hover {
+  color: var(--hue-15);
+  background: rgb(var(--amber-rgb) / 0.1);
+}
+
+.watch-star.active {
+  color: var(--hue-15);
+}
+
+.watch-star:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .detail-identity p {
@@ -1414,11 +1451,69 @@
   background: rgb(var(--amber-rgb) / 0.08);
 }
 
+/* The figures that answer "what is it doing right now", sized to be read at a
+   glance from the collapsed sheet rather than studied. */
+.detail-hero-stats {
+  display: grid;
+  /* Four across wherever a five-figure altitude and its unit still fit; the
+     narrowest phones take two rows rather than a clipped reading. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 14px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--line);
+}
+
+.detail-hero-stats > div {
+  min-width: 0;
+  padding: 8px 7px;
+  background: var(--veil-12);
+}
+
+.detail-hero-stats dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.detail-hero-stats dd {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 399px) {
+  .detail-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.hero-trend {
+  display: inline-flex;
+}
+
+.hero-trend.climb {
+  color: var(--accent-bright);
+}
+
+.hero-trend.descent {
+  color: var(--hue-15);
+}
+
 .aircraft-workflow-links {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
-  margin-top: 7px;
+  margin-top: 9px;
 }
 
 .aircraft-workflow-links a {

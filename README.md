@@ -23,7 +23,8 @@ history indefinitely.
   accessible chart data tables.
 - Browser-local map layer preferences plus installation-wide saved views for
   Live, History, and Insights workflows, one of which can open its surface by
-  default while up to three per surface sit pinned beside the control.
+  default while up to three per surface sit pinned beside the control. Live has
+  no on-map control of its own; its saved views open from the command palette.
 - Shareable map views: a link that restores the viewport, filters, selection and
   replay position, and a PNG snapshot captioned with the receiver, the time, the
   aircraft count and the map attribution.
