@@ -314,7 +314,9 @@ describe('InsightsPage', () => {
     // reads as a bug unless it is said out loud.
     expect(panel).toHaveTextContent(/do not change with the date range below/)
     expect(panel).toHaveTextContent('248 nm')
-    expect(panel).toHaveTextContent('1.2M reports')
+    // The compact suffix is CLDR data, not our formatting: en-GB renders
+    // "1.2M" on macOS's ICU and "1.2m" on the Linux build CI uses.
+    expect(panel).toHaveTextContent(/1\.2[Mm] reports/)
 
     // The record is kept for ever; the track that set it was not, so the link
     // degrades to the profile rather than landing on an empty search.
