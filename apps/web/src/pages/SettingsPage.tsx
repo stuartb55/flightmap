@@ -12,6 +12,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { applyRuntimeConfig } from '../config'
 import { api } from '../lib/api'
 import { formatBytes, formatDateTime } from '../lib/format'
+import { invalidateAirports } from '../lib/use-airports'
 import {
   densities,
   densityLabels,
@@ -429,6 +430,10 @@ export function SettingsPage() {
       // The server has already applied the new dataset to its own settings, so
       // re-reading them is what keeps this page honest about what is stored.
       setRetryKey((key) => key + 1)
+      // The map caches the dataset it read at startup, in this tab and in the
+      // service worker. Both are now out of date by exactly the download the
+      // operator just ran, so the map would still report no airport data.
+      await invalidateAirports()
     } catch (reason) {
       setAirportImport({
         running: false,

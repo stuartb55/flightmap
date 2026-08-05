@@ -464,11 +464,19 @@ export const api = {
 
   /**
    * The airport dataset. Fetched once and then served from the runtime cache
-   * declared in `vite.config.ts`; a deployment that has never run
-   * `npm run airports:build` gets an empty list, which is not an error.
+   * declared in `vite.config.ts`; a deployment that has never downloaded the
+   * dataset gets an empty list, which is not an error.
+   *
+   * `fresh` is for the read that follows an operator rebuilding the dataset:
+   * it reloads past the service worker and the HTTP cache, both of which are
+   * still holding the copy the rebuild has just made wrong.
    */
-  airports(signal?: AbortSignal) {
-    return request<AirportsResponse>('/airports', { signal }, airportsResponseSchema).then(
+  airports(signal?: AbortSignal, options?: { fresh?: boolean }) {
+    return request<AirportsResponse>(
+      '/airports',
+      { signal, ...(options?.fresh ? { cache: 'reload' as const } : {}) },
+      airportsResponseSchema,
+    ).then(
       (response) => response.items,
     )
   },

@@ -19,19 +19,19 @@ describe('MapLayerMenu', () => {
   })
 
   /*
-   * A deployment that has never run the airports build has no data for this
-   * layer. Disabling it with the reason in place of the hint is better than
-   * hiding it: a toggle that is simply missing reads as a bug, and a toggle
-   * that turns on a layer with nothing in it reads as a broken map.
+   * A deployment that has never downloaded the airport dataset has no data for
+   * this layer. Disabling it with the reason in place of the hint is better
+   * than hiding it: a toggle that is simply missing reads as a bug, and a
+   * toggle that turns on a layer with nothing in it reads as a broken map.
    */
   it('disables a layer this deployment has no data for, and says why', async () => {
     const onChange = await openMenu({
-      unavailable: { airports: 'No airport data — run the airports build on the server' },
+      unavailable: { airports: 'No airport data — download it on the Settings page' },
     })
     const toggle = screen.getByRole('checkbox', { name: /Airports/ })
 
     expect(toggle).toBeDisabled()
-    expect(toggle.closest('label')).toHaveTextContent('run the airports build on the server')
+    expect(toggle.closest('label')).toHaveTextContent('download it on the Settings page')
     await userEvent.click(toggle)
     expect(onChange).not.toHaveBeenCalled()
   })

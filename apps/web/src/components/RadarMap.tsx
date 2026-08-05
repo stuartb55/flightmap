@@ -1823,7 +1823,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
              disable anything; an empty list means this deployment has none. */
           unavailable={
             airports?.length === 0
-              ? { airports: 'No airport data — run the airports build on the server' }
+              ? { airports: 'No airport data — download it on the Settings page' }
               : undefined
           }
         />
