@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { colourSpans, trackColour, trackColourModes } from './track-colour'
+import { colourSpans, trackColour, trackColourModes, trackIdentity } from './track-colour'
 import { altitudeBands } from './altitude-bands'
 import { aviationUnits, metricUnits } from './unit-preferences'
 import type { TrackPoint } from '../types'
@@ -129,5 +129,50 @@ describe('ramp contrast against the basemap of each theme', () => {
         light[key].steps.map((step) => step.colour),
       )
     }
+  })
+})
+
+describe('track identity', () => {
+  // Duplicated from the ramp suite above: the profile panel is a panel, not the
+  // basemap, so the identity colours are judged against what they sit on.
+  const panel = { dark: '#0d131a', light: '#e5e7eb' } as const
+  const relative = (hex: string) => {
+    const channels = [1, 3, 5]
+      .map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+      .map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!
+  }
+  const ratio = (one: string, two: string) => {
+    const [brighter, darker] = [relative(one), relative(two)].sort((a, b) => b - a)
+    return (brighter! + 0.05) / (darker! + 0.05)
+  }
+  // History caps the selection at eight, so eight is what has to be distinct.
+  const slots = [0, 1, 2, 3, 4, 5, 6, 7]
+
+  it.each(['dark', 'light'] as const)('keeps every %s identity legible on the panel', (theme) => {
+    for (const slot of slots) {
+      const identity = trackIdentity(slot, theme)
+      expect(
+        ratio(identity.colour, panel[theme]),
+        `series ${slot} (${identity.colour}) on the ${theme} panel`,
+      ).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('gives a whole selection distinct colours and distinct dashes', () => {
+    for (const theme of ['dark', 'light'] as const) {
+      const identities = slots.map((slot) => trackIdentity(slot, theme))
+      expect(new Set(identities.map((identity) => identity.colour)).size).toBe(slots.length)
+      // Colour is never the only difference: the dash and its name carry it too.
+      expect(new Set(identities.map((identity) => identity.dash)).size).toBe(slots.length)
+      expect(new Set(identities.map((identity) => identity.pattern)).size).toBe(slots.length)
+    }
+    expect(trackIdentity(0, 'dark').colour).not.toBe(trackIdentity(0, 'light').colour)
+  })
+
+  it('wraps rather than running out, and tolerates a nonsense index', () => {
+    expect(trackIdentity(8, 'dark')).toEqual(trackIdentity(0, 'dark'))
+    expect(trackIdentity(-1, 'dark')).toEqual(trackIdentity(7, 'dark'))
+    expect(trackIdentity(1.6, 'dark')).toEqual(trackIdentity(1, 'dark'))
   })
 })

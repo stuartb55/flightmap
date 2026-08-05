@@ -46,6 +46,37 @@
 .profile-axis, .profile-grid { stroke: var(--line); stroke-width: 1; }
 .profile-grid { stroke-dasharray: 4 5; }
 .profile-line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+/* Comparison drops the unfocused series back so the one the readout and the
+   crosshair are reporting stays the line being read. They are still told apart
+   by their dash pattern, which the opacity does not touch. */
+.profile-line.comparison { stroke-width: 2; opacity: .58; }
+.profile-line.comparison.focused { stroke-width: 3.25; opacity: 1; }
+
+.profile-compare-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.profile-axis-tabs { display: flex; gap: 5px; }
+.profile-axis-tabs button {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+}
+.profile-axis-tabs button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-dim); }
+.profile-series-legend { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.profile-series-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-strong);
+}
+.profile-series-legend button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-dim); }
+.profile-series-legend small { color: var(--muted); font-size: var(--type-min); }
+.series-swatch { width: 28px; height: 8px; flex: none; }
+.series-swatch line { stroke-width: 2.5; }
+.profile-compare-note { margin: 8px 0 0; color: var(--muted); font-size: var(--type-min); }
 .profile-crosshair { stroke: var(--text); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .profile-event { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: .75; }
 .profile-event.severity-critical { stroke: var(--red); stroke-width: 2; }

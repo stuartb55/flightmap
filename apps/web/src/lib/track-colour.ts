@@ -161,6 +161,57 @@ export function trackColour(
   return colour
 }
 
+/*
+ * Identity colours answer a different question from the ramps above: not what
+ * the aircraft was doing at a point, but which track this is. Overlaying four
+ * profiles under a per-point ramp is unreadable — every line carries the same
+ * colours — so comparison mode gives each series one colour for its length.
+ *
+ * There are eight, matching the eight tracks History will hold at once, so a
+ * track keeps its colour for as long as it stays selected. Every entry clears
+ * 3:1 against its theme's panel background, the WCAG threshold for a graphical
+ * object. Some are close to each other in luminance, which is why the dash
+ * pattern and the legend carry the same information: colour is never the only
+ * thing telling two series apart.
+ */
+const identityColours: Record<ResolvedTheme, readonly string[]> = {
+  dark: ['#4fc3f7', '#ffb74d', '#7ee08a', '#f48fb1', '#b39ddb', '#ffd54f', '#80cbc4', '#ff8a65'],
+  light: ['#0b5fa5', '#a34a00', '#146b3a', '#a01a5b', '#5b3fa8', '#7a5c00', '#0f6a72', '#a32020'],
+}
+
+/** Index-matched to the colours. An empty pattern is a solid line. */
+const identityDashes: ReadonlyArray<{ dash: string; pattern: string }> = [
+  { dash: '', pattern: 'solid' },
+  { dash: '9 5', pattern: 'dashed' },
+  { dash: '2 4', pattern: 'dotted' },
+  { dash: '12 4 2 4', pattern: 'dash-dot' },
+  { dash: '5 4', pattern: 'short dash' },
+  { dash: '18 5', pattern: 'long dash' },
+  { dash: '2 3 9 3', pattern: 'dot-dash' },
+  { dash: '12 4 2 4 2 4', pattern: 'dash-dot-dot' },
+]
+
+/** How one track is drawn when it is being compared against others. */
+export interface TrackIdentity {
+  /** The series colour, for its whole length. */
+  colour: string
+  /** An SVG `stroke-dasharray`; empty for a solid line. */
+  dash: string
+  /** The dash pattern named, so a screen reader gets what the eye gets. */
+  pattern: string
+}
+
+/**
+ * The identity of the track at `index` in the selection. Selection is capped at
+ * eight and there are eight slots, so within one selection no two tracks share
+ * an identity; beyond that the slots repeat rather than running out.
+ */
+export function trackIdentity(index: number, theme: ResolvedTheme = currentTheme()): TrackIdentity {
+  const slots = identityDashes.length
+  const slot = ((Math.trunc(index) % slots) + slots) % slots
+  return { colour: identityColours[theme][slot]!, ...identityDashes[slot]! }
+}
+
 /**
  * A track's colours as spans of wall-clock time, in epoch milliseconds. Spans
  * are contiguous — each begins where the last ended — so a strip drawn from

@@ -17,7 +17,10 @@ vi.mock('../lib/api', () => ({ api: apiMock }))
 vi.mock('../components/RadarMap', () => ({
   RadarMap: () => <div data-testid="radar-map" />,
 }))
-vi.mock('../components/FlightProfile', () => ({
+// Only the component is stood in for; the axis-mode helpers beside it are the
+// page's own URL contract and have to stay real.
+vi.mock('../components/FlightProfile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../components/FlightProfile')>()),
   FlightProfile: () => <div data-testid="flight-profile" />,
 }))
 
@@ -44,6 +47,7 @@ const defaultView: SavedView = {
     selectedSessionIds: [],
     replayTime: null,
     resolution: 'auto',
+    profileAxis: 'absolute',
     mapLayers: defaultMapLayers,
     viewport: null,
   },

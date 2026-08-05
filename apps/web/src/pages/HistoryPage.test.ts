@@ -31,7 +31,7 @@ describe('history URL restoration', () => {
     alert: 'watchlist',
   } as const
 
-  it('round-trips selected sessions, replay position, and resolution', () => {
+  it('round-trips selected sessions, replay position, resolution, and the profile axis', () => {
     const replayTime = Date.parse('2026-08-01T12:34:56.000Z')
     const url = historyUrl(
       filters,
@@ -39,13 +39,22 @@ describe('history URL restoration', () => {
       [firstSession, secondSession],
       replayTime,
       '15s',
+      'aligned',
     )
 
     expect(restoredTrackState(url.split('?')[1] ?? '')).toEqual({
       selectedSessionIds: [firstSession, secondSession],
       replayTime,
       resolution: '15s',
+      profileAxis: 'aligned',
     })
+  })
+
+  it('omits the default profile axis and falls back to it on an unknown one', () => {
+    const defaulted = historyUrl(filters, 'started_desc', [], null, 'auto', 'absolute')
+    expect(defaulted).not.toContain('profile=')
+    expect(restoredTrackState(defaulted.split('?')[1] ?? '').profileAxis).toBe('absolute')
+    expect(restoredTrackState('?profile=sideways').profileAxis).toBe('absolute')
   })
 
   it('round-trips a non-default ordering and omits the default one', () => {
@@ -74,6 +83,7 @@ describe('history URL restoration', () => {
     params.set('resolution', '2s')
 
     const restored = restoredTrackState(`?${params.toString()}`)
+    expect(restored.profileAxis).toBe('absolute')
     expect(restored.selectedSessionIds).toHaveLength(8)
     expect(restored.selectedSessionIds[0]).toBe(firstSession)
     expect(restored.replayTime).toBeNull()
