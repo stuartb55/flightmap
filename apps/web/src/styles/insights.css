@@ -718,9 +718,11 @@
   margin-top: 12px;
 }
 
+/* Six records, so three columns rather than as many as will fit: auto-fit
+   lands on five and leaves one card alone on a second row. */
 .records-panel ol {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin: 14px 0 0;
   padding: 0;

@@ -493,10 +493,29 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   test.skip(testInfo.project.name !== 'chromium', 'The mobile Insights layout is covered separately')
   await page.goto('/insights')
   await expect(page.getByRole('heading', { name: 'Activity & coverage' })).toBeVisible()
+
+  /*
+   * Records sit above the date controls and are all-time, so the one thing
+   * worth asserting about them is that the date controls do not touch them —
+   * that is exactly what reads as a bug when it is not said, and what a
+   * refactor would quietly break by folding them into the range fetch.
+   */
+  const records = page.getByRole('region', { name: 'All-time receiver records' })
+  await expect(records).toBeVisible()
+  await expect(records).toContainText('do not change with the date range below')
+  await expect(records.locator('li')).toHaveCount(6)
+  const before = await records.locator('li strong').allTextContents()
+  let recordRequests = 0
+  page.on('request', (request) => {
+    if (request.url().includes('/insights/records')) recordRequests += 1
+  })
+
   await page.getByRole('button', { name: '24 hours' }).click()
   await page.getByLabel('Compare preceding period').check()
   await expect(page.getByRole('region', { name: 'Period comparison' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Receiver range profile' })).toBeVisible()
+  expect(await records.locator('li strong').allTextContents()).toEqual(before)
+  expect(recordRequests).toBe(0)
 
   await page.getByRole('button', { name: /Saved views/ }).click()
   await page.getByPlaceholder('View name').fill('E2E Insights')
