@@ -272,14 +272,18 @@ async function setAirports(page: Page, items: unknown[]) {
  * click waits for an element it can never reach.
  */
 async function openLayerMenu(page: Page) {
-  // Waited for rather than probed: the alert arrives a moment after the page
-  // does, so a visibility check can pass before the banner exists and leave the
-  // click blocked by it. A deployment with no alerts simply times out here.
-  await page
-    .getByRole('button', { name: 'Dismiss alert banner' })
-    .click({ timeout: 10_000 })
-    .catch(() => {})
-  await page.getByRole('button', { name: 'Layers' }).click()
+  /*
+   * Retried as a pair, because the two steps race: the emergency banner arrives
+   * a moment after the page and sits over the map's top-left controls, and a
+   * fresh one can appear between dismissing the last and reaching the button.
+   * Dismiss-then-click as one retried unit is what makes this deterministic.
+   */
+  await expect(async () => {
+    const dismiss = page.getByRole('button', { name: 'Dismiss alert banner' })
+    if (await dismiss.count()) await dismiss.click({ timeout: 2_000 })
+    await expect(page.locator('.alert-banner')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Layers' }).click({ timeout: 2_000 })
+  }).toPass({ timeout: 30_000 })
   return page.getByRole('dialog', { name: 'Map layers' })
 }
 
