@@ -22,6 +22,12 @@ interface Props {
   filters: AircraftFilterState
   sources: string[]
   categories: string[]
+  /**
+   * False when the sighting marker is switched off in Settings, which leaves
+   * nothing for the filter to select. Disabled with the reason stated rather
+   * than hidden, so the control does not appear and disappear.
+   */
+  newSightingsEnabled?: boolean
   onChange: (filters: AircraftFilterState) => void
   onClose?: () => void
 }
@@ -90,7 +96,14 @@ function UnitField({
   )
 }
 
-export function AircraftFilters({ filters, sources, categories, onChange, onClose }: Props) {
+export function AircraftFilters({
+  filters,
+  sources,
+  categories,
+  newSightingsEnabled = true,
+  onChange,
+  onClose,
+}: Props) {
   const units = useUnitPreferences()
   const update = <K extends keyof AircraftFilterState>(
     key: K,
@@ -248,6 +261,22 @@ export function AircraftFilters({ filters, sources, categories, onChange, onClos
             type="checkbox"
             checked={filters.alertsOnly}
             onChange={(event) => update('alertsOnly', event.target.checked)}
+          />
+        </label>
+        <label className="toggle-row">
+          <span>
+            <strong>New sightings only</strong>
+            <small>
+              {newSightingsEnabled
+                ? 'First heard by this receiver within the chosen window'
+                : 'Not applied — turn on new sighting marking in Settings'}
+            </small>
+          </span>
+          <input
+            type="checkbox"
+            checked={filters.newOnly}
+            disabled={!newSightingsEnabled}
+            onChange={(event) => update('newOnly', event.target.checked)}
           />
         </label>
       </div>

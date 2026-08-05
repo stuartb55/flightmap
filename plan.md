@@ -135,7 +135,7 @@ work — verify that rather than assume it.
 
 ### 24. New-to-this-receiver sightings — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `aircraft_summary.first_seen_at` is the canonical record of when
 this receiver first heard each airframe (`001_initial.sql:138`), retained

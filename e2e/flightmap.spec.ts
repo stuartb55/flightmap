@@ -185,6 +185,51 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   await expect(details.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
 })
 
+/*
+ * The marker is passive by design — no alert row, no sound, no nav badge — so
+ * the flow worth covering end to end is the one a reader actually drives:
+ * choose a window in Settings, see the marks, filter to them, turn it off.
+ */
+test('marks new sightings, filters to them, and turns the marker off', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The filter drawer is a desktop-panel concern')
+  await openFlightmap(page)
+  const panel = page.locator('.desktop-aircraft-panel')
+  await expect(panel.locator('.aircraft-identity').first()).toBeVisible({ timeout: 15_000 })
+
+  // A week covers every airframe the fake receiver has ever reported.
+  await page.getByRole('link', { name: 'Settings' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 15_000 })
+  await page.getByLabel('New sightings').selectOption('week')
+
+  await page.getByRole('link', { name: 'Live' }).first().click()
+  await expect(panel.locator('.aircraft-identity').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.locator('.new-sighting-badge').first()).toBeVisible({ timeout: 15_000 })
+  // The badge is decorative; the row's own label is what carries the fact.
+  await expect(
+    panel.getByRole('button', { name: /, new to this receiver$/ }).first(),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  const drawer = page.getByRole('dialog', { name: 'Aircraft filters' })
+  const newOnly = drawer.getByRole('checkbox', { name: /New sightings only/ })
+  await newOnly.check()
+  await expect(panel.locator('tr[data-aircraft-row]').first()).toBeVisible()
+  await expect(panel.locator('.new-sighting-badge').first()).toBeVisible()
+
+  // Switching marking off must not strand the reader behind a filter they can
+  // no longer reach: the list stays populated and the control explains itself.
+  await page.getByRole('link', { name: 'Settings' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 15_000 })
+  await page.getByLabel('New sightings').selectOption('off')
+
+  await page.getByRole('link', { name: 'Live' }).first().click()
+  await expect(panel.locator('.aircraft-identity').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.locator('.new-sighting-badge')).toHaveCount(0)
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  await expect(drawer.getByRole('checkbox', { name: /New sightings only/ })).toBeDisabled()
+  await expect(panel.locator('tr[data-aircraft-row]').first()).toBeVisible()
+})
+
 test('windows the live list instead of rendering every aircraft', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'Row windowing is a desktop-panel concern')
   await openFlightmap(page)

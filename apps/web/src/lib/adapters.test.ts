@@ -17,6 +17,16 @@ describe('API adapters', () => {
     expect(result.navigation.altitude).toBe(10_000)
   })
 
+  /*
+   * The live payload used to carry no first-seen time and the adapter hardcoded
+   * null, which left the detail panel showing `—` for an airframe the receiver
+   * had a summary row for. It now comes from the snapshot join.
+   */
+  it('carries the first-seen time through from the live payload', () => {
+    expect(adaptAircraft(wireAircraft()).firstSeenAt).toBe('2025-01-01T10:00:00.000Z')
+    expect(adaptAircraft(wireAircraft({ firstSeenAt: null })).firstSeenAt).toBeNull()
+  })
+
   it('preserves an explicit on-ground report', () => {
     const result = adaptAircraft(
       wireAircraft({ onGround: true, altitudeBarometricFt: null, groundSpeedKt: 7 }),

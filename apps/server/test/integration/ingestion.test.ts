@@ -140,6 +140,66 @@ describeDatabase("ingestion against PostgreSQL", () => {
     expect(await flights.liveAircraft(at)).toEqual([]);
   });
 
+  /*
+   * The snapshot query joins `aircraft_summary` so the live row carries when
+   * this receiver first heard the airframe. The client decides what counts as
+   * new from that; the server never says so itself, and never writes a row for
+   * it — a first-seen alert existed once and was removed as noise in migration
+   * `009_focused_alerts.sql`.
+   */
+  it("carries the first-seen time on the live row without raising anything", async () => {
+    const first = atMinutes(600);
+    const later = atMinutes(640);
+    await flights.ingestSnapshot(snapshot(first, [{ hex: "400001" }]));
+
+    const live = await flights.liveAircraft(first);
+    expect(live[0]?.firstSeenAt).toBe(first.toISOString());
+
+    // A later report of the same airframe keeps the original first-seen time
+    // rather than moving it forward with the feed.
+    const again = await flights.ingestSnapshot(snapshot(later, [{ hex: "400001" }]));
+    expect(again.alerts).toEqual([]);
+    expect((await flights.liveAircraft(later))[0]?.firstSeenAt).toBe(first.toISOString());
+
+    const alerts = await database.query<{ count: string }>(
+      "SELECT count(*) AS count FROM alert_events"
+    );
+    expect(alerts.rows[0]?.count).toBe("0");
+  });
+
+  /*
+   * The rows the collector publishes as a live delta come from `normalise`,
+   * which cannot know a first-seen time and leaves it null. Without the summary
+   * upsert handing it back, the field was right in the REST snapshot — which
+   * reads it through a join — and null again a second later in every delta,
+   * so a marked aircraft lost its badge as soon as the first tick arrived.
+   */
+  it("puts the first-seen time on the rows published as a live delta", async () => {
+    const first = atMinutes(600);
+    const later = atMinutes(601);
+    const initial = await flights.ingestSnapshot(snapshot(first, [{ hex: "400001" }]));
+    expect(initial.upserts[0]?.firstSeenAt).toBe(first.toISOString());
+
+    // And it stays the original sighting on later ticks, not the current one.
+    const next = await flights.ingestSnapshot(snapshot(later, [{ hex: "400001" }]));
+    expect(next.upserts[0]?.firstSeenAt).toBe(first.toISOString());
+
+    // The delta and the snapshot must agree, or the badge flickers.
+    expect(next.upserts[0]?.firstSeenAt).toBe(
+      (await flights.liveAircraft(later))[0]?.firstSeenAt
+    );
+  });
+
+  it("reports an unknown first-seen time as null rather than as a first sighting", async () => {
+    const at = atMinutes(600);
+    await flights.ingestSnapshot(snapshot(at, [{ hex: "400001" }]));
+    // The summary is the only record of a first sighting. Without it the live
+    // row must say nothing, which the client renders as unknown.
+    await database.query("DELETE FROM aircraft_summary WHERE icao = '400001'");
+
+    expect((await flights.liveAircraft(at))[0]?.firstSeenAt).toBeNull();
+  });
+
   it("raises an emergency alert for a squawk and exposes it on the live row", async () => {
     const at = atMinutes(600);
     const result = await flights.ingestSnapshot(

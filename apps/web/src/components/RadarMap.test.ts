@@ -7,12 +7,14 @@ import {
   needsRecentre,
   interpolateTrack,
   isEmergencyAircraft,
+  liveAircraftData,
   replayPointAtTime,
   resolveStyleImageAlias,
   rulerData,
 } from './RadarMap'
 import { altitudeBands } from '../lib/altitude-bands'
 import { aviationUnits, metricUnits } from '../lib/unit-preferences'
+import { aircraft } from '../test/fixtures'
 import type { TrackPoint } from '../types'
 
 describe('track interpolation', () => {
@@ -62,6 +64,40 @@ describe('track interpolation', () => {
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'no_emergency' })).toBe(false)
     expect(isEmergencyAircraft({ squawk: '1234', emergency: 'general' })).toBe(true)
+  })
+})
+
+/*
+ * An aircraft can be several things at once, and the halos are separate layers
+ * that would otherwise all draw. Precedence is resolved into the feature so
+ * exactly one matches: emergency, then alert, then watchlist, then new. A first
+ * sighting is the least urgent of the four and must never be what somebody sees
+ * where an alert should have been.
+ */
+describe('map emphasis precedence', () => {
+  const cutoff = Date.parse('2026-08-01T00:00:00.000Z')
+  const newly = { firstSeenAt: '2026-08-04T09:00:00.000Z' }
+  const propertiesFor = (overrides: Parameters<typeof aircraft>[0]) =>
+    liveAircraftData([aircraft({ ...newly, ...overrides })], aviationUnits, null, cutoff)
+      .features[0]!.properties!
+
+  it('marks a first sighting that is nothing else', () => {
+    expect(propertiesFor({})).toMatchObject({ newSighting: 1, emergency: 0, watched: 0 })
+  })
+
+  it('yields to an emergency, an alert, and the watchlist', () => {
+    expect(propertiesFor({ squawk: '7700' })).toMatchObject({ newSighting: 0, emergency: 1 })
+    expect(propertiesFor({ hasActiveAlert: true }).newSighting).toBe(0)
+    expect(propertiesFor({ watched: true })).toMatchObject({ newSighting: 0, watched: 1 })
+  })
+
+  it('marks nothing when the preference is off or the airframe is not new', () => {
+    expect(
+      liveAircraftData([aircraft(newly)], aviationUnits, null, null).features[0]!.properties!
+        .newSighting,
+    ).toBe(0)
+    expect(propertiesFor({ firstSeenAt: '2019-01-02T09:00:00.000Z' }).newSighting).toBe(0)
+    expect(propertiesFor({ firstSeenAt: null }).newSighting).toBe(0)
   })
 })
 

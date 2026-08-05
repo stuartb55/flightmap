@@ -40,6 +40,7 @@ import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
 import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-bands'
 import { aircraftLabel, formatAltitude, formatDateTime } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
+import { useNewSightingCutoff } from '../lib/sighting-preferences'
 import { useSearchParams } from '../lib/router'
 import { useModalFocus } from '../lib/use-modal-focus'
 import { useAppCommands } from '../lib/app-commands'
@@ -79,6 +80,7 @@ function storedFilters(): AircraftFilterState {
 
 export function LivePage() {
   const units = useUnitPreferences()
+  const newSince = useNewSightingCutoff()
   const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
   const dispatch = useLiveDispatch()
@@ -175,7 +177,7 @@ export function LivePage() {
     observer.observe(panel)
     return () => observer.disconnect()
   }, [detailExpanded, hasDetail])
-  const filtered = useOrderedAircraft(aircraftList, filters, sort)
+  const filtered = useOrderedAircraft(aircraftList, filters, sort, newSince)
   const sources = useMemo(
     () =>
       [...new Set(aircraftList.map((aircraft) => aircraft.source).filter((source): source is string => Boolean(source)))].sort(),
@@ -533,6 +535,7 @@ export function LivePage() {
           sort={sort}
           onSort={setSort}
           onSelect={selectAircraft}
+          newSince={newSince}
           columns={columns}
           loading={!hasSnapshot}
           emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
@@ -579,6 +582,7 @@ export function LivePage() {
               filters={filters}
               sources={sources}
               categories={categories}
+              newSightingsEnabled={newSince != null}
               onChange={setFilters}
               onClose={() => setShowFilters(false)}
             />
@@ -605,6 +609,7 @@ export function LivePage() {
           trails={mapLayers.allTrails ? trails : undefined}
           initialViewport={sharedViewport}
           bottomInset={mapBottomInset}
+          newSince={newSince}
           share={liveShare}
         />
         {trackError || coverage.error ? <p className="map-data-warning" role="status">{trackError ?? coverage.error}</p> : null}
@@ -624,6 +629,7 @@ export function LivePage() {
       {selected ? (
         <AircraftDetailPanel
           aircraft={selected}
+          newSince={newSince}
           onClose={closeDetails}
           panelRef={detailPanelRef}
           expanded={detailExpanded}
@@ -698,6 +704,7 @@ export function LivePage() {
           sort={sort}
           onSort={setSort}
           onSelect={selectAircraft}
+          newSince={newSince}
           columns={mobileColumns}
           loading={!hasSnapshot}
           emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
@@ -722,6 +729,7 @@ export function LivePage() {
           filters={filters}
           sources={sources}
           categories={categories}
+          newSightingsEnabled={newSince != null}
           onChange={setFilters}
           onClose={() => setMobilePanel(null)}
         />

@@ -210,7 +210,8 @@ describe("shared contracts", () => {
           source: "adsb",
           category: "",
           watchedOnly: false,
-          alertsOnly: false
+          alertsOnly: false,
+          newOnly: false
         },
         sort: { key: "distance", direction: "asc" },
         mapLayers: {
@@ -233,6 +234,17 @@ describe("shared contracts", () => {
       savedViewInputSchema.parse({
         ...live,
         configuration: { ...live.configuration, mapLayers: legacyLayers }
+      })
+    ).toEqual(live);
+    // Same again for the newOnly filter, added after those views were written:
+    // a live view saved before it must load with the filter off rather than
+    // failing this strict object.
+    const { newOnly, ...legacyFilters } = live.configuration.filters;
+    expect(newOnly).toBe(false);
+    expect(
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: { ...live.configuration, filters: legacyFilters }
       })
     ).toEqual(live);
     // Every column the live table can sort by must round-trip, or saving a view

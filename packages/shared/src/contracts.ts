@@ -83,6 +83,17 @@ export const liveAircraftSchema = z.object({
   stale: z.boolean(),
   watched: z.boolean(),
   hasActiveAlert: z.boolean(),
+  /**
+   * When this receiver first heard the airframe, from `aircraft_summary`, or
+   * null when it has no summary row yet. Static per airframe on purpose: the
+   * live diff suppresses byte-identical rows, so anything computed relative to
+   * now — an `isNew` flag, an age — would flip and push otherwise unchanged
+   * rows onto the wire every tick. The client decides what counts as new.
+   *
+   * Defaulted because a `current_aircraft.state` row written before this field
+   * existed does not carry it.
+   */
+  firstSeenAt: isoDateTimeSchema.nullable().default(null),
   metadata: aircraftMetadataSchema.nullable()
 });
 
@@ -466,7 +477,11 @@ export const liveSavedViewConfigurationSchema = savedViewBaseSchema
         source: z.string().max(32),
         category: z.string().max(32),
         watchedOnly: z.boolean(),
-        alertsOnly: z.boolean()
+        alertsOnly: z.boolean(),
+        // Added after the original filters. Defaulted for the same reason
+        // `allTrails` is: this object is strict, and every live view saved
+        // before the filter existed must still parse.
+        newOnly: z.boolean().default(false)
       })
       .strict(),
     sort: z

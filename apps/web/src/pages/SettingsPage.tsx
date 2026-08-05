@@ -32,6 +32,13 @@ import {
   verticalRateUnits,
   type UnitPreferences,
 } from '../lib/unit-preferences'
+import {
+  setSightingThreshold,
+  sightingThresholdLabels,
+  sightingThresholds,
+  useSightingThreshold,
+  type SightingThreshold,
+} from '../lib/sighting-preferences'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
@@ -212,6 +219,32 @@ function DisplayUnits() {
         CSV and GeoJSON exports always use feet, knots and nautical miles, whatever is chosen here.
       </p>
     </>
+  )
+}
+
+/**
+ * Marking is passive by design. A first-seen *alert* existed once and was
+ * removed as noise in migration `009_focused_alerts.sql`; this is the marker
+ * you go looking for instead, so the copy says plainly that nothing is sent.
+ */
+function NewSightings() {
+  const threshold = useSightingThreshold()
+  return (
+    <Field
+      label="New sightings"
+      hint="Marks airframes this receiver heard for the first time within the window"
+    >
+      <select
+        value={threshold}
+        onChange={(event) => setSightingThreshold(event.target.value as SightingThreshold)}
+      >
+        {sightingThresholds.map((choice) => (
+          <option key={choice} value={choice}>
+            {sightingThresholdLabels[choice]}
+          </option>
+        ))}
+      </select>
+    </Field>
   )
 }
 
@@ -403,6 +436,7 @@ export function SettingsPage() {
             </Field>
             <DisplayAppearance />
             <DisplayUnits />
+            <NewSightings />
           </SettingsCard>
 
           <SettingsCard

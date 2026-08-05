@@ -79,7 +79,7 @@ export function adaptAircraft(item: WireAircraft): Aircraft {
     sessionId: item.sessionId,
     watched: item.watched,
     hasActiveAlert: item.hasActiveAlert,
-    firstSeenAt: null,
+    firstSeenAt: item.firstSeenAt,
     lastSeenAt: item.recordedAt,
   }
 }

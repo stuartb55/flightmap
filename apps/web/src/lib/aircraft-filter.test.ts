@@ -120,6 +120,26 @@ describe('remaining filter and sort branches', () => {
     expect(filterAircraft(items, { ...defaultAircraftFilters, query: 'nothing' })).toHaveLength(0)
   })
 
+  it('filters on new sightings against the cutoff it is given', () => {
+    const cutoff = Date.parse('2026-08-01T00:00:00.000Z')
+    const seen = [
+      aircraft({ icao: '406b90', firstSeenAt: '2026-08-04T09:00:00.000Z' }),
+      aircraft({ icao: '4ca123', firstSeenAt: '2019-01-02T09:00:00.000Z' }),
+      // No summary row yet: unknown, and unknown is never new.
+      aircraft({ icao: '3c6444', firstSeenAt: null }),
+    ]
+    expect(
+      filterAircraft(seen, { ...defaultAircraftFilters, newOnly: true }, cutoff).map(
+        (item) => item.icao,
+      ),
+    ).toEqual(['406b90'])
+    // Marking switched off makes the filter inert, not exclusive: emptying the
+    // list behind a control that is disabled by then would strand the reader.
+    expect(filterAircraft(seen, { ...defaultAircraftFilters, newOnly: true }, null)).toHaveLength(3)
+    // And with the filter off the cutoff is irrelevant.
+    expect(filterAircraft(seen, defaultAircraftFilters, cutoff)).toHaveLength(3)
+  })
+
   it('sorts by identity, altitude, speed and freshness', () => {
     expect(
       sortAircraft(items, { key: 'identity', direction: 'asc' }).map((item) => item.icao),
@@ -248,6 +268,31 @@ describe('orderAircraft', () => {
     expect(descending.list.map((item) => item.icao)).toEqual(['4ca123', '406b90'])
   })
 
+  /*
+   * The cutoff moves independently of the filters object, so it has to be part
+   * of what decides a reuse: without it, switching the threshold in Settings
+   * would leave the previous list on screen until something else invalidated
+   * it. It also has to be stable between ticks, which is why the preference
+   * module quantises rolling windows rather than handing over a live clock.
+   */
+  it('re-filters when the new-sighting cutoff moves, and reuses when it holds', () => {
+    const newOnly = { ...defaultAircraftFilters, newOnly: true }
+    const fresh = aircraft({ icao: '406b90', distanceNm: 10, firstSeenAt: '2026-08-05T09:00:00.000Z' })
+    const old = aircraft({ icao: '4ca123', distanceNm: 40, firstSeenAt: '2019-01-02T09:00:00.000Z' })
+    const set = [old, fresh]
+    const cutoff = Date.parse('2026-08-05T00:00:00.000Z')
+
+    const first = orderAircraft(set, newOnly, sort, null, 0, cutoff)
+    expect(first.list.map((item) => item.icao)).toEqual(['406b90'])
+
+    const held = orderAircraft(set, newOnly, sort, first, 1_000, cutoff)
+    expect(held.orderedAt).toBe(first.orderedAt)
+
+    const widened = orderAircraft(set, newOnly, sort, first, 1_000, Date.parse('2018-01-01T00:00:00.000Z'))
+    expect(widened.list.map((item) => item.icao)).toEqual(['406b90', '4ca123'])
+    expect(widened.orderedAt).toBe(1_000)
+  })
+
   it('distinguishes a different live set of the same size', () => {
     expect(membershipKey(snapshot)).not.toBe(membershipKey([far, aircraft({ icao: '3c6444' })]))
   })
@@ -288,6 +333,7 @@ describe('filters carried by a shared link', () => {
       category: 'A3',
       watchedOnly: true,
       alertsOnly: true,
+      newOnly: true,
     }
     const params = new URLSearchParams()
     writeFiltersToParams(filters, params)

@@ -42,6 +42,7 @@ export class LiveRepository extends RepositoryBase {
       operator: string | null;
       owner: string | null;
       country: string | null;
+      first_seen_at: Date | string | null;
     }>(
       `SELECT c.state,
               (w.icao IS NOT NULL) AS watched,
@@ -52,10 +53,12 @@ export class LiveRepository extends RepositoryBase {
                   AND a.dismissed_at IS NULL
               ) AS has_active_alert,
               m.icao AS metadata_icao, m.registration, m.type_code,
-              m.description, m.operator, m.owner, m.country
+              m.description, m.operator, m.owner, m.country,
+              s.first_seen_at
        FROM current_aircraft c
        LEFT JOIN watchlist w ON w.icao = c.icao
        LEFT JOIN aircraft_metadata m ON m.icao = c.icao
+       LEFT JOIN aircraft_summary s ON s.icao = c.icao
        WHERE c.updated_at >= $1
          AND ($3::text[] IS NULL OR c.icao = ANY($3::text[]))
        ORDER BY c.icao`,
@@ -73,6 +76,9 @@ export class LiveRepository extends RepositoryBase {
         row.state.stale,
       watched: row.watched,
       hasActiveAlert: row.has_active_alert,
+      // Null until the summary row exists, which the client shows as unknown
+      // rather than as a first sighting.
+      firstSeenAt: row.first_seen_at == null ? null : iso(row.first_seen_at),
       metadata: row.metadata_icao
         ? metadataFromRow({
             icao: row.metadata_icao,
