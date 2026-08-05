@@ -156,7 +156,7 @@ item 17), `LivePage.tsx`, `HistoryPage.tsx`, `styles/live.css`.
 
 ### 13. Multi-track profile comparison — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Up to eight tracks can be selected and drawn on the History map
 (`HistoryPage.tsx:518`), but `FlightProfile` renders only the focused one
