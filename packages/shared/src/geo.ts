@@ -1,3 +1,10 @@
+/*
+ * Range and bearing from the receiver. Shared rather than server-only because
+ * the browser has to place things in the same sectors the range histogram was
+ * bucketed into — two implementations of this would disagree at the edges and
+ * put a cell in the wrong wedge.
+ */
+
 const EARTH_RADIUS_NM = 3440.065;
 
 function toRadians(degrees: number): number {

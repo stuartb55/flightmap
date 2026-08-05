@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SavedView } from '@flightmap/shared'
+import { defaultInsightSeries } from '@flightmap/shared'
 import { api } from './api'
 import {
   defaultView,
@@ -26,6 +27,7 @@ function view(overrides: Partial<SavedView> = {}): SavedView {
       bucket: 'day',
       preset: '30d',
       sort: 'reports_desc',
+      series: defaultInsightSeries,
       compare: false,
       mapLayers: defaultMapLayers,
       viewport: null,

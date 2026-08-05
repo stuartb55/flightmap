@@ -267,7 +267,7 @@ Every figure must come from an indexed aggregate; nothing here may scan
 
 ### 17. Insights drill-down and export polish — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The activity chart drills through to History
 (`InsightsPage.tsx:571`) and the leader lists link out (`:302`), but the range

@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
+import { defaultInsightSeries } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { InsightsPage, insightRangeForPreset } from './InsightsPage'
+import { InsightsPage, cellsOnBearing, insightRangeForPreset, patternCellHref } from './InsightsPage'
 import { Router } from '../lib/router'
 import { api } from '../lib/api'
 import { resetSavedViews } from '../lib/saved-views'
@@ -141,6 +142,9 @@ const records = {
 describe('InsightsPage', () => {
   beforeEach(() => {
     resetSavedViews()
+    // The series toggles persist by design, so each test starts from the
+    // stored default rather than from whatever the previous one chose.
+    localStorage.removeItem('flightmap.insight-series.v1')
     vi.mocked(api.savedViews).mockResolvedValue([])
     window.history.replaceState(null, '', '/insights')
     vi.mocked(api.insightsOverview).mockResolvedValue(overview())
@@ -272,6 +276,7 @@ describe('InsightsPage', () => {
           bucket: 'day',
           preset: '30d',
           sort: 'reports_desc',
+          series: defaultInsightSeries,
           compare: false,
           mapLayers: defaultMapLayers,
           viewport: null,
@@ -289,6 +294,43 @@ describe('InsightsPage', () => {
     expect(api.insightsOverview).toHaveBeenCalledWith(
       expect.objectContaining({ from: '2026-07-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' }),
       expect.any(AbortSignal),
+    )
+  })
+
+  it('applies the series visibility a saved view carries', async () => {
+    vi.mocked(api.savedViews).mockResolvedValue([
+      {
+        id: '2b0b6b9c-2a49-4e6f-9d5a-9f8d1a44e0b3',
+        name: 'Positions only',
+        surface: 'insights',
+        configuration: {
+          surface: 'insights',
+          from: '2026-07-02T00:00:00.000Z',
+          to: '2026-08-01T00:00:00.000Z',
+          bucket: 'day',
+          preset: '30d',
+          sort: 'reports_desc',
+          series: { reports: false, positionedReports: true, receiverAvailability: false },
+          compare: false,
+          mapLayers: defaultMapLayers,
+          viewport: null,
+        },
+        isDefault: true,
+        pinnedAt: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      },
+    ])
+    renderPage()
+    await screen.findByText('1,250')
+    const toggles = screen.getByRole('group', { name: 'Activity chart series' })
+    expect(within(toggles).getByRole('button', { name: 'Reports' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(within(toggles).getByRole('button', { name: 'Positioned reports' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     )
   })
 
@@ -349,6 +391,153 @@ describe('InsightsPage', () => {
     expect(panel).not.toHaveTextContent('0 nm')
   })
 
+  it('drills a pattern cell into History with its weekday-hour window', async () => {
+    vi.mocked(api.insightPatterns).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      timeZone: 'Europe/London',
+      cells: [
+        { weekday: 1, hour: 14, uniqueAircraft: 6, sessions: 4, reports: 220, previousReports: 180, changePercent: 22.2 },
+      ],
+      busiest: { weekday: 1, hour: 14, uniqueAircraft: 6, sessions: 4, reports: 220, previousReports: 180, changePercent: 22.2 },
+      availability,
+    })
+    renderPage()
+    const grid = await screen.findByRole('group', {
+      name: /Aircraft by local weekday and hour in Europe\/London/,
+    })
+    const cell = within(grid).getByRole('button', { name: /^Tue 14:00: 6 aircraft/ })
+    // The window is a narrower answer than the cell, so the cell says so.
+    expect(cell).toHaveAccessibleName(/Show sessions that started in this hour/)
+    fireEvent.click(cell)
+    expect(window.location.pathname).toBe('/history')
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('weekday')).toBe('1')
+    expect(params.get('hour')).toBe('14')
+    // The window only means the same thing over the range the grid was drawn
+    // for, so the drill-down carries that range rather than History's default.
+    const asked = vi.mocked(api.insightPatterns).mock.lastCall?.[0]
+    expect(params.get('from')).toBe(asked?.from)
+    expect(params.get('to')).toBe(asked?.to)
+  })
+
+  it('keeps one tab stop for the whole pattern grid and moves within it by arrow key', async () => {
+    vi.mocked(api.insightPatterns).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      timeZone: 'Europe/London',
+      cells: [
+        { weekday: 0, hour: 0, uniqueAircraft: 1, sessions: 1, reports: 10, previousReports: null, changePercent: null },
+      ],
+      busiest: null,
+      availability,
+    })
+    renderPage()
+    const grid = await screen.findByRole('group', {
+      name: /Aircraft by local weekday and hour/,
+    })
+    const cells = within(grid).getAllByRole('button')
+    expect(cells).toHaveLength(7 * 24)
+    // 168 tab stops would bury every control after the grid.
+    expect(cells.filter((cell) => cell.getAttribute('tabindex') === '0')).toHaveLength(1)
+
+    const first = within(grid).getByRole('button', { name: /^Mon 00:00/ })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(document.activeElement).toHaveAccessibleName(/^Mon 01:00/)
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 01:00/)
+    fireEvent.keyDown(document.activeElement!, { key: 'End' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 23:00/)
+    // The edges hold rather than wrapping onto another day.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 23:00/)
+  })
+
+  it('filters coverage to the bearing wedge a range sector drills into', async () => {
+    // The receiver default is 53.61, -2.31. The first cell is due north of it
+    // and the second due east, so each falls in exactly one wedge.
+    vi.mocked(api.insightsCoverage).mockResolvedValue({
+      ...coverage,
+      cells: [
+        { ...coverage.cells[0]!, latitude: 54.61, longitude: -2.31, reports: 900 },
+        { ...coverage.cells[0]!, latitude: 53.61, longitude: -0.31, reports: 400 },
+      ],
+    })
+    vi.mocked(api.rangeProfile).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      altitudeBand: 'all',
+      sectors: Array.from({ length: 72 }, (_, index) => ({
+        bearingStartDeg: index * 5,
+        bearingEndDeg: index * 5 + 5,
+        reports: 100,
+        medianRangeNm: 40,
+        p95RangeNm: 80,
+        maximumRangeNm: 95,
+        previousP95RangeNm: null,
+        p95ChangeNm: null,
+      })),
+      availableFrom: '2026-07-01',
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('2 cells'))
+
+    fireEvent.click(await screen.findByRole('button', { name: /^0–5°: median/ }))
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('1 cells'))
+    // The sector counts reports the coverage grid measured differently, so the
+    // panel says what it is showing rather than implying the two tally.
+    const chip = screen.getByText(/Bearing 0–5° from the receiver/).closest('div')
+    expect(chip).toHaveTextContent(/not the reports the sector counted/)
+
+    // A bearing with nothing on it is empty, not uncovered.
+    fireEvent.click(screen.getByRole('button', { name: /^180–185°: median/ }))
+    expect(await screen.findByText('No coverage cells on this bearing')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all bearings' }))
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('2 cells'))
+  })
+
+  it('hides and restores activity series, and remembers the choice', async () => {
+    const { container } = renderPage()
+    await screen.findByText('1,250')
+    const chart = () => container.querySelector('.activity-chart')!
+    const legend = () => container.querySelector('.chart-legend')!
+    const toggles = screen.getByRole('group', { name: 'Activity chart series' })
+    const reports = within(toggles).getByRole('button', { name: 'Reports' })
+    const positioned = within(toggles).getByRole('button', { name: 'Positioned reports' })
+    const availability = within(toggles).getByRole('button', { name: 'Receiver availability' })
+    expect(reports).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('.chart-bar.positioned')).toHaveLength(1)
+
+    fireEvent.click(positioned)
+    expect(positioned).toHaveAttribute('aria-pressed', 'false')
+    expect(chart().querySelectorAll('.chart-bar.positioned')).toHaveLength(0)
+    expect(chart().querySelectorAll('.chart-bar')).toHaveLength(1)
+    // The legend follows what is drawn rather than listing every series.
+    expect(legend()).not.toHaveTextContent('Positioned reports')
+    expect(legend()).toHaveTextContent('Receiver availability')
+
+    fireEvent.click(availability)
+    expect(container.querySelector('.receiver-availability-point')).toBeNull()
+
+    fireEvent.click(reports)
+    // Blank axes read as a failed request, so the chart says which it is.
+    expect(screen.getByText(/Every series is hidden/)).toBeInTheDocument()
+    // The values are still reachable regardless of what is drawn.
+    expect(screen.getByText('View activity data table')).toBeInTheDocument()
+
+    // The choice survives a reload.
+    cleanup()
+    renderPage()
+    await screen.findByText('1,250')
+    const restored = screen.getByRole('group', { name: 'Activity chart series' })
+    expect(within(restored).getByRole('button', { name: 'Reports' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
   it('keeps the rest of Insights when records are unavailable', async () => {
     vi.mocked(api.receiverRecords).mockRejectedValue(new Error('Records unavailable'))
     renderPage()
@@ -366,5 +555,43 @@ describe('insight presets', () => {
     })
     expect(insightRangeForPreset('7d', now).bucket).toBe('day')
     expect(insightRangeForPreset('30d', now).bucket).toBe('day')
+  })
+
+  it('keeps a coverage cell in the wedge its bearing from the receiver falls in', () => {
+    const receiver = { latitude: 53.61, longitude: -2.31 }
+    const base = {
+      south: 0, west: 0, north: 0, east: 0,
+      reports: 10, uniqueAircraft: 1, maximumAltitudeFt: 30_000,
+    }
+    const north = { ...base, latitude: 54.61, longitude: -2.31 }
+    const east = { ...base, latitude: 53.61, longitude: -0.31 }
+    // A cell over the receiver itself has no meaningful bearing, and dropping
+    // the busiest cell out of every wedge would be worse than keeping it.
+    const overhead = { ...base, latitude: 53.611, longitude: -2.311 }
+    const cells = [north, east, overhead]
+
+    expect(cellsOnBearing(cells, receiver, 0)).toEqual([north, overhead])
+    expect(cellsOnBearing(cells, receiver, 85)).toEqual([east, overhead])
+    expect(cellsOnBearing(cells, receiver, 180)).toEqual([overhead])
+  })
+
+  it('narrows a pattern drill-down to the 32 days a session search allows', () => {
+    const within32 = patternCellHref(
+      { from: '2026-07-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' },
+      1,
+      14,
+    )
+    expect(new URLSearchParams(within32.split('?')[1]).get('from')).toBe('2026-07-02T00:00:00.000Z')
+
+    // A year-long insight range would be refused outright by the session
+    // search, so the drill-down asks for the most recent window it can have.
+    const wide = patternCellHref(
+      { from: '2025-08-01T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' },
+      1,
+      14,
+    )
+    const params = new URLSearchParams(wide.split('?')[1])
+    expect(params.get('from')).toBe('2026-06-30T00:00:00.000Z')
+    expect(params.get('to')).toBe('2026-08-01T00:00:00.000Z')
   })
 })

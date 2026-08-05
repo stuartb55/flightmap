@@ -277,6 +277,13 @@ export interface HistoryFilters {
   from: string
   to: string
   alert: '' | 'emergency_squawk' | 'emergency_state' | 'watchlist'
+  /**
+   * The weekday (Monday = 0) and hour an Insights pattern cell drilled into,
+   * read in the display time zone. Both or neither: an hour without a weekday
+   * is not a window the grid can produce.
+   */
+  weekday: number | null
+  hour: number | null
 }
 
 export type LiveMessage =

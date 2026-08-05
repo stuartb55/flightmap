@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
+  chartDataUri,
   copyToClipboard,
+  rasteriseChart,
   shareUrl,
   snapshotFilename,
   viewportFromParam,
@@ -96,5 +98,57 @@ describe('snapshot naming and clipboard', () => {
     })
     expect(await copyToClipboard('http://receiver.lan/')).toBe(true)
     Object.defineProperty(navigator, 'clipboard', { value: original, configurable: true })
+  })
+})
+
+/*
+ * A chart is drawn entirely by the stylesheet, so a clone lifted out of the
+ * document has no paint at all. Everything the picture shows depends on that
+ * paint being carried across before it is serialised.
+ */
+describe('chart snapshots', () => {
+  function chart(markup: string): SVGSVGElement {
+    const host = document.createElement('div')
+    host.innerHTML = `<svg viewBox="0 0 100 50">${markup}</svg>`
+    const svg = host.querySelector('svg') as unknown as SVGSVGElement
+    document.body.append(host)
+    return svg
+  }
+
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('carries the computed paint onto the standalone document', () => {
+    const style = document.createElement('style')
+    style.textContent = '.bar { fill: rgb(1, 2, 3); stroke-width: 4px; }'
+    document.head.append(style)
+    const svg = chart('<rect class="bar" width="10" height="10" />')
+
+    const markup = decodeURIComponent(chartDataUri(svg) ?? '')
+    expect(markup).toContain('rgb(1, 2, 3)')
+    expect(markup).toContain('stroke-width: 4px')
+    // Standalone means standalone: without the namespace the browser refuses
+    // to load it as an image at all.
+    expect(markup).toContain('xmlns="http://www.w3.org/2000/svg"')
+    // The viewBox is the drawing size; an image needs it stated outright.
+    expect(markup).toContain('width="100"')
+    expect(markup).toContain('height="50"')
+    style.remove()
+  })
+
+  it('percent-encodes rather than base64, so degree signs survive', () => {
+    const svg = chart('<text>0–5° north</text>')
+    const uri = chartDataUri(svg) ?? ''
+    expect(uri.startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true)
+    expect(decodeURIComponent(uri)).toContain('0–5° north')
+  })
+
+  it('declines a chart with nothing to draw into', async () => {
+    const host = document.createElement('div')
+    host.innerHTML = '<svg></svg>'
+    const empty = host.querySelector('svg') as unknown as SVGSVGElement
+    expect(chartDataUri(empty)).toBeNull()
+    await expect(rasteriseChart(empty)).resolves.toBeNull()
   })
 })

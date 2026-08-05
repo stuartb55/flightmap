@@ -93,6 +93,37 @@
   background: var(--surface-14);
 }
 
+/* The weekday-hour window drilled into from the Insights pattern grid. It is a
+   filter no field in the form shows, so it states itself and offers its own
+   way out. */
+.pattern-window-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface-14);
+}
+
+.pattern-window-chip > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.pattern-window-chip > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pattern-window-chip small {
+  color: var(--muted);
+}
+
 .results-heading {
   display: flex;
   flex-wrap: wrap;

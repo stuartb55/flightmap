@@ -66,6 +66,7 @@ import type {
   WireTrackPoint,
 } from './wire'
 import { dateTimeInputToIso } from './format'
+import { displayTimeZone } from '../config'
 
 const API_ROOT = '/api/v1'
 
@@ -213,6 +214,11 @@ export const api = {
         from: filters.from ? dateTimeInputToIso(filters.from) : '',
         to: filters.to ? dateTimeInputToIso(filters.to) : '',
         alert: filters.alert,
+        // The weekday and hour were read off a grid drawn in the display zone,
+        // so the server has to be told which zone to name them in.
+        weekday: filters.weekday ?? '',
+        hour: filters.hour ?? '',
+        timeZone: filters.weekday == null ? '' : displayTimeZone(),
         cursor,
         limit: 50,
       })}`,

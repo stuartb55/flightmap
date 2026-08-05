@@ -1,10 +1,10 @@
 import {
+  calculateRangeAndBearing,
   receiverAircraftSchema,
   receiverAircraftSnapshotSchema,
   type LiveAircraft,
   type ReceiverAircraft
 } from "@flightmap/shared";
-import { calculateRangeAndBearing } from "./geo.js";
 
 export type NormalisedSnapshot = {
   recordedAt: Date;

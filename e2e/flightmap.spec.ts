@@ -489,6 +489,33 @@ test('restores selected history tracks, replay position, and exports after refre
   expect(new URL(page.url()).searchParams.get('profile')).toBe('aligned')
 })
 
+/*
+ * Ahead of the saved-view test deliberately: a default insights view carries
+ * series visibility of its own and applies it on load, which is the point of
+ * capturing it there — but it would then be answering this test's question
+ * instead of the stored preference.
+ */
+test('hides an activity series and keeps it hidden across a reload', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Series visibility is exercised once on desktop Chromium')
+  await page.goto('/insights')
+  const toggles = page.getByRole('group', { name: 'Activity chart series' })
+  const positioned = toggles.getByRole('button', { name: 'Positioned reports' })
+  await expect(positioned).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.chart-bar.positioned').first()).toBeVisible({ timeout: 15_000 })
+
+  await positioned.click()
+  await expect(positioned).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.chart-bar.positioned')).toHaveCount(0)
+
+  // A preference nobody asked to be reset has to survive a cold start.
+  await page.goto('/insights')
+  await expect(
+    page.getByRole('group', { name: 'Activity chart series' })
+      .getByRole('button', { name: 'Positioned reports' }),
+  ).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.chart-bar.positioned')).toHaveCount(0)
+})
+
 test('filters, compares, saves, restores, and exports Insights views', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The mobile Insights layout is covered separately')
   await page.goto('/insights')
@@ -558,10 +585,66 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   await page.getByRole('link', { name: 'GeoJSON' }).click()
   await expect((await geoJsonDownload).suggestedFilename()).toMatch(/^flightmap-coverage-.*\.geojson$/)
 
+  // The chart export leaves the app, so the file itself is the only evidence
+  // it worked; the button also has to say so, because nothing else will.
+  const pngDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save the activity chart as an image' }).click()
+  await expect((await pngDownload).suggestedFilename()).toMatch(
+    /^flightmap-insights-activity-.*\.png$/,
+  )
+  await expect(page.getByText('Image saved.')).toBeVisible()
+
   await page.getByRole('button', { name: /Saved views/ }).click()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Delete E2E Insights' }).click()
   await expect(page.getByText('No insights views saved yet.')).toBeVisible()
+})
+
+test('drills a pattern cell into History and a range sector into coverage', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The drill-downs are exercised once on desktop Chromium')
+  test.slow()
+  await page.goto('/insights')
+  await expect(page.getByRole('heading', { name: 'Activity & coverage' })).toBeVisible()
+
+  /*
+   * A sector lands on the coverage in that direction rather than on a History
+   * search: the daily range histogram cannot name the sessions it counted, so
+   * the panel says what it is showing instead of implying the two tally.
+   */
+  const coverage = page.locator('.coverage-panel').last()
+  await expect(coverage.getByText(/cells returned/)).toBeVisible({ timeout: 20_000 })
+  const allCells = await coverage.getByText(/cells returned/).textContent()
+  const sector = page.locator('.range-sector').first()
+  if (await sector.count()) {
+    // The first sector with data, found by walking rather than by guessing
+    // which bearing this receiver happens to hear.
+    const sectors = page.locator('.range-sector')
+    for (let index = 0; index < 72; index += 1) {
+      await sectors.nth(index).click({ force: true })
+      const chip = page.locator('.sector-filter-chip')
+      await expect(chip).toBeVisible()
+      await expect(chip).toContainText('not the reports the sector counted')
+      const narrowed = await coverage.getByText(/cells returned/).textContent().catch(() => null)
+      if (narrowed && narrowed !== allCells) break
+      if (await page.getByText('No coverage cells on this bearing').isVisible()) break
+    }
+    await page.getByRole('button', { name: 'Show all bearings' }).click()
+    await expect(page.locator('.sector-filter-chip')).toHaveCount(0)
+  }
+
+  // The pattern grid needs a day of aggregates, so it is only asserted when
+  // the receiver has produced one.
+  const cell = page.locator('.pattern-grid button.pattern-cell').first()
+  if (await cell.count()) {
+    // One tab stop for 168 cells, walked by arrow key.
+    await expect(page.locator('.pattern-grid button.pattern-cell[tabindex="0"]')).toHaveCount(1)
+    await cell.click()
+    await expect(page).toHaveURL(/\/history\?.*weekday=\d.*hour=\d/)
+    const chip = page.getByRole('status').filter({ hasText: 'started in this hour' })
+    await expect(chip).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Clear' }).click()
+    await expect(page).not.toHaveURL(/weekday=/)
+  }
 })
 
 test('drills through Insights without reloading the document or dropping the live feed', async ({ page }, testInfo) => {

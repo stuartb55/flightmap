@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SavedView, SavedViewConfiguration } from '@flightmap/shared'
+import { defaultInsightSeries } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SavedViewsControl } from './SavedViewsControl'
 import { ApiError, api } from '../lib/api'
@@ -26,6 +27,7 @@ const configuration: SavedViewConfiguration = {
   bucket: 'day',
   preset: '30d',
   sort: 'reports_desc',
+  series: defaultInsightSeries,
   compare: false,
   mapLayers: defaultMapLayers,
   viewport: null,

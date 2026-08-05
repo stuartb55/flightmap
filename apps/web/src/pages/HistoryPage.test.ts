@@ -29,6 +29,8 @@ describe('history URL restoration', () => {
     from: '2026-08-01T10:00',
     to: '2026-08-01T14:00',
     alert: 'watchlist',
+    weekday: null,
+    hour: null,
   } as const
 
   it('round-trips selected sessions, replay position, resolution, and the profile axis', () => {

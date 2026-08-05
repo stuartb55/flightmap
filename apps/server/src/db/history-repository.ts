@@ -148,6 +148,13 @@ export class HistoryRepository extends RepositoryBase {
              WHERE a.session_id = s.id AND a.rule = $9
            )
          )
+         AND (
+           $13::int IS NULL
+           OR (
+             extract(isodow FROM s.started_at AT TIME ZONE $15)::int - 1 = $13
+             AND extract(hour FROM s.started_at AT TIME ZONE $15)::int = $14
+           )
+         )
          AND ${keyset}
        ORDER BY ${sort.expression} ${sort.direction}, s.id ${sort.direction}
        LIMIT $12`,
@@ -163,7 +170,12 @@ export class HistoryRepository extends RepositoryBase {
         query.alert ?? null,
         cursorValue ?? null,
         cursor?.id ?? null,
-        query.limit + 1
+        query.limit + 1,
+        // The weekday-hour pair narrows rows the started_at index has already
+        // found; it never replaces the range predicate that finds them.
+        query.weekday ?? null,
+        query.hour ?? null,
+        query.timeZone ?? "UTC"
       ]
     );
     const hasMore = result.rows.length > query.limit;

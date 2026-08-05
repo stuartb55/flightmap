@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CoverageCell,
   CoverageCellDetailResponse,
@@ -6,6 +6,7 @@ import type {
   InsightLeader,
   InsightOverview,
   InsightPatternsResponse,
+  InsightSeriesPreferences,
   RangeProfileResponse,
   ReceiverRecord,
   ReceiverRecordKind,
@@ -13,11 +14,13 @@ import type {
   InsightSeriesPoint,
   SavedViewConfiguration,
 } from '@flightmap/shared'
+import { calculateRangeAndBearing } from '@flightmap/shared'
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  Compass,
   Download,
   Gauge,
   MapPinned,
@@ -33,6 +36,7 @@ import { RangeProfile } from '../components/RangeProfile'
 import type { CoverageMapHandle } from '../components/CoverageMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { ChartDataTable } from '../components/ChartDataTable'
+import { ChartImageButton } from '../components/ChartImageButton'
 import { api } from '../lib/api'
 import {
   compactNumber,
@@ -51,10 +55,11 @@ import {
   useUnitPreferences,
 } from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
+import { useInsightSeries } from '../lib/insight-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
 import { Link, useLocation } from '../lib/router'
-import { displayTimeZone } from '../config'
+import { displayTimeZone, useRuntimeConfig } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
 type InsightRange = { from: string; to: string; bucket: 'hour' | 'day' }
@@ -86,7 +91,28 @@ function seriesLabel(point: InsightSeriesPoint, bucket: 'hour' | 'day') {
       )
 }
 
-function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSelect: (point: InsightSeriesPoint) => void }) {
+/*
+ * The three things the activity chart plots. Reports and positioned reports
+ * share the report scale; availability is a percentage drawn against the full
+ * height, which is why it is a line rather than a fourth bar.
+ */
+const seriesLabels: Record<keyof InsightSeriesPreferences, string> = {
+  reports: 'Reports',
+  positionedReports: 'Positioned reports',
+  receiverAvailability: 'Receiver availability',
+}
+
+function ActivityChart({
+  overview,
+  series,
+  chartRef,
+  onSelect,
+}: {
+  overview: InsightOverview
+  series: InsightSeriesPreferences
+  chartRef: RefObject<SVGSVGElement | null>
+  onSelect: (point: InsightSeriesPoint) => void
+}) {
   const width = 760
   const height = 220
   const chartTop = 18
@@ -98,15 +124,17 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
     (best, point) => (!best || point.reports > best.reports ? point : best),
     null,
   )
-  const availabilityPoints = overview.series.flatMap((point, index) =>
-    point.receiverAvailabilityPercent == null
-      ? []
-      : [{
-          x: index * barSpace + barSpace / 2,
-          y: chartBottom - (point.receiverAvailabilityPercent / 100) * (chartBottom - chartTop),
-          value: point.receiverAvailabilityPercent,
-        }],
-  )
+  const availabilityPoints = !series.receiverAvailability
+    ? []
+    : overview.series.flatMap((point, index) =>
+        point.receiverAvailabilityPercent == null
+          ? []
+          : [{
+              x: index * barSpace + barSpace / 2,
+              y: chartBottom - (point.receiverAvailabilityPercent / 100) * (chartBottom - chartTop),
+              value: point.receiverAvailabilityPercent,
+            }],
+      )
 
   return (
     <>
@@ -115,8 +143,16 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
           ? `Busiest ${overview.bucket}: ${seriesLabel(busiest, overview.bucket)}, with ${busiest.reports.toLocaleString('en-GB')} reports from ${busiest.uniqueAircraft.toLocaleString('en-GB')} aircraft.`
           : 'No activity was recorded in this range.'}
       </p>
+      {!series.reports && !series.positionedReports && !series.receiverAvailability ? (
+        // Empty axes look like a failed request. Say which it is.
+        <p className="chart-summary" role="status">
+          Every series is hidden. Choose one above to draw the chart; the data table below still
+          lists every value.
+        </p>
+      ) : null}
       {overview.series.length ? (
         <svg
+          ref={chartRef}
           className="activity-chart"
           viewBox={`0 0 ${width} ${height}`}
           role="group"
@@ -129,25 +165,67 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
             const barHeight = Math.max(1, (point.reports / maxReports) * (chartBottom - chartTop))
             const x = index * barSpace + (barSpace - barWidth) / 2
             const barLabel = `${seriesLabel(point, overview.bucket)}: ${point.reports.toLocaleString('en-GB')} reports, ${point.uniqueAircraft.toLocaleString('en-GB')} aircraft`
+            /*
+             * Positioned reports are a subset of reports, so they are drawn as
+             * a narrower bar inside the same column rather than beside it:
+             * the inset shows the shortfall as a gap, which is the thing worth
+             * seeing. With reports hidden it stands on its own at full width.
+             */
+            const positionedWidth = series.reports ? Math.max(2, barWidth * 0.5) : barWidth
+            const positionedHeight = Math.max(
+              1,
+              (point.positionedReports / maxReports) * (chartBottom - chartTop),
+            )
             return (
-              <rect
-                key={point.bucketStart}
-                x={x}
-                y={chartBottom - barHeight}
-                width={barWidth}
-                height={barHeight}
-                rx="2"
-                className="chart-bar"
-                role="button"
-                tabIndex={0}
-                aria-label={barLabel}
-                onClick={() => onSelect(point)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') onSelect(point)
-                }}
-              >
-                <title>{barLabel}</title>
-              </rect>
+              <g key={point.bucketStart}>
+                {series.reports ? (
+                  <rect
+                    x={x}
+                    y={chartBottom - barHeight}
+                    width={barWidth}
+                    height={barHeight}
+                    rx="2"
+                    className="chart-bar"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={barLabel}
+                    onClick={() => onSelect(point)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                    }}
+                  >
+                    <title>{barLabel}</title>
+                  </rect>
+                ) : null}
+                {series.positionedReports ? (
+                  <rect
+                    x={x + (barWidth - positionedWidth) / 2}
+                    y={chartBottom - positionedHeight}
+                    width={positionedWidth}
+                    height={positionedHeight}
+                    rx="2"
+                    className="chart-bar positioned"
+                    // With reports drawn, the column already carries a button
+                    // and a second one on the same target would be two tab
+                    // stops onto the same drill-down.
+                    {...(series.reports
+                      ? { 'aria-hidden': true }
+                      : {
+                          role: 'button',
+                          tabIndex: 0,
+                          'aria-label': `${seriesLabel(point, overview.bucket)}: ${point.positionedReports.toLocaleString('en-GB')} positioned reports`,
+                          onClick: () => onSelect(point),
+                          onKeyDown: (event: KeyboardEvent<SVGElement>) => {
+                            if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                          },
+                        })}
+                  >
+                    <title>
+                      {`${seriesLabel(point, overview.bucket)}: ${point.positionedReports.toLocaleString('en-GB')} positioned reports`}
+                    </title>
+                  </rect>
+                ) : null}
+              </g>
             )
           })}
           {availabilityPoints.length > 1 ? (
@@ -176,9 +254,15 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
             ))}
         </svg>
       ) : null}
-      {availabilityPoints.length ? (
-        <p className="chart-legend"><i aria-hidden="true" /> Receiver availability</p>
-      ) : null}
+      <p className="chart-legend">
+        {series.reports ? <span><i className="reports" aria-hidden="true" /> Reports</span> : null}
+        {series.positionedReports ? (
+          <span><i className="positioned" aria-hidden="true" /> Positioned reports</span>
+        ) : null}
+        {availabilityPoints.length ? (
+          <span><i className="availability" aria-hidden="true" /> Receiver availability</span>
+        ) : null}
+      </p>
       <ChartDataTable
         summary="View activity data table"
         caption="Activity chart values"
@@ -380,6 +464,52 @@ function RecordsPanel({
   )
 }
 
+/**
+ * The coverage cells lying on a five-degree bearing from the receiver.
+ *
+ * The bearing comes from the same helper the ingestion path buckets the range
+ * histogram with, so a cell lands in the wedge the chart drew it into. The
+ * receiver's own cell has no bearing at all and stays in every wedge — leaving
+ * it out would drop the busiest cell on the map.
+ */
+export function cellsOnBearing(
+  cells: CoverageCell[],
+  receiver: { latitude: number; longitude: number },
+  bearingStartDeg: number,
+): CoverageCell[] {
+  return cells.filter((cell) => {
+    const { distanceNm, bearingDeg } = calculateRangeAndBearing(
+      receiver.latitude,
+      receiver.longitude,
+      cell.latitude,
+      cell.longitude,
+    )
+    if (distanceNm < 1) return true
+    const offset = (bearingDeg - bearingStartDeg + 360) % 360
+    return offset < 5
+  })
+}
+
+/**
+ * The History link for a pattern-grid cell.
+ *
+ * Session searches are capped at 32 days, while an insight range runs to 366,
+ * so a wider range drills into its most recent 32 days rather than failing.
+ * The dates travel in the URL and are shown by History's own range fields, so
+ * the narrowing is visible where it applies.
+ */
+export function patternCellHref(range: { from: string; to: string }, weekday: number, hour: number) {
+  const to = Date.parse(range.to)
+  const from = Math.max(Date.parse(range.from), to - 32 * 86_400_000)
+  const params = new URLSearchParams({
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    weekday: String(weekday),
+    hour: String(hour),
+  })
+  return `/history?${params.toString()}`
+}
+
 function exportHref(path: string, values: Record<string, string | boolean>) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(values)) params.set(key, String(value))
@@ -415,7 +545,6 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
 }
 
 export function InsightsPage() {
-  useUnitPreferences()
   const { navigate, search } = useLocation()
   const initial = useMemo(() => insightRangeForPreset('today'), [])
   const [preset, setPreset] = useState<Preset>('today')
@@ -431,13 +560,31 @@ export function InsightsPage() {
   const [altitudeBand, setAltitudeBand] = useState<'all' | 'ground' | 'low' | 'medium' | 'high'>('all')
   const [selectedCoverage, setSelectedCoverage] = useState<CoverageCellDetailResponse | null>(null)
   const [coverageDetailLoading, setCoverageDetailLoading] = useState(false)
+  const [sectorFilter, setSectorFilter] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [coverageError, setCoverageError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [compare, setCompare] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
+  const [series, setSeries] = useInsightSeries()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
+  const coveragePanelRef = useRef<HTMLElement>(null)
+  const activityChartRef = useRef<SVGSVGElement>(null)
+  const rangeChartRef = useRef<SVGSVGElement>(null)
+  const units = useUnitPreferences()
+  const receiver = useRuntimeConfig().receiver
+
+  /*
+   * An exported chart leaves the app entirely, so it has to carry everything
+   * needed to read it: whose receiver, over what range, and in which units —
+   * the figures follow the reader's preferences, not a fixed nm/ft.
+   */
+  const chartCaption = (chart: string, detail: string) => ({
+    title: `${receiver.name} · ${chart}`,
+    detail,
+    attribution: `Flightmap · ${unitLabels.distance[units.distance]} and ${unitLabels.altitude[units.altitude]} · times in ${displayTimeZone()}`,
+  })
 
   const applySavedView = (configuration: SavedViewConfiguration) => {
     if (configuration.surface !== 'insights') return
@@ -447,6 +594,7 @@ export function InsightsPage() {
     setCustomTo(formatDateTimeInput(new Date(configuration.to)))
     setMapLayers(configuration.mapLayers)
     setCompare(configuration.compare)
+    setSeries(configuration.series)
     if (configuration.viewport) {
       const viewport = configuration.viewport
       window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
@@ -551,6 +699,34 @@ export function InsightsPage() {
     : 0
   const activityEmpty = !loading && overview?.metrics.reports === 0
 
+  /*
+   * The wedge is applied to the cells already fetched rather than re-queried:
+   * the coverage response is the whole grid for the range, and filtering it in
+   * the browser keeps the drill-down instant and the server out of it.
+   */
+  const visibleCoverageCells = useMemo(() => {
+    if (!coverage) return []
+    return sectorFilter == null
+      ? coverage.cells
+      : cellsOnBearing(coverage.cells, receiver, sectorFilter)
+  }, [coverage, sectorFilter, receiver])
+
+  const selectSector = (bearingStartDeg: number) => {
+    setSectorFilter((current) => (current === bearingStartDeg ? null : bearingStartDeg))
+    setSelectedCoverage(null)
+    // The panel the selection acts on is below the chart that made it, so the
+    // drill-down moves the viewport to the result rather than leaving it
+    // looking as though nothing happened. Optional because jsdom has no
+    // scrollIntoView, and the filter is the point — the scroll is a courtesy.
+    window.setTimeout(() => {
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      coveragePanelRef.current?.scrollIntoView?.({
+        behavior: reduced ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }
+
   const selectCoverageCell = (cell: CoverageCell) => {
     setCoverageDetailLoading(true)
     setSelectedCoverage(null)
@@ -587,6 +763,7 @@ export function InsightsPage() {
               preset,
               sort: 'reports_desc',
               compare,
+              series,
               mapLayers,
               viewport: coverageMapRef.current?.getViewport() ?? null,
             })}
@@ -699,9 +876,48 @@ export function InsightsPage() {
           ) : (
             <>
               <section className="insight-panel activity-panel">
-                <header><div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div><small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small></header>
+                <header>
+                  <div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div>
+                  <div className="preset-tabs" role="group" aria-label="Activity chart series">
+                    {(Object.keys(seriesLabels) as (keyof InsightSeriesPreferences)[]).map((key) => (
+                      <button
+                        type="button"
+                        key={key}
+                        aria-pressed={series[key]}
+                        onClick={() => setSeries({ ...series, [key]: !series[key] })}
+                      >
+                        {seriesLabels[key]}
+                      </button>
+                    ))}
+                  </div>
+                  <small>
+                    {formatDateTime(overview.from)} — {formatDateTime(overview.to)}
+                    <ChartImageButton
+                      chartRef={activityChartRef}
+                      surface="insights-activity"
+                      label="Save the activity chart as an image"
+                      caption={() => chartCaption(
+                        'Activity',
+                        // The legend is HTML beside the chart, not part of the
+                        // SVG, so the picture would leave three series
+                        // unnamed. The caption names the ones it drew.
+                        `${formatDateTime(overview.from)} — ${formatDateTime(overview.to)} · ${
+                          (Object.keys(seriesLabels) as (keyof InsightSeriesPreferences)[])
+                            .filter((key) => series[key])
+                            .map((key) => seriesLabels[key].toLowerCase())
+                            .join(', ') || 'no series shown'
+                        }`,
+                      )}
+                    />
+                  </small>
+                </header>
                 <ReceiverContext series={overview.series} />
-                <ActivityChart overview={overview} onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }} />
+                <ActivityChart
+                  overview={overview}
+                  series={series}
+                  chartRef={activityChartRef}
+                  onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }}
+                />
               </section>
 
               <section className="insight-panel">
@@ -712,7 +928,12 @@ export function InsightsPage() {
                   <LeaderList title="Operators" leaders={overview.leaders.operators} kind="operator" />
                 </div>
               </section>
-              {patterns?.cells.length ? <ActivityPattern patterns={patterns} /> : null}
+              {patterns?.cells.length ? (
+                <ActivityPattern
+                  patterns={patterns}
+                  onSelectCell={(weekday, hour) => navigate(patternCellHref(range, weekday, hour))}
+                />
+              ) : null}
             </>
           )}
         </>
@@ -720,30 +941,65 @@ export function InsightsPage() {
 
       <section className="insight-panel coverage-panel">
         <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under {formatAltitude(1_000)}</option><option value="low">{formatAltitude(1_000)}–{formatAltitude(10_000)}</option><option value="medium">{formatAltitude(10_000)}–{formatAltitude(25_000)}</option><option value="high">{formatAltitude(25_000)} and above</option></select></label></header>
-        {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? <RangeProfile profile={rangeProfile} /> : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
+        {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? (
+          <>
+            <ChartImageButton
+              chartRef={rangeChartRef}
+              surface="insights-range-profile"
+              label="Save the range profile as an image"
+              caption={() => chartCaption(
+                'Receiver range profile',
+                `${formatDateTime(rangeProfile.from)} — ${formatDateTime(rangeProfile.to)} · ${altitudeBand === 'all' ? 'all altitudes' : `${altitudeBand} band`}`,
+              )}
+            />
+            <RangeProfile
+              profile={rangeProfile}
+              chartRef={rangeChartRef}
+              onSelectSector={selectSector}
+              selectedSectorStartDeg={sectorFilter}
+            />
+          </>
+        ) :<div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
       </section>
 
-      <section className="insight-panel coverage-panel">
+      <section className="insight-panel coverage-panel" ref={coveragePanelRef}>
         <header>
           <div><span className="eyebrow">POSITION COVERAGE</span><h2>Receiver coverage heatmap</h2></div>
           <small>Aggregated 0.05° cells · retained independently of detailed tracks</small>
         </header>
+        {sectorFilter != null ? (
+          <div className="sector-filter-chip" role="status">
+            <Compass size={15} aria-hidden="true" />
+            <span>
+              <strong>Bearing {sectorFilter}–{sectorFilter + 5}° from the receiver</strong>
+              <small>
+                {visibleCoverageCells.length.toLocaleString('en-GB')} of{' '}
+                {(coverage?.cells.length ?? 0).toLocaleString('en-GB')} cells. Coverage in the
+                direction of the range sector you chose — not the reports the sector counted, which
+                the daily histogram cannot name individually.
+              </small>
+            </span>
+            <button type="button" className="text-button" onClick={() => setSectorFilter(null)}>
+              Show all bearings
+            </button>
+          </div>
+        ) : null}
         {loading && !coverage ? <div className="coverage-skeleton skeleton-card" /> : coverageError ? (
           <div className="coverage-empty" role="status"><AlertTriangle size={21} /><strong>Coverage unavailable</strong><span>{coverageError}</span></div>
-        ) : coverage?.cells.length ? (
+        ) : visibleCoverageCells.length ? (
           <>
-            <CoverageMap ref={coverageMapRef} cells={coverage.cells} onSelectCell={selectCoverageCell} />
+            <CoverageMap ref={coverageMapRef} cells={visibleCoverageCells} onSelectCell={selectCoverageCell} />
             <p className="coverage-summary">
-              {coverage.cells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
-              {Math.max(...coverage.cells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
-              {coverage.truncated ? ' The display limit was reached; narrow the date range for complete cell detail.' : ''}
+              {visibleCoverageCells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
+              {Math.max(...visibleCoverageCells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
+              {coverage?.truncated ? ' The display limit was reached; narrow the date range for complete cell detail.' : ''}
             </p>
             <ChartDataTable
               summary="View busiest coverage cells"
               caption="Top coverage heatmap cells"
               columns={['Centre', 'Reports', 'Aircraft', 'Maximum altitude']}
               rowCap={50}
-              rows={coverage.cells.map((cell) => ({
+              rows={visibleCoverageCells.map((cell) => ({
                 key: `${cell.latitude}:${cell.longitude}`,
                 header: (
                   <button type="button" className="text-button" onClick={() => selectCoverageCell(cell)}>
@@ -758,6 +1014,14 @@ export function InsightsPage() {
               }))}
             />
           </>
+        ) : sectorFilter != null && coverage?.cells.length ? (
+          // Coverage exists; this wedge is simply empty, which is a different
+          // statement from having no coverage at all.
+          <div className="coverage-empty" role="status">
+            <Compass size={21} />
+            <strong>No coverage cells on this bearing</strong>
+            <span>The range profile counts reports the coverage grid has no cell for here. Choose another sector, or show all bearings.</span>
+          </div>
         ) : (
           <div className="coverage-empty"><MapPinned size={21} /><strong>No aggregated coverage yet</strong><span>Coverage is populated by positioned reports and can still be backfilling even when activity summaries are available.</span></div>
         )}
