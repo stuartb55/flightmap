@@ -680,15 +680,15 @@ describe("cursor validation", () => {
  * are what make that true, so they are the contract worth pinning.
  */
 describe("the airport dataset endpoint", () => {
-  it("serves the dataset with a strong ETag and a revalidating max-age", async () => {
+  it("serves the dataset with a strong ETag and no freshness window", async () => {
     const server = await app();
     const response = await server.inject("/api/v1/airports");
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["etag"]).toBe('"airports-etag"');
-    expect(response.headers["cache-control"]).toBe(
-      "public, max-age=300, must-revalidate"
-    );
+    // A max-age here would go on serving the pre-download dataset to the
+    // operator who just replaced it; the ETag makes revalidation cheap.
+    expect(response.headers["cache-control"]).toBe("public, no-cache");
     expect(response.headers["content-type"]).toContain("application/json");
     expect(response.json()).toEqual({ items: [] });
   });
