@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, RefObject } from 'react'
 import type { RangeProfileResponse } from '@flightmap/shared'
 import { formatDistance } from '../lib/format'
 import { convertDistance, unitLabels, useUnitPreferences } from '../lib/unit-preferences'
@@ -24,10 +24,12 @@ function wedgePath(bearingStartDeg: number, radius: number, centre: number) {
 
 export function RangeProfile({
   profile,
+  chartRef,
   onSelectSector,
   selectedSectorStartDeg = null,
 }: {
   profile: RangeProfileResponse
+  chartRef?: RefObject<SVGSVGElement | null>
   /** Drills into the bearing wedge; absent leaves the chart inert. */
   onSelectSector?: (bearingStartDeg: number) => void
   selectedSectorStartDeg?: number | null
@@ -44,7 +46,11 @@ export function RangeProfile({
    * five-degree target without a pointer.
    */
   const [cursor, setCursor] = useState(0)
-  const chartRef = useRef<SVGSVGElement>(null)
+  // The chart is both walked by the keyboard here and rasterised by the
+  // caller's export button, so an outside ref takes precedence over the
+  // internal one rather than the two competing for the same element.
+  const ownChartRef = useRef<SVGSVGElement>(null)
+  const svgRef = chartRef ?? ownChartRef
 
   const moveCursor = (event: KeyboardEvent<SVGElement>, index: number) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -60,7 +66,7 @@ export function RangeProfile({
     else return
     event.preventDefault()
     setCursor(next)
-    chartRef.current?.querySelector<SVGElement>(`[data-sector="${next * 5}"]`)?.focus()
+    svgRef.current?.querySelector<SVGElement>(`[data-sector="${next * 5}"]`)?.focus()
   }
 
   const sectorLabel = (sector: RangeProfileResponse['sectors'][number]) =>
@@ -72,7 +78,7 @@ export function RangeProfile({
   return (
     <div className="range-profile-layout">
       <svg
-        ref={chartRef}
+        ref={svgRef}
         className="range-profile-chart"
         viewBox="0 0 380 380"
         role={onSelectSector ? 'group' : 'img'}

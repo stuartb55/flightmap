@@ -1,4 +1,4 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CoverageCell,
   CoverageCellDetailResponse,
@@ -36,6 +36,7 @@ import { RangeProfile } from '../components/RangeProfile'
 import type { CoverageMapHandle } from '../components/CoverageMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
 import { ChartDataTable } from '../components/ChartDataTable'
+import { ChartImageButton } from '../components/ChartImageButton'
 import { api } from '../lib/api'
 import {
   compactNumber,
@@ -104,10 +105,12 @@ const seriesLabels: Record<keyof InsightSeriesPreferences, string> = {
 function ActivityChart({
   overview,
   series,
+  chartRef,
   onSelect,
 }: {
   overview: InsightOverview
   series: InsightSeriesPreferences
+  chartRef: RefObject<SVGSVGElement | null>
   onSelect: (point: InsightSeriesPoint) => void
 }) {
   const width = 760
@@ -149,6 +152,7 @@ function ActivityChart({
       ) : null}
       {overview.series.length ? (
         <svg
+          ref={chartRef}
           className="activity-chart"
           viewBox={`0 0 ${width} ${height}`}
           role="group"
@@ -541,7 +545,6 @@ function LeaderList({ title, leaders, kind }: { title: string; leaders: InsightL
 }
 
 export function InsightsPage() {
-  useUnitPreferences()
   const { navigate, search } = useLocation()
   const initial = useMemo(() => insightRangeForPreset('today'), [])
   const [preset, setPreset] = useState<Preset>('today')
@@ -567,6 +570,21 @@ export function InsightsPage() {
   const [series, setSeries] = useInsightSeries()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
   const coveragePanelRef = useRef<HTMLElement>(null)
+  const activityChartRef = useRef<SVGSVGElement>(null)
+  const rangeChartRef = useRef<SVGSVGElement>(null)
+  const units = useUnitPreferences()
+  const receiver = useRuntimeConfig().receiver
+
+  /*
+   * An exported chart leaves the app entirely, so it has to carry everything
+   * needed to read it: whose receiver, over what range, and in which units —
+   * the figures follow the reader's preferences, not a fixed nm/ft.
+   */
+  const chartCaption = (chart: string, detail: string) => ({
+    title: `${receiver.name} · ${chart}`,
+    detail,
+    attribution: `Flightmap · ${unitLabels.distance[units.distance]} and ${unitLabels.altitude[units.altitude]} · times in ${displayTimeZone()}`,
+  })
 
   const applySavedView = (configuration: SavedViewConfiguration) => {
     if (configuration.surface !== 'insights') return
@@ -686,7 +704,6 @@ export function InsightsPage() {
    * the coverage response is the whole grid for the range, and filtering it in
    * the browser keeps the drill-down instant and the server out of it.
    */
-  const receiver = useRuntimeConfig().receiver
   const visibleCoverageCells = useMemo(() => {
     if (!coverage) return []
     return sectorFilter == null
@@ -873,12 +890,32 @@ export function InsightsPage() {
                       </button>
                     ))}
                   </div>
-                  <small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small>
+                  <small>
+                    {formatDateTime(overview.from)} — {formatDateTime(overview.to)}
+                    <ChartImageButton
+                      chartRef={activityChartRef}
+                      surface="insights-activity"
+                      label="Save the activity chart as an image"
+                      caption={() => chartCaption(
+                        'Activity',
+                        // The legend is HTML beside the chart, not part of the
+                        // SVG, so the picture would leave three series
+                        // unnamed. The caption names the ones it drew.
+                        `${formatDateTime(overview.from)} — ${formatDateTime(overview.to)} · ${
+                          (Object.keys(seriesLabels) as (keyof InsightSeriesPreferences)[])
+                            .filter((key) => series[key])
+                            .map((key) => seriesLabels[key].toLowerCase())
+                            .join(', ') || 'no series shown'
+                        }`,
+                      )}
+                    />
+                  </small>
                 </header>
                 <ReceiverContext series={overview.series} />
                 <ActivityChart
                   overview={overview}
                   series={series}
+                  chartRef={activityChartRef}
                   onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }}
                 />
               </section>
@@ -905,12 +942,24 @@ export function InsightsPage() {
       <section className="insight-panel coverage-panel">
         <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under {formatAltitude(1_000)}</option><option value="low">{formatAltitude(1_000)}–{formatAltitude(10_000)}</option><option value="medium">{formatAltitude(10_000)}–{formatAltitude(25_000)}</option><option value="high">{formatAltitude(25_000)} and above</option></select></label></header>
         {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? (
-          <RangeProfile
-            profile={rangeProfile}
-            onSelectSector={selectSector}
-            selectedSectorStartDeg={sectorFilter}
-          />
-        ) : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
+          <>
+            <ChartImageButton
+              chartRef={rangeChartRef}
+              surface="insights-range-profile"
+              label="Save the range profile as an image"
+              caption={() => chartCaption(
+                'Receiver range profile',
+                `${formatDateTime(rangeProfile.from)} — ${formatDateTime(rangeProfile.to)} · ${altitudeBand === 'all' ? 'all altitudes' : `${altitudeBand} band`}`,
+              )}
+            />
+            <RangeProfile
+              profile={rangeProfile}
+              chartRef={rangeChartRef}
+              onSelectSector={selectSector}
+              selectedSectorStartDeg={sectorFilter}
+            />
+          </>
+        ) :<div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
       </section>
 
       <section className="insight-panel coverage-panel" ref={coveragePanelRef}>

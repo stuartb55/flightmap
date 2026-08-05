@@ -143,6 +143,116 @@ export function composeSnapshot(
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'))
 }
 
+/*
+ * A chart is an SVG in the document, drawn entirely by the stylesheet. Cloned
+ * into an image it arrives with no stylesheet at all, so every mark falls back
+ * to black on transparent. Rasterising one therefore means carrying the
+ * computed paint across onto the clone first — these are the properties the
+ * charts actually use.
+ */
+const PAINTED_PROPERTIES = [
+  'fill',
+  'fill-opacity',
+  'stroke',
+  'stroke-width',
+  'stroke-opacity',
+  'stroke-dasharray',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'opacity',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'text-anchor',
+  'dominant-baseline',
+] as const
+
+function inlineComputedPaint(source: SVGSVGElement, clone: SVGSVGElement): void {
+  const originals = [source, ...source.querySelectorAll<SVGElement>('*')]
+  const copies = [clone, ...clone.querySelectorAll<SVGElement>('*')]
+  originals.forEach((original, index) => {
+    const copy = copies[index]
+    if (!copy) return
+    const computed = getComputedStyle(original)
+    for (const property of PAINTED_PROPERTIES) {
+      const value = computed.getPropertyValue(property)
+      if (value) copy.style.setProperty(property, value)
+    }
+  })
+}
+
+/** The chart's own dimensions: the viewBox, or the box it occupies. */
+function chartSize(svg: SVGSVGElement): { width: number; height: number } {
+  const box = svg.viewBox?.baseVal
+  return {
+    width: box?.width || svg.clientWidth,
+    height: box?.height || svg.clientHeight,
+  }
+}
+
+/**
+ * The chart as a standalone SVG document, carrying its paint with it.
+ * Returns null for a chart with no dimensions to draw into.
+ */
+export function chartDataUri(svg: SVGSVGElement): string | null {
+  const { width, height } = chartSize(svg)
+  if (!width || !height) return null
+
+  const clone = svg.cloneNode(true) as SVGSVGElement
+  inlineComputedPaint(svg, clone)
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('width', String(width))
+  clone.setAttribute('height', String(height))
+
+  const markup = new XMLSerializer().serializeToString(clone)
+  // A percent-encoded payload rather than base64: the charts carry degree
+  // signs and en dashes, which btoa refuses outright.
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+}
+
+/**
+ * Rasterises a chart at `scale` device pixels per CSS pixel, on the opaque
+ * background the surface shows it against. Transparent would let whatever the
+ * picture is pasted onto show through the gridlines, and a chart exported from
+ * the light theme onto a dark chat window is unreadable.
+ */
+export function rasteriseChart(
+  svg: SVGSVGElement,
+  background = cssValue('--surface-11', '#0c1218'),
+  scale = Math.max(2, window.devicePixelRatio || 1),
+): Promise<HTMLCanvasElement | null> {
+  const source = chartDataUri(svg)
+  if (!source) return Promise.resolve(null)
+  const { width, height } = chartSize(svg)
+
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      const context = canvas.getContext('2d')
+      if (!context) return resolve(null)
+      context.fillStyle = background
+      context.fillRect(0, 0, canvas.width, canvas.height)
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+      resolve(canvas)
+    }
+    image.onerror = () => resolve(null)
+    image.src = source
+  })
+}
+
+/** A chart rasterised and composed onto the same caption strip as a map. */
+export async function chartSnapshot(
+  svg: SVGSVGElement,
+  caption: SnapshotCaption,
+): Promise<Blob | null> {
+  const scale = Math.max(2, window.devicePixelRatio || 1)
+  const canvas = await rasteriseChart(svg, undefined, scale)
+  return canvas ? composeSnapshot(canvas, caption, scale) : null
+}
+
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -318,6 +318,24 @@
   text-align: right;
 }
 
+.chart-image-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.chart-image-action [role='status'] {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Sits above the polar chart, which fills its panel edge to edge. */
+.coverage-panel > .chart-image-action {
+  margin: 12px 0 0 18px;
+}
+
 /* The activity header carries a third child — the series toggles. The range
    drops onto its own line rather than squeezing the toggle group. */
 .activity-panel > header {
