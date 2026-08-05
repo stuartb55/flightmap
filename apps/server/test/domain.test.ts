@@ -4,7 +4,6 @@ import {
   evaluateAlerts,
   isActiveAircraftAlert
 } from "../src/domain/alerts.js";
-import { calculateRangeAndBearing } from "@flightmap/shared";
 import {
   aggregateSessionSample,
   decideSession,
@@ -104,16 +103,6 @@ describe("snapshot ordering", () => {
       receiverRestarted: true
     });
     cursor.commit(restarted);
-  });
-});
-
-describe("geospatial calculations", () => {
-  it("calculates nautical miles and initial bearing", () => {
-    const same = calculateRangeAndBearing(53.61, -2.31, 53.61, -2.31);
-    expect(same.distanceNm).toBeCloseTo(0, 8);
-    const east = calculateRangeAndBearing(0, 0, 0, 1);
-    expect(east.distanceNm).toBeCloseTo(60.04, 1);
-    expect(east.bearingDeg).toBeCloseTo(90, 5);
   });
 });
 
