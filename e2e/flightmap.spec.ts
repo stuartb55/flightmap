@@ -253,6 +253,93 @@ test('windows the live list instead of rendering every aircraft', async ({ page 
   expect(await rows.count()).toBeLessThan(40)
 })
 
+/*
+ * The airport dataset is built by an operator, so a stock deployment has none
+ * and a configured one does. Both are acceptance criteria, and they are two
+ * tests rather than one because the endpoint is cached on purpose: a fresh
+ * context per state is the honest way to see each, and Playwright gives one
+ * per test. Tests in this file run in order, so the pair leaves the
+ * installation as it found it.
+ */
+async function setAirports(page: Page, items: unknown[]) {
+  const response = await page.request.patch('/api/v1/settings', { data: { mapAirports: items } })
+  expect(response.status()).toBe(200)
+}
+
+/*
+ * The fake receiver always has an aircraft squawking 7700, and the banner that
+ * raises sits over the map's top-left controls, so it has to go first or the
+ * click waits for an element it can never reach.
+ */
+async function openLayerMenu(page: Page) {
+  // Waited for rather than probed: the alert arrives a moment after the page
+  // does, so a visibility check can pass before the banner exists and leave the
+  // click blocked by it. A deployment with no alerts simply times out here.
+  await page
+    .getByRole('button', { name: 'Dismiss alert banner' })
+    .click({ timeout: 10_000 })
+    .catch(() => {})
+  await page.getByRole('button', { name: 'Layers' }).click()
+  return page.getByRole('dialog', { name: 'Map layers' })
+}
+
+const AIRPORT_FIXTURE = [
+  {
+    icao: 'EGCC',
+    iata: 'MAN',
+    name: 'Manchester Airport',
+    latitude: 53.349375,
+    longitude: -2.279521,
+    elevationFt: 257,
+    rank: 3,
+    runways: [
+      {
+        ident: '05L/23R',
+        lengthFt: 10000,
+        lowLatitude: 53.3451,
+        lowLongitude: -2.29274,
+        highLatitude: 53.3624,
+        highLongitude: -2.25714,
+      },
+    ],
+  },
+]
+
+test('draws airports and credits their source once configured', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The layer menu is a desktop control')
+  // Set before the first navigation: the endpoint is cached, so a page that
+  // has already fetched the old dataset would rightly keep showing it.
+  await setAirports(page, AIRPORT_FIXTURE)
+
+  await openFlightmap(page)
+  const toggle = (await openLayerMenu(page)).getByRole('checkbox', { name: /Airports/ })
+  await expect(toggle).toBeEnabled()
+  await toggle.check()
+  await page.keyboard.press('Escape')
+
+  // OurAirports is credited on the GeoJSON source, so it reaches the
+  // attribution control — and through it any exported snapshot, which reads
+  // its text from that control rather than from a constant.
+  await expect(page.locator('.maplibregl-ctrl-attrib-inner')).toContainText('OurAirports', {
+    timeout: 20_000,
+  })
+  await expect(page.locator('.map-legend-body')).toContainText('Airport')
+})
+
+test('explains the airport layer rather than offering an empty one', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The layer menu is a desktop control')
+  // Back to the stock configuration, which is what the rest of this file wants,
+  // and again before the first navigation so the cache cannot mask it.
+  await setAirports(page, [])
+
+  await openFlightmap(page)
+  const toggle = (await openLayerMenu(page)).getByRole('checkbox', { name: /Airports/ })
+  await expect(toggle).toBeDisabled()
+  await expect(toggle.locator('xpath=ancestor::label')).toContainText('run the airports build')
+  // No data, so nobody is credited for it.
+  await expect(page.locator('.maplibregl-ctrl-attrib-inner')).not.toContainText('OurAirports')
+})
+
 test('isolates an altitude band from the map legend', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The legend is expanded by default on desktop only')
   await openFlightmap(page)

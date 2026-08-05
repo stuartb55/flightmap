@@ -181,6 +181,8 @@ export function loadConfig(
     rangeRingsNm: [...defaultAppSettings.rangeRingsNm],
     mapWaypoints: defaultAppSettings.mapWaypoints.map((waypoint) => ({
       ...waypoint
-    }))
+    })),
+    // Empty until an operator runs `npm run airports:build`.
+    mapAirports: []
   };
 }

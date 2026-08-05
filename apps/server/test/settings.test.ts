@@ -79,3 +79,77 @@ describe("application settings", () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 });
+
+/*
+ * The airport dataset is the largest thing this service holds and its endpoint
+ * is meant to be answered by an ETag comparison and nothing else, so the body
+ * is serialised once per change rather than once per request.
+ */
+describe("the airport payload", () => {
+  const airport = {
+    icao: "EGCC",
+    iata: "MAN",
+    name: "Manchester Airport",
+    latitude: 53.349375,
+    longitude: -2.279521,
+    elevationFt: 257,
+    rank: 3,
+    runways: [
+      {
+        ident: "05L/23R",
+        lengthFt: 10_000,
+        lowLatitude: 53.3451,
+        lowLongitude: -2.29274,
+        highLatitude: 53.3624,
+        highLongitude: -2.25714
+      }
+    ]
+  };
+
+  async function service(mapAirports: unknown[]) {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ settings: { mapAirports }, updated_at: new Date("2026-08-05T12:00:00Z") }]
+    });
+    const created = new AppSettingsService({ query } as never);
+    await created.load();
+    return { service: created, query };
+  }
+
+  it("is empty by default, which is a valid deployment rather than a fault", () => {
+    expect(defaultAppSettings.mapAirports).toEqual([]);
+  });
+
+  it("serialises once and hands back the same object until settings change", async () => {
+    const { service: settings, query } = await service([airport]);
+    const first = settings.airportsPayload();
+    expect(settings.airportsPayload()).toBe(first);
+    expect(JSON.parse(first.body)).toEqual({ items: [airport] });
+    expect(first.etag).toMatch(/^"[\w-]{27}"$/);
+
+    query.mockResolvedValueOnce({
+      rows: [{ updated_at: new Date("2026-08-05T13:00:00Z") }]
+    });
+    await settings.update({ mapAirports: [] });
+    const second = settings.airportsPayload();
+    expect(second).not.toBe(first);
+    expect(second.etag).not.toBe(first.etag);
+    expect(JSON.parse(second.body)).toEqual({ items: [] });
+  });
+
+  /*
+   * The ETag is over the body, so an operator rebuilding an unchanged dataset
+   * does not invalidate every client's cached copy.
+   */
+  it("keeps the same ETag when a rebuild produces identical bytes", async () => {
+    const first = (await service([airport])).service.airportsPayload();
+    const second = (await service([airport])).service.airportsPayload();
+    expect(second.etag).toBe(first.etag);
+  });
+
+  it("hands out copies, so a caller cannot mutate what is stored", async () => {
+    const { service: settings } = await service([airport]);
+    const copy = settings.get().settings.mapAirports;
+    copy[0]!.runways.length = 0;
+    expect(settings.get().settings.mapAirports[0]?.runways).toHaveLength(1);
+  });
+});

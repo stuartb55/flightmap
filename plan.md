@@ -4,13 +4,14 @@ Prioritised backlog of user-facing improvements for the delivered v1 application
 Authentication and security work is deliberately out of scope; the deployment
 model (trusted LAN, reverse proxy for remote access) is unchanged.
 
-Phases 1 and 2 — tiers 0 and 1 (items 1–12) and the first seven items of tier 2
-(22, 15, 16, 13, 23, 25, 17) — are complete and have moved to
+Phases 1 and 2 — tiers 0 and 1 (items 1–12) and tier 2 (22, 15, 16, 13, 23, 25,
+17, 24, 14) — are complete and have moved to
 [`docs/delivered-enhancements.md`](docs/delivered-enhancements.md). The original
 v1 build specification is [`docs/v1-build-plan.md`](docs/v1-build-plan.md) and
 remains the reference for existing behaviour.
 
-Phase 3 is what is left: three tier-2 items and two tier-3 bets.
+Phase 3 is what is left: two tier-3 bets. Tier 2 is complete — item 18
+(in-app help) was dropped before implementation, and items 24 and 14 shipped.
 
 ## How to use this document
 
@@ -22,8 +23,8 @@ is clean.
 Effort key: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3–5 days.
 
 Item numbers are stable identifiers used in branch names and pull request
-titles. Numbers 8, 11, and 19 belonged to items dropped before implementation
-(notifications, onboarding, multi-receiver) and are not reused.
+titles. Numbers 8, 11, 18 and 19 belonged to items dropped before implementation
+(notifications, onboarding, in-app help, multi-receiver) and are not reused.
 
 File and line references were re-checked against `5157db3` when phase 3 was
 written. Lines drift; treat them as a pointer to the right place, not a
@@ -33,15 +34,14 @@ contract.
 
 ## Tier 2 — Depth and polish
 
-The remainder of tier 2, elaborated for phase 3. Item 18 is self-contained web
-work; items 14 and 24 both add data to server paths and each deserves its own
-release.
+Both delivered. Each added data to a server path and each took its own release:
+item 24 a join and a schema field, item 14 a new operator-run data pipeline.
 
 ---
 
 ### 14. Airport and runway layer — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The map shows configurable arrival and departure fixes
 (`apps/server/src/default-waypoints.ts`, `apps/web/src/components/waypoints.ts`)
@@ -277,19 +277,12 @@ before any UI is drawn.
 
 ## Suggested sequencing
 
-Phase 3, in order:
+Tier 2 is done. Items 24 and 14 shipped in that order — the smaller server
+change first, then the airport layer, which brought a new operator-run data
+pipeline (`docs/airports.md`, and the CLI is listed in `docs/operations.md`).
+Item 18, in-app help, was dropped before implementation.
 
-1. **Item 18 — in-app help.** Self-contained web work, no migration, no server
-   data path. It documents everything phases 1 and 2 shipped, so doing it first
-   means the glossary is written while that work is still fresh.
-2. **Item 24 — new sightings.** One join, one schema field, and a client-side
-   derivation. Smaller than item 14 and shares no files with it, so the two can
-   run in either order or in parallel if that suits.
-3. **Item 14 — airport layer.** The largest remaining item, and a prerequisite
-   for item 21 if that bet is ever taken. It adds a new data pipeline, so give it
-   its own release and update `docs/operations.md` with the CLI.
-
-Then stop and decide whether tier 3 is wanted at all. Both items trade away a
+What remains is to decide whether tier 3 is wanted at all. Both items trade away a
 property the app currently holds — offline-first for item 20, "everything shown
 is observed" for item 21 — and that is a product decision, not a scheduling one.
 

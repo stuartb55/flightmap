@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import type {
   AircraftActivityResponse,
+  AirportsResponse,
   CoverageCellDetailResponse,
   CustomAlertRule,
   CustomAlertRuleInput,
@@ -23,6 +24,7 @@ import type {
 import {
   aircraftActivityResponseSchema,
   aircraftDetailResponseSchema,
+  airportsResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
   coverageCellDetailResponseSchema,
@@ -443,6 +445,17 @@ export const api = {
 
   settings(signal?: AbortSignal) {
     return request<AppSettingsResponse>('/settings', { signal })
+  },
+
+  /**
+   * The airport dataset. Fetched once and then served from the runtime cache
+   * declared in `vite.config.ts`; a deployment that has never run
+   * `npm run airports:build` gets an empty list, which is not an error.
+   */
+  airports(signal?: AbortSignal) {
+    return request<AirportsResponse>('/airports', { signal }, airportsResponseSchema).then(
+      (response) => response.items,
+    )
   },
 
   updateSettings(settings: AppSettings) {

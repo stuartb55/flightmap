@@ -84,6 +84,19 @@ export default defineConfig({
         skipWaiting: true,
         runtimeCaching: [
           {
+            // The airport dataset changes only when an operator rebuilds it, so
+            // the cached copy is served immediately and the revalidation happens
+            // behind it — usually a 304 against the endpoint's ETag. This is
+            // also what makes the layer work on a receiver that is offline.
+            urlPattern: ({ url }) => url.pathname === '/api/v1/airports',
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'flightmap-airports',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 1, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            },
+          },
+          {
             urlPattern: ({ request, url }) =>
               request.mode === 'navigate' &&
               !url.pathname.startsWith('/api/') &&

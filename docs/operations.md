@@ -184,6 +184,23 @@ MapLibre attribution remains visible because the configured OpenFreeMap style
 requires it. If outbound internet is blocked, the app and collection still run,
 but uncached background tiles and metadata updates will be unavailable.
 
+## Operator-run data builds
+
+Two datasets are built on request rather than fetched while the application is
+serving. Neither is on a schedule; run them when you want the data refreshed.
+
+| Command | What it does |
+| --- | --- |
+| `npm run metadata:refresh` | Refreshes the aircraft registry (registration, type, operator). |
+| `npm run airports:build` | Rebuilds the map's airport and runway dataset from a local OurAirports CSV export. See [airports](airports.md). |
+
+`airports:build` needs the CSV files on disk and writes the `mapAirports`
+setting. Restart the application afterwards: the build writes the settings row
+directly, so a running instance keeps serving the previous dataset until it
+reloads. Until the build is run there is no airport data, and the map's
+**Airports** layer toggle is disabled with that reason shown — which is a
+supported state, not a fault.
+
 ## Routine schedule
 
 - Every second: aircraft snapshot polling (when healthy).

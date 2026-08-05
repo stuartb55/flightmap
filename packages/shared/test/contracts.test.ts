@@ -220,6 +220,7 @@ describe("shared contracts", () => {
           aircraftLabels: true,
           trails: true,
           allTrails: false,
+          airports: false,
           manchesterWaypoints: true
         },
         viewport: null
@@ -234,6 +235,15 @@ describe("shared contracts", () => {
       savedViewInputSchema.parse({
         ...live,
         configuration: { ...live.configuration, mapLayers: legacyLayers }
+      })
+    ).toEqual(live);
+    // And again for the airport layer, added later still.
+    const { airports, ...beforeAirports } = live.configuration.mapLayers;
+    expect(airports).toBe(false);
+    expect(
+      savedViewInputSchema.parse({
+        ...live,
+        configuration: { ...live.configuration, mapLayers: beforeAirports }
       })
     ).toEqual(live);
     // Same again for the newOnly filter, added after those views were written:
@@ -331,6 +341,7 @@ describe("shared contracts", () => {
           aircraftLabels: true,
           trails: true,
           allTrails: false,
+          airports: false,
           manchesterWaypoints: true
         },
         viewport: null

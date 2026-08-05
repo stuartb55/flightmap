@@ -29,9 +29,11 @@ import {
 import { aircraftLabel, altitudeColour, altitudeDisplayValue, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
 import { unitLabels, useUnitPreferences, type UnitPreferences } from '../lib/unit-preferences'
 import { isNewSighting } from '../lib/sighting-preferences'
+import type { Airport } from '@flightmap/shared'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import type { TrailPoint } from '../state/live-reducer'
 import { waypointData } from './waypoints'
+import { airportData, runwayData } from './airports'
 import { isTextEntryTarget } from './KeyboardShortcuts'
 import { MapLayerMenu } from './MapLayerMenu'
 import { defaultMapDisplay, defaultMapLayers } from '../lib/map-preferences'
@@ -79,6 +81,12 @@ interface Props {
   mapDisplay?: MapDisplayPreferences
   onMapDisplayChange?: (display: MapDisplayPreferences) => void
   coverageCells?: CoverageCell[]
+  /**
+   * The airport dataset from `GET /api/v1/airports`, or null while it is in
+   * flight. Empty means this deployment has never run `npm run airports:build`,
+   * which is a valid state: no source, no layers, no attribution, no error.
+   */
+  airports?: readonly Airport[] | null
   trails?: Record<string, TrailPoint[]>
   /** What a history track's colour along its length means. Altitude by default. */
   trackColourMode?: TrackColourMode
@@ -121,6 +129,8 @@ const ALL_TRAILS_SOURCE = 'all-aircraft-trails'
 const REPLAY_SOURCE = 'replay-aircraft'
 const COVERAGE_SOURCE = 'map-coverage'
 const RULER_SOURCE = 'map-ruler'
+const AIRPORT_SOURCE = 'airports'
+const RUNWAY_SOURCE = 'airport-runways'
 
 const layerIds = {
   coverage: ['map-coverage-heat'],
@@ -128,6 +138,7 @@ const layerIds = {
   aircraftLabels: ['aircraft-labels', 'replay-label'],
   trails: ['history-track-shadow', 'history-track'],
   allTrails: ['all-aircraft-trails'],
+  airports: ['airport-runways', 'airport-markers', 'airport-labels'],
   manchesterWaypoints: ['route-waypoint-markers', 'route-waypoint-labels'],
 } satisfies Record<keyof MapLayerPreferences, string[]>
 
@@ -303,6 +314,8 @@ const mapLabelColours = {
     arrival: '#ffd287',
     departure: '#7ce8c9',
     trackCasing: '#020406',
+    airport: '#9fb4c4',
+    runway: '#8fa6b8',
   },
   light: {
     halo: '#ffffff',
@@ -311,6 +324,8 @@ const mapLabelColours = {
     arrival: '#814300',
     departure: '#006d4b',
     trackCasing: '#ffffff',
+    airport: '#43596b',
+    runway: '#5a7183',
   },
 } as const satisfies Record<ResolvedTheme, Record<string, string>>
 
@@ -688,6 +703,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     mapDisplay = defaultMapDisplay,
     onMapDisplayChange,
     coverageCells = [],
+    airports = null,
     trails = emptyTrails,
     trackColourMode = 'altitude',
     bottomInset = 0,
@@ -1395,6 +1411,101 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     return () => window.clearInterval(timer)
   }, [mapLayers.allTrails, mapReady])
 
+  /*
+   * The airport layers are built here rather than with everything else at
+   * style load, because the dataset arrives over its own endpoint and may land
+   * after the map is ready. Building them only once there is something to draw
+   * is also what keeps the promise that a deployment with no airport data gets
+   * no layer and no credit: the OurAirports attribution is declared on the
+   * source, so it reaches the attribution control — and through it the exported
+   * snapshot, which reads that control — only when the source exists.
+   *
+   * A theme change rebuilds the map, so this runs again against the new style;
+   * `getSource` is what makes the second run on an unchanged style a no-op.
+   */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map || !airports?.length || map.getSource(AIRPORT_SOURCE)) return
+    const labels = mapLabelColours[theme]
+    // Below the traffic, so an aircraft is never hidden behind ground context.
+    const beforeId = ['range-ring-fill', 'route-waypoint-markers', 'aircraft-new-halo'].find(
+      (id) => map.getLayer(id),
+    )
+    map.addSource(RUNWAY_SOURCE, {
+      type: 'geojson',
+      data: runwayData(airports),
+    })
+    map.addSource(AIRPORT_SOURCE, {
+      type: 'geojson',
+      data: airportData(airports),
+      attribution:
+        '<a href="https://ourairports.com/data/" target="_blank" rel="noreferrer">OurAirports</a>',
+    })
+    map.addLayer(
+      {
+        id: 'airport-runways',
+        type: 'line',
+        source: RUNWAY_SOURCE,
+        // A centreline is meaningless as a hairline; below this the airport is
+        // a symbol and nothing else.
+        minzoom: 11,
+        paint: {
+          'line-color': labels.runway,
+          'line-opacity': 0.75,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 1.2, 15, 4],
+        },
+      },
+      beforeId,
+    )
+    map.addLayer(
+      {
+        id: 'airport-markers',
+        type: 'circle',
+        source: AIRPORT_SOURCE,
+        minzoom: 7,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.4, 12, 5],
+          'circle-color': labels.airport,
+          'circle-opacity': 0.22,
+          'circle-stroke-color': labels.airport,
+          'circle-stroke-opacity': 0.85,
+          'circle-stroke-width': 1.2,
+        },
+      },
+      beforeId,
+    )
+    map.addLayer(
+      {
+        id: 'airport-labels',
+        type: 'symbol',
+        source: AIRPORT_SOURCE,
+        minzoom: 7.5,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 7.5, 10, 12, 12],
+          'text-offset': [0.6, 0.5],
+          'text-anchor': 'top-left',
+          // Declutter: a label that would overlap one already placed is
+          // dropped rather than drawn on top of it.
+          'text-allow-overlap': false,
+          'text-optional': true,
+          // Lower sort key is placed first and so survives a collision. The key
+          // is 3 - rank, so the major airport beats the nearby airfield rather
+          // than whichever happened to come first in the source.
+          'symbol-sort-key': ['get', 'sortKey'],
+        },
+        paint: {
+          'text-color': labels.airport,
+          'text-halo-color': labels.halo,
+          'text-halo-width': 1.2,
+        },
+      },
+      beforeId,
+    )
+    applyLayerVisibility(map, mapLayersRef.current)
+  }, [airports, mapReady, theme])
+
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     applyLayerVisibility(mapRef.current, mapLayers)
@@ -1702,7 +1813,21 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
             popupHostRef.current,
           )
         : null}
-      {onMapLayersChange ? <MapLayerMenu layers={mapLayers} onChange={onMapLayersChange} display={onMapDisplayChange ? mapDisplay : undefined} onDisplayChange={onMapDisplayChange} /> : null}
+      {onMapLayersChange ? (
+        <MapLayerMenu
+          layers={mapLayers}
+          onChange={onMapLayersChange}
+          display={onMapDisplayChange ? mapDisplay : undefined}
+          onDisplayChange={onMapDisplayChange}
+          /* Null while the dataset is in flight, which is not yet a reason to
+             disable anything; an empty list means this deployment has none. */
+          unavailable={
+            airports?.length === 0
+              ? { airports: 'No airport data — run the airports build on the server' }
+              : undefined
+          }
+        />
+      ) : null}
       {hoveredIcao && !rulerActive ? (() => {
         const hovered = aircraft.find((item) => item.icao === hoveredIcao)
         return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : formatAltitude(hovered.altitudeBaro, units)} · {hovered.groundSpeed == null ? 'Speed —' : formatSpeed(hovered.groundSpeed, units)}</small></div> : null
@@ -1793,6 +1918,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
             {/* Only while the marker is on, so the key never explains a colour
                 that is not on the map. */}
             {newSince != null ? <span><i className="new-sighting" />New to this receiver</span> : null}
+            {airports?.length && mapLayers.airports ? (
+              <span><i className="airport" />Airport</span>
+            ) : null}
           </div>
         </div>
       </div>

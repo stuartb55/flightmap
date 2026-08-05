@@ -8,6 +8,7 @@ const options: Array<{ key: keyof MapLayerPreferences; label: string; hint: stri
   { key: 'aircraftLabels', label: 'Aircraft labels', hint: 'Identity and altitude on the map' },
   { key: 'trails', label: 'Trails', hint: 'Live and historical track lines' },
   { key: 'allTrails', label: 'All trails', hint: 'Recent path of every aircraft on the map' },
+  { key: 'airports', label: 'Airports', hint: 'Airfields and runway centrelines near the receiver' },
   { key: 'manchesterWaypoints', label: 'Route waypoints', hint: 'Configured arrival and departure fixes' },
 ]
 
@@ -16,11 +17,18 @@ export function MapLayerMenu({
   onChange,
   display,
   onDisplayChange,
+  unavailable,
 }: {
   layers: MapLayerPreferences
   onChange: (layers: MapLayerPreferences) => void
   display?: MapDisplayPreferences
   onDisplayChange?: (display: MapDisplayPreferences) => void
+  /**
+   * Layers this deployment has no data for, with the reason. Disabled with the
+   * explanation in place of the hint rather than hidden, so a toggle that is
+   * missing reads as "not configured here" rather than as a bug.
+   */
+  unavailable?: Partial<Record<keyof MapLayerPreferences, string>>
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -50,16 +58,20 @@ export function MapLayerMenu({
             <button type="button" className="icon-button" onClick={() => setOpen(false)} aria-label="Close map layers"><X size={16} /></button>
           </header>
           <div>
-            {options.map((option) => (
-              <label key={option.key}>
-                <span><strong>{option.label}</strong><small>{option.hint}</small></span>
-                <input
-                  type="checkbox"
-                  checked={layers[option.key]}
-                  onChange={(event) => onChange({ ...layers, [option.key]: event.target.checked })}
-                />
-              </label>
-            ))}
+            {options.map((option) => {
+              const reason = unavailable?.[option.key]
+              return (
+                <label key={option.key} className={reason ? 'layer-unavailable' : undefined}>
+                  <span><strong>{option.label}</strong><small>{reason ?? option.hint}</small></span>
+                  <input
+                    type="checkbox"
+                    checked={layers[option.key]}
+                    disabled={reason != null}
+                    onChange={(event) => onChange({ ...layers, [option.key]: event.target.checked })}
+                  />
+                </label>
+              )
+            })}
           </div>
           {display && onDisplayChange ? (
             <div className="map-display-options">

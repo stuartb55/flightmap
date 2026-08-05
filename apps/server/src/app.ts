@@ -246,6 +246,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
             receiverLongitude: options.config.receiverLongitude,
             displayTimeZone: options.config.displayTimeZone,
             rangeRingsNm: options.config.rangeRingsNm,
+            // `mapAirports` is deliberately absent. This blob is URI-encoded
+            // into every page load and into the page cache, which is fine for
+            // eleven waypoints and wrong for a few thousand airport and runway
+            // records; those come from GET /api/v1/airports, fetched once and
+            // served from a runtime cache after that.
             mapWaypoints: options.config.mapWaypoints
           })
         )}"></head>`
