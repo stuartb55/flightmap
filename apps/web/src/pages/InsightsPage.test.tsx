@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { InsightsPage, insightRangeForPreset, patternCellHref } from './InsightsPage'
+import { InsightsPage, cellsOnBearing, insightRangeForPreset, patternCellHref } from './InsightsPage'
 import { Router } from '../lib/router'
 import { api } from '../lib/api'
 import { resetSavedViews } from '../lib/saved-views'
@@ -412,6 +412,50 @@ describe('InsightsPage', () => {
     expect(document.activeElement).toHaveAccessibleName(/^Tue 23:00/)
   })
 
+  it('filters coverage to the bearing wedge a range sector drills into', async () => {
+    // The receiver default is 53.61, -2.31. The first cell is due north of it
+    // and the second due east, so each falls in exactly one wedge.
+    vi.mocked(api.insightsCoverage).mockResolvedValue({
+      ...coverage,
+      cells: [
+        { ...coverage.cells[0]!, latitude: 54.61, longitude: -2.31, reports: 900 },
+        { ...coverage.cells[0]!, latitude: 53.61, longitude: -0.31, reports: 400 },
+      ],
+    })
+    vi.mocked(api.rangeProfile).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      altitudeBand: 'all',
+      sectors: Array.from({ length: 72 }, (_, index) => ({
+        bearingStartDeg: index * 5,
+        bearingEndDeg: index * 5 + 5,
+        reports: 100,
+        medianRangeNm: 40,
+        p95RangeNm: 80,
+        maximumRangeNm: 95,
+        previousP95RangeNm: null,
+        p95ChangeNm: null,
+      })),
+      availableFrom: '2026-07-01',
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('2 cells'))
+
+    fireEvent.click(await screen.findByRole('button', { name: /^0–5°: median/ }))
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('1 cells'))
+    // The sector counts reports the coverage grid measured differently, so the
+    // panel says what it is showing rather than implying the two tally.
+    const chip = screen.getByText(/Bearing 0–5° from the receiver/).closest('div')
+    expect(chip).toHaveTextContent(/not the reports the sector counted/)
+
+    // A bearing with nothing on it is empty, not uncovered.
+    fireEvent.click(screen.getByRole('button', { name: /^180–185°: median/ }))
+    expect(await screen.findByText('No coverage cells on this bearing')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all bearings' }))
+    await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('2 cells'))
+  })
+
   it('keeps the rest of Insights when records are unavailable', async () => {
     vi.mocked(api.receiverRecords).mockRejectedValue(new Error('Records unavailable'))
     renderPage()
@@ -429,6 +473,24 @@ describe('insight presets', () => {
     })
     expect(insightRangeForPreset('7d', now).bucket).toBe('day')
     expect(insightRangeForPreset('30d', now).bucket).toBe('day')
+  })
+
+  it('keeps a coverage cell in the wedge its bearing from the receiver falls in', () => {
+    const receiver = { latitude: 53.61, longitude: -2.31 }
+    const base = {
+      south: 0, west: 0, north: 0, east: 0,
+      reports: 10, uniqueAircraft: 1, maximumAltitudeFt: 30_000,
+    }
+    const north = { ...base, latitude: 54.61, longitude: -2.31 }
+    const east = { ...base, latitude: 53.61, longitude: -0.31 }
+    // A cell over the receiver itself has no meaningful bearing, and dropping
+    // the busiest cell out of every wedge would be worse than keeping it.
+    const overhead = { ...base, latitude: 53.611, longitude: -2.311 }
+    const cells = [north, east, overhead]
+
+    expect(cellsOnBearing(cells, receiver, 0)).toEqual([north, overhead])
+    expect(cellsOnBearing(cells, receiver, 85)).toEqual([east, overhead])
+    expect(cellsOnBearing(cells, receiver, 180)).toEqual([overhead])
   })
 
   it('narrows a pattern drill-down to the 32 days a session search allows', () => {

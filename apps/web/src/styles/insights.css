@@ -631,6 +631,36 @@
   padding-top: 12px;
 }
 
+/* States the bearing wedge a range sector drilled into, and how far it is from
+   the reports the sector actually counted. */
+.sector-filter-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--veil-30);
+}
+
+.sector-filter-chip > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.sector-filter-chip > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sector-filter-chip small {
+  color: var(--muted);
+}
+
 .coverage-empty,
 .insight-empty {
   display: flex;

@@ -150,6 +150,12 @@
 .range-ring, .range-axis { fill: none; stroke: var(--line-bright); stroke-width: 1; }
 .range-axis { stroke-dasharray: 3 4; }
 .range-p95 { fill: rgb(var(--accent-rgb) / 0.2); stroke: var(--accent); stroke-width: 2; }
+/* The wedges sit over the plot as hit targets. They are transparent until
+   pointed at or chosen, so the chart looks exactly as it did before. */
+.range-sector { fill: transparent; stroke: none; cursor: pointer; }
+.range-sector:hover { fill: rgb(var(--accent-rgb) / 0.16); }
+.range-sector.selected { fill: rgb(var(--accent-rgb) / 0.28); stroke: var(--accent); stroke-width: 1.5; }
+.range-sector:focus-visible { fill: rgb(var(--accent-rgb) / 0.22); outline: 3px solid var(--text); outline-offset: -2px; }
 .range-median { fill: rgb(var(--blue-rgb) / 0.12); stroke: var(--blue); stroke-width: 1.5; }
 .range-profile-summary > p { display: flex; align-items: center; gap: 7px; color: var(--muted-bright); }
 .range-profile-summary i { width: 18px; height: 3px; background: var(--accent); }

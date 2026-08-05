@@ -4,7 +4,7 @@ import {
   evaluateAlerts,
   isActiveAircraftAlert
 } from "../src/domain/alerts.js";
-import { calculateRangeAndBearing } from "../src/domain/geo.js";
+import { calculateRangeAndBearing } from "@flightmap/shared";
 import {
   aggregateSessionSample,
   decideSession,

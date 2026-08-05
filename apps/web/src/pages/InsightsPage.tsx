@@ -13,11 +13,13 @@ import type {
   InsightSeriesPoint,
   SavedViewConfiguration,
 } from '@flightmap/shared'
+import { calculateRangeAndBearing } from '@flightmap/shared'
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  Compass,
   Download,
   Gauge,
   MapPinned,
@@ -54,7 +56,7 @@ import { useMapLayers } from '../lib/map-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
 import { Link, useLocation } from '../lib/router'
-import { displayTimeZone } from '../config'
+import { displayTimeZone, useRuntimeConfig } from '../config'
 
 type Preset = 'today' | '24h' | '7d' | '30d' | 'custom'
 type InsightRange = { from: string; to: string; bucket: 'hour' | 'day' }
@@ -381,6 +383,32 @@ function RecordsPanel({
 }
 
 /**
+ * The coverage cells lying on a five-degree bearing from the receiver.
+ *
+ * The bearing comes from the same helper the ingestion path buckets the range
+ * histogram with, so a cell lands in the wedge the chart drew it into. The
+ * receiver's own cell has no bearing at all and stays in every wedge — leaving
+ * it out would drop the busiest cell on the map.
+ */
+export function cellsOnBearing(
+  cells: CoverageCell[],
+  receiver: { latitude: number; longitude: number },
+  bearingStartDeg: number,
+): CoverageCell[] {
+  return cells.filter((cell) => {
+    const { distanceNm, bearingDeg } = calculateRangeAndBearing(
+      receiver.latitude,
+      receiver.longitude,
+      cell.latitude,
+      cell.longitude,
+    )
+    if (distanceNm < 1) return true
+    const offset = (bearingDeg - bearingStartDeg + 360) % 360
+    return offset < 5
+  })
+}
+
+/**
  * The History link for a pattern-grid cell.
  *
  * Session searches are capped at 32 days, while an insight range runs to 366,
@@ -451,6 +479,7 @@ export function InsightsPage() {
   const [altitudeBand, setAltitudeBand] = useState<'all' | 'ground' | 'low' | 'medium' | 'high'>('all')
   const [selectedCoverage, setSelectedCoverage] = useState<CoverageCellDetailResponse | null>(null)
   const [coverageDetailLoading, setCoverageDetailLoading] = useState(false)
+  const [sectorFilter, setSectorFilter] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [coverageError, setCoverageError] = useState<string | null>(null)
@@ -458,6 +487,7 @@ export function InsightsPage() {
   const [compare, setCompare] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
+  const coveragePanelRef = useRef<HTMLElement>(null)
 
   const applySavedView = (configuration: SavedViewConfiguration) => {
     if (configuration.surface !== 'insights') return
@@ -570,6 +600,35 @@ export function InsightsPage() {
     ? Math.min(100, (backfill.processedDays / backfill.totalDays) * 100)
     : 0
   const activityEmpty = !loading && overview?.metrics.reports === 0
+
+  /*
+   * The wedge is applied to the cells already fetched rather than re-queried:
+   * the coverage response is the whole grid for the range, and filtering it in
+   * the browser keeps the drill-down instant and the server out of it.
+   */
+  const receiver = useRuntimeConfig().receiver
+  const visibleCoverageCells = useMemo(() => {
+    if (!coverage) return []
+    return sectorFilter == null
+      ? coverage.cells
+      : cellsOnBearing(coverage.cells, receiver, sectorFilter)
+  }, [coverage, sectorFilter, receiver])
+
+  const selectSector = (bearingStartDeg: number) => {
+    setSectorFilter((current) => (current === bearingStartDeg ? null : bearingStartDeg))
+    setSelectedCoverage(null)
+    // The panel the selection acts on is below the chart that made it, so the
+    // drill-down moves the viewport to the result rather than leaving it
+    // looking as though nothing happened. Optional because jsdom has no
+    // scrollIntoView, and the filter is the point — the scroll is a courtesy.
+    window.setTimeout(() => {
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      coveragePanelRef.current?.scrollIntoView?.({
+        behavior: reduced ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    }, 0)
+  }
 
   const selectCoverageCell = (cell: CoverageCell) => {
     setCoverageDetailLoading(true)
@@ -745,30 +804,53 @@ export function InsightsPage() {
 
       <section className="insight-panel coverage-panel">
         <header><div><span className="eyebrow">RANGE QUALITY</span><h2>Receiver range profile</h2></div><label className="compact-select"><span>Altitude</span><select value={altitudeBand} onChange={(event) => setAltitudeBand(event.target.value as typeof altitudeBand)}><option value="all">All altitudes</option><option value="ground">Ground / under {formatAltitude(1_000)}</option><option value="low">{formatAltitude(1_000)}–{formatAltitude(10_000)}</option><option value="medium">{formatAltitude(10_000)}–{formatAltitude(25_000)}</option><option value="high">{formatAltitude(25_000)} and above</option></select></label></header>
-        {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? <RangeProfile profile={rangeProfile} /> : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
+        {rangeProfile?.sectors.some((sector) => sector.reports > 0) ? (
+          <RangeProfile
+            profile={rangeProfile}
+            onSelectSector={selectSector}
+            selectedSectorStartDeg={sectorFilter}
+          />
+        ) : <div className="coverage-empty"><RadioTower size={21} /><strong>No range profile yet</strong><span>New positioned reports populate the bearing and altitude histogram.</span></div>}
       </section>
 
-      <section className="insight-panel coverage-panel">
+      <section className="insight-panel coverage-panel" ref={coveragePanelRef}>
         <header>
           <div><span className="eyebrow">POSITION COVERAGE</span><h2>Receiver coverage heatmap</h2></div>
           <small>Aggregated 0.05° cells · retained independently of detailed tracks</small>
         </header>
+        {sectorFilter != null ? (
+          <div className="sector-filter-chip" role="status">
+            <Compass size={15} aria-hidden="true" />
+            <span>
+              <strong>Bearing {sectorFilter}–{sectorFilter + 5}° from the receiver</strong>
+              <small>
+                {visibleCoverageCells.length.toLocaleString('en-GB')} of{' '}
+                {(coverage?.cells.length ?? 0).toLocaleString('en-GB')} cells. Coverage in the
+                direction of the range sector you chose — not the reports the sector counted, which
+                the daily histogram cannot name individually.
+              </small>
+            </span>
+            <button type="button" className="text-button" onClick={() => setSectorFilter(null)}>
+              Show all bearings
+            </button>
+          </div>
+        ) : null}
         {loading && !coverage ? <div className="coverage-skeleton skeleton-card" /> : coverageError ? (
           <div className="coverage-empty" role="status"><AlertTriangle size={21} /><strong>Coverage unavailable</strong><span>{coverageError}</span></div>
-        ) : coverage?.cells.length ? (
+        ) : visibleCoverageCells.length ? (
           <>
-            <CoverageMap ref={coverageMapRef} cells={coverage.cells} onSelectCell={selectCoverageCell} />
+            <CoverageMap ref={coverageMapRef} cells={visibleCoverageCells} onSelectCell={selectCoverageCell} />
             <p className="coverage-summary">
-              {coverage.cells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
-              {Math.max(...coverage.cells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
-              {coverage.truncated ? ' The display limit was reached; narrow the date range for complete cell detail.' : ''}
+              {visibleCoverageCells.length.toLocaleString('en-GB')} cells returned. The busiest cell contains{' '}
+              {Math.max(...visibleCoverageCells.map((cell) => cell.reports)).toLocaleString('en-GB')} positioned reports.
+              {coverage?.truncated ? ' The display limit was reached; narrow the date range for complete cell detail.' : ''}
             </p>
             <ChartDataTable
               summary="View busiest coverage cells"
               caption="Top coverage heatmap cells"
               columns={['Centre', 'Reports', 'Aircraft', 'Maximum altitude']}
               rowCap={50}
-              rows={coverage.cells.map((cell) => ({
+              rows={visibleCoverageCells.map((cell) => ({
                 key: `${cell.latitude}:${cell.longitude}`,
                 header: (
                   <button type="button" className="text-button" onClick={() => selectCoverageCell(cell)}>
@@ -783,6 +865,14 @@ export function InsightsPage() {
               }))}
             />
           </>
+        ) : sectorFilter != null && coverage?.cells.length ? (
+          // Coverage exists; this wedge is simply empty, which is a different
+          // statement from having no coverage at all.
+          <div className="coverage-empty" role="status">
+            <Compass size={21} />
+            <strong>No coverage cells on this bearing</strong>
+            <span>The range profile counts reports the coverage grid has no cell for here. Choose another sector, or show all bearings.</span>
+          </div>
         ) : (
           <div className="coverage-empty"><MapPinned size={21} /><strong>No aggregated coverage yet</strong><span>Coverage is populated by positioned reports and can still be backfilling even when activity summaries are available.</span></div>
         )}
