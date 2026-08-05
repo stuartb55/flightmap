@@ -767,6 +767,54 @@ export const coverageCellDetailResponseSchema = z.object({
   )
 });
 
+/*
+ * All-time receiver records. Every one of these comes from an aggregate that
+ * is retained indefinitely, so a record survives the expiry of the detailed
+ * track that set it — which is the point: these are the numbers a receiver is
+ * shown off with, and they must not quietly reset at the retention horizon.
+ *
+ * There is no "longest session" here even though it is the obvious sibling:
+ * `track_sessions` is pruned at retention, so an all-time session record would
+ * shrink as history aged out. The longest *contact* — first to last report for
+ * one airframe on one day — is the same question asked of data that is kept.
+ */
+export const receiverRecordKinds = [
+  "farthest_contact",
+  "highest_altitude",
+  "closest_approach",
+  "longest_contact",
+  "busiest_day",
+  "most_observed_airframe"
+] as const;
+
+export const receiverRecordSchema = z.object({
+  kind: z.enum(receiverRecordKinds),
+  /** The measure in its canonical unit; the reader's preference applies on display. */
+  value: z.number().finite(),
+  unit: z.enum(["distance_nm", "altitude_ft", "duration_seconds", "count"]),
+  /** The UTC day the record was set, matching how the daily aggregates bucket. */
+  occurredOn: z.string().date(),
+  /** Null for a record about the receiver rather than about one airframe. */
+  icao: icaoSchema.nullable(),
+  label: z.string().nullable(),
+  secondary: z.string().nullable(),
+  /**
+   * Whether that day is still inside detailed retention. False means the track
+   * behind the record has expired, and the record links onward to the aircraft
+   * profile alone.
+   */
+  detailedTrackAvailable: z.boolean()
+});
+
+export const receiverRecordsResponseSchema = z.object({
+  /** Only the records the receiver has actually set; empty on a new receiver. */
+  records: z.array(receiverRecordSchema),
+  /** The first day any aggregate covers, so the panel can say what "all time" means. */
+  availableFrom: z.string().date().nullable(),
+  /** The last day inside detailed retention, for the History links. */
+  detailedFrom: z.string().date()
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -1053,6 +1101,11 @@ export type RangeProfileSector = z.infer<typeof rangeProfileSectorSchema>;
 export type RangeProfileResponse = z.infer<typeof rangeProfileResponseSchema>;
 export type CoverageCellDetailResponse = z.infer<
   typeof coverageCellDetailResponseSchema
+>;
+export type ReceiverRecordKind = (typeof receiverRecordKinds)[number];
+export type ReceiverRecord = z.infer<typeof receiverRecordSchema>;
+export type ReceiverRecordsResponse = z.infer<
+  typeof receiverRecordsResponseSchema
 >;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type SessionQuery = z.infer<typeof sessionQuerySchema>;

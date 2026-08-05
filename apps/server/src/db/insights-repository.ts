@@ -10,8 +10,12 @@ import type {
   InsightPatternsResponse,
   InsightQuery,
   RangeProfileQuery,
-  RangeProfileResponse
+  RangeProfileResponse,
+  ReceiverRecord,
+  ReceiverRecordKind,
+  ReceiverRecordsResponse
 } from "@flightmap/shared";
+import { receiverRecordKinds } from "@flightmap/shared";
 import {
   airlineOperatorRows
 } from "../domain/airline-operators.js";
@@ -36,6 +40,86 @@ import {
   number,
   utcDate
 } from "./repository-shared.js";
+
+/**
+ * The five all-time records that are a single row of one aggregate: the
+ * largest or smallest value of one column, found through the index migration
+ * 015 adds for it, then labelled from the metadata for whichever airframe set
+ * it.
+ *
+ * Every measure is aliased `value`: unaliased, `ORDER BY total_observations`
+ * binds to the *output* column, which is a cast, and a cast is not what the
+ * index is on — the planner quietly sorts twenty thousand rows instead.
+ *
+ * Dates are cast to text rather than left as `date`, because the driver turns
+ * a date into a JS Date at local midnight — the day before, anywhere west of
+ * UTC. The container pins TZ=UTC, but a record dated a day early would link to
+ * the wrong day of History, and that should not rest on an environment
+ * variable.
+ */
+const recordLookupsSql = `WITH farthest AS (
+    SELECT 'farthest_contact'::text AS kind, icao, summary_date::text AS occurred_on,
+           maximum_range_nm AS value
+    FROM daily_aircraft_summary
+    WHERE maximum_range_nm IS NOT NULL
+    ORDER BY maximum_range_nm DESC LIMIT 1
+  ), highest AS (
+    SELECT 'highest_altitude', icao, summary_date::text,
+           maximum_altitude_ft AS value
+    FROM daily_aircraft_summary
+    WHERE maximum_altitude_ft IS NOT NULL
+    ORDER BY maximum_altitude_ft DESC LIMIT 1
+  ), closest AS (
+    SELECT 'closest_approach', icao, summary_date::text,
+           closest_range_nm AS value
+    FROM daily_aircraft_summary
+    WHERE closest_range_nm IS NOT NULL
+    ORDER BY closest_range_nm LIMIT 1
+  ), longest AS (
+    SELECT 'longest_contact', icao, summary_date::text,
+           extract(epoch FROM (last_seen_at - first_seen_at)) AS value
+    FROM daily_aircraft_summary
+    ORDER BY (last_seen_at - first_seen_at) DESC LIMIT 1
+  ), most_observed AS (
+    SELECT 'most_observed_airframe', icao,
+           (last_seen_at AT TIME ZONE 'UTC')::date::text,
+           total_observations::double precision AS value
+    FROM aircraft_summary
+    WHERE total_observations > 0
+    ORDER BY total_observations DESC LIMIT 1
+  ), records AS (
+    SELECT * FROM farthest
+    UNION ALL SELECT * FROM highest
+    UNION ALL SELECT * FROM closest
+    UNION ALL SELECT * FROM longest
+    UNION ALL SELECT * FROM most_observed
+  )
+  SELECT r.kind, r.icao, r.occurred_on, r.value,
+         COALESCE(NULLIF(m.registration, ''),
+                  NULLIF(s.latest_registration, '')) AS registration,
+         COALESCE(NULLIF(m.type_code, ''),
+                  NULLIF(s.latest_type_code, '')) AS type_code,
+         NULLIF(m.description, '') AS description,
+         COALESCE(NULLIF(m.operator, ''),
+                  NULLIF(s.latest_operator, '')) AS operator,
+         NULLIF(trim(s.latest_callsign), '') AS callsign
+  FROM records r
+  LEFT JOIN aircraft_metadata m ON m.icao = r.icao
+  LEFT JOIN aircraft_summary s ON s.icao = r.icao`;
+
+/**
+ * The busiest day is the one record that is not a lookup — it totals every
+ * day's rows before it can rank them — so it reads the whole daily aggregate
+ * whatever is indexed (see migration 015 for why nothing indexes it). It runs
+ * as its own statement, concurrently with the lookups, so its scan does not
+ * sit in front of five queries that are each a single row: around twenty
+ * milliseconds over a year of daily rows.
+ */
+const busiestDaySql = `SELECT summary_date::text AS occurred_on,
+                              sum(observations)::double precision AS value
+                       FROM daily_aircraft_summary
+                       GROUP BY summary_date
+                       ORDER BY value DESC LIMIT 1`;
 
 /** Aggregated activity, coverage, patterns and range profiles. */
 export class InsightsRepository extends RepositoryBase {
@@ -752,6 +836,106 @@ export class InsightsRepository extends RepositoryBase {
         typeCode: item.type_code,
         operator: item.operator
       }))
+    };
+  }
+
+  /**
+   * All-time records, independent of any date range. Every figure comes from
+   * an aggregate that is never pruned, and every one is a single-row lookup
+   * backed by an index from migration 015 — the busiest day is the one
+   * exception, and its grouping is an index-only scan.
+   *
+   * A receiver that has heard nothing returns no records at all rather than a
+   * set of zeroes: "farthest contact: 0 nm" is a lie, not an empty state.
+   */
+  async receiverRecords(now = new Date()): Promise<ReceiverRecordsResponse> {
+    const detailedFrom = new Date(
+      now.getTime() - this.config.historyRetentionDays * 86_400_000
+    );
+    const [result, busiest, availability] = await Promise.all([
+      this.database.query<{
+        kind: ReceiverRecordKind;
+        icao: string | null;
+        /*
+         * Cast to text in the query rather than left as a `date`: the driver
+         * turns a date into a JS Date at *local* midnight, which is the day
+         * before anywhere west of UTC. The container pins TZ=UTC, but a record
+         * dated a day early would link to the wrong day of History, and that
+         * is not worth resting on an environment variable.
+         */
+        occurred_on: string;
+        value: number | string;
+        registration: string | null;
+        type_code: string | null;
+        description: string | null;
+        operator: string | null;
+        callsign: string | null;
+      }>(
+        recordLookupsSql
+      ),
+      this.database.query<{
+        occurred_on: string | null;
+        value: number | string | null;
+      }>(busiestDaySql),
+      this.database.query<{ available_from: string | null }>(
+        "SELECT min(summary_date)::text AS available_from FROM daily_aircraft_summary"
+      )
+    ]);
+    const units: Record<ReceiverRecordKind, ReceiverRecord["unit"]> = {
+      farthest_contact: "distance_nm",
+      highest_altitude: "altitude_ft",
+      closest_approach: "distance_nm",
+      longest_contact: "duration_seconds",
+      busiest_day: "count",
+      most_observed_airframe: "count"
+    };
+    const records = result.rows.flatMap((row): ReceiverRecord[] => {
+      const value = number(row.value);
+      if (!Number.isFinite(value)) return [];
+      const occurredOn = utcDate(row.occurred_on);
+      return [{
+        kind: row.kind,
+        value,
+        unit: units[row.kind],
+        occurredOn,
+        icao: row.icao ? row.icao.trim() : null,
+        label:
+          row.registration ??
+          row.callsign ??
+          (row.icao ? row.icao.trim().toUpperCase() : null),
+        secondary:
+          [row.type_code ?? row.description, row.operator]
+            .filter((part): part is string => Boolean(part))
+            .join(" · ") || null,
+        detailedTrackAvailable: occurredOn >= utcDate(detailedFrom)
+      }];
+    });
+    const busiestDay = busiest.rows[0];
+    if (busiestDay?.occurred_on != null && busiestDay.value != null) {
+      const occurredOn = utcDate(busiestDay.occurred_on);
+      records.push({
+        kind: "busiest_day",
+        value: number(busiestDay.value),
+        unit: "count",
+        occurredOn,
+        icao: null,
+        label: null,
+        secondary: null,
+        detailedTrackAvailable: occurredOn >= utcDate(detailedFrom)
+      });
+    }
+    // Stable, meaningful order: neither the UNION order nor the busiest day's
+    // arrival is guaranteed, and the panel reads left to right.
+    records.sort(
+      (left, right) =>
+        receiverRecordKinds.indexOf(left.kind) -
+        receiverRecordKinds.indexOf(right.kind)
+    );
+    const available = availability.rows[0]?.available_from;
+    return {
+      records,
+      availableFrom: available ? utcDate(available) : null,
+      detailedFrom: utcDate(detailedFrom)
     };
   }
 }

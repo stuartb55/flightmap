@@ -31,6 +31,11 @@ function dependencies() {
       insightPatterns: vi.fn().mockResolvedValue({}),
       rangeProfile: vi.fn().mockResolvedValue({}),
       coverageCellDetail: vi.fn().mockResolvedValue({}),
+      receiverRecords: vi.fn().mockResolvedValue({
+        records: [],
+        availableFrom: null,
+        detailedFrom: "2026-07-01"
+      }),
       aircraftActivity: vi.fn().mockResolvedValue({}),
       customAlertRules: vi.fn().mockResolvedValue([]),
       previewCustomAlertRule: vi.fn().mockResolvedValue({ matches: [] }),
@@ -189,6 +194,24 @@ describe("structured route errors", () => {
     );
     expect(response.statusCode).toBe(400);
     expect(deps.repository.insightsOverview).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it("serves receiver records without a date range, ignoring one if sent", async () => {
+    const deps = dependencies();
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: deps as never,
+      logger: false
+    });
+    // The panel is explicitly range-independent, so a stray range must not
+    // narrow it and must not be rejected either.
+    const response = await server.inject(
+      "/api/v1/insights/records?from=2026-08-01T00%3A00%3A00Z"
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ records: [], availableFrom: null });
+    expect(deps.repository.receiverRecords).toHaveBeenCalledWith();
     await server.close();
   });
 

@@ -230,7 +230,7 @@ existing helpers so unit preferences apply automatically. Replace
 
 ### 25. Receiver records — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Insights reports maxima for the selected range only. The receiver's
 all-time records — farthest contact, highest, closest approach, busiest day,
