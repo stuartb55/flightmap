@@ -194,12 +194,28 @@ serving. Neither is on a schedule; run them when you want the data refreshed.
 | `npm run metadata:refresh` | Refreshes the aircraft registry (registration, type, operator). |
 | `npm run airports:build` | Rebuilds the map's airport and runway dataset from a local OurAirports CSV export. See [airports](airports.md). |
 
-`airports:build` needs the CSV files on disk and writes the `mapAirports`
-setting. Restart the application afterwards: the build writes the settings row
-directly, so a running instance keeps serving the previous dataset until it
-reloads. Until the build is run there is no airport data, and the map's
-**Airports** layer toggle is disabled with that reason shown — which is a
-supported state, not a fault.
+Against a Compose deployment, run the airport build in a throwaway container
+with the CSV files bind-mounted — the app container's root filesystem is
+read-only, so they cannot be copied in:
+
+```sh
+curl -sLO https://davidmegginson.github.io/ourairports-data/airports.csv
+curl -sLO https://davidmegginson.github.io/ourairports-data/runways.csv
+
+docker compose run --rm --no-deps \
+  -v "$PWD/airports.csv:/data/airports.csv:ro" \
+  -v "$PWD/runways.csv:/data/runways.csv:ro" \
+  app node apps/server/dist/airports-cli.js \
+    --airports /data/airports.csv --runways /data/runways.csv
+
+docker compose restart app
+```
+
+The restart is required: the build writes the settings row directly, which is
+what lets it run while the application is stopped, so a running instance keeps
+serving the previous dataset until it reloads. Until the build is run there is
+no airport data, and the map's **Airports** layer toggle is disabled with that
+reason shown — which is a supported state, not a fault.
 
 ## Routine schedule
 

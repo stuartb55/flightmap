@@ -36,20 +36,53 @@ The CSV exports are published at:
 - <https://davidmegginson.github.io/ourairports-data/airports.csv>
 - <https://davidmegginson.github.io/ourairports-data/runways.csv>
 
-Download them on a machine with internet access; the build itself is offline.
+The build itself is offline — it only reads the files.
 
 ## Building the dataset
+
+Fetch the two exports on any machine with internet access:
 
 ```sh
 curl -sLO https://davidmegginson.github.io/ourairports-data/airports.csv
 curl -sLO https://davidmegginson.github.io/ourairports-data/runways.csv
+```
 
-# Check what you would get, without a database and without writing anything.
-npm run airports:build -- \
-  --airports ./airports.csv --runways ./runways.csv \
-  --latitude 53.61 --longitude -2.31 --dry-run
+### In Docker, which is the normal deployment
 
-# Write it, using the configured receiver position as the centre.
+The app container has a read-only root filesystem, so the CSV files are
+bind-mounted into a throwaway container rather than copied in. Run this from the
+directory holding `docker-compose.yml` and the two CSV files; `.env` already
+supplies the database credentials.
+
+```sh
+docker compose run --rm --no-deps \
+  -v "$PWD/airports.csv:/data/airports.csv:ro" \
+  -v "$PWD/runways.csv:/data/runways.csv:ro" \
+  app node apps/server/dist/airports-cli.js \
+    --airports /data/airports.csv --runways /data/runways.csv
+
+docker compose restart app
+```
+
+`--no-deps` keeps it from touching the running services; the database has to be
+up already, which it normally is. The command prints a summary and reminds you
+about the restart:
+
+```json
+{"airports":137,"runways":175,"byRank":{"large":23,"medium":74,"small":40},
+ "payloadBytes":41940,"gzippedBytes":9278,"radiusNm":250,"written":true,
+ "note":"Restart the application for a running instance to serve this"}
+```
+
+Add `--dry-run` to see that summary without writing anything. With `--latitude`
+and `--longitude` given as well, a dry run needs no database at all, which makes
+it a cheap way to try a radius or a runway threshold before committing to one.
+
+### Outside Docker
+
+For a checkout with `DATABASE_URL` pointing at the database:
+
+```sh
 npm run airports:build -- --airports ./airports.csv --runways ./runways.csv
 ```
 
