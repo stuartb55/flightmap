@@ -1,6 +1,6 @@
-# Delivered UX enhancements — phase 1
+# Delivered UX enhancements — phases 1 and 2
 
-The first phase of the post-v1 user-experience backlog, delivered in full.
+The first two phases of the post-v1 user-experience backlog, delivered in full.
 Items are kept here in their original form as the record of what was specified
 and accepted; the code is the reference for how it behaves today.
 
@@ -351,6 +351,291 @@ remaining literal colours), new `apps/web/src/lib/theme.ts`, `AppShell.tsx`,
 - Alert, emergency, and altitude-band colours remain distinguishable in light
   mode — these carry meaning and must be re-checked, not merely inverted.
 - Existing dark appearance is byte-for-byte unchanged as the default.
+
+---
+
+## Phase 2 — depth and polish
+
+Tier 2 of the backlog, in the order the items were specified. Items 22–25 were
+added at the start of the phase, once phase 1 had landed and the gaps it exposed
+were visible.
+
+### 22. In-app navigation without full page reloads — **S**
+
+- [x] Implement
+
+**Problem.** Three internal links bypass the client router and reload the whole
+document:
+
+1. `InsightsPage.tsx:571` — the activity chart drill-through assigns
+   `window.location.href`.
+2. `InsightsPage.tsx:302` — `LeaderList` renders a raw `<a href="/aircraft/…">`
+   / `<a href="/history?…">`.
+3. `InsightsPage.tsx:627` — the coverage cell aircraft links do the same.
+
+Each one tears down the SPA, drops the live WebSocket (`LiveContext.tsx:80`),
+and refetches the bundle, so a drill-down costs a cold start. The router
+already exports `Link` and `navigate` (`apps/web/src/lib/router.tsx`), and
+`RadarMap`'s popup links use them correctly — this is drift, not a design
+choice. Item 17 adds more drill-downs, so fix the pattern first.
+
+**Approach.** Replace internal anchors with `Link` and programmatic navigation
+with `navigate()`. `Link` already stands aside for modifier and middle clicks
+and for `target="_blank"` (`router.tsx:69`), so opening in a new tab keeps
+working. Leave the download anchors alone — `exportHref` targets
+(`InsightsPage.tsx:464`) and the session exports (`HistoryPage.tsx:1029`) are
+server responses, not routes, and must stay plain anchors with `download`.
+
+Add an ESLint `no-restricted-syntax` rule for `apps/web/src` covering
+`window.location.href =` assignment and `JSXAttribute[name.name='href']` with a
+string literal starting `/` and no `download` sibling, so the pattern cannot
+silently return.
+
+**Files.** `InsightsPage.tsx`, `eslint.config.mjs`, plus any anchor the sweep
+turns up.
+
+**Acceptance.**
+- No internal link causes a document navigation; an e2e test asserts the live
+  connection survives a chart drill-through.
+- Lint fails on a reintroduced raw internal anchor, and the rule's message names
+  the replacement.
+- Modifier-click, middle-click, and "open in new tab" still work on every
+  converted link.
+- Download anchors are unaffected and still carry `download`.
+
+---
+
+### 15. Saved views: defaults and pinning — **S**
+
+- [x] Implement
+
+**Problem.** Saved views exist for Live, History, and Insights
+(`SavedViewsControl.tsx`) but every visit starts from the built-in default, and
+reaching a view takes two clicks through a menu that hides behind a popover. A
+user with one habitual configuration re-applies it every session.
+
+**Approach.** Add two fields to `saved_views`: `is_default boolean` and
+`pinned_at timestamptz`. Enforce the invariants in the database — a partial
+unique index on `(surface) WHERE is_default`, and the "at most three pins per
+surface" cap in the same advisory-locked transaction that already enforces the
+20-view limit (`saved-views-repository.ts:29`). New migration `014`.
+
+Extend `savedViewSchema` (`contracts.ts:550`) and `savedViewPatchSchema`
+(`contracts.ts:581`). On the client, each surface applies its default on mount
+unless the URL already carries explicit parameters; pinned views render as
+chips beside the Saved views button and are registered as commands
+(`lib/app-commands.ts`).
+
+**Files.** New `apps/server/src/db/migrations/014_saved_view_defaults.sql`,
+`saved-views-repository.ts`, `routes/api.ts`, `packages/shared/src/contracts.ts`,
+`SavedViewsControl.tsx`, `LivePage.tsx`, `HistoryPage.tsx`, `InsightsPage.tsx`,
+`lib/app-commands.ts`.
+
+**Acceptance.**
+- The default applies before the surface's first data fetch, so there is no
+  visible flash of the built-in state.
+- A URL with explicit parameters always wins over the default.
+- Setting a new default clears the previous one atomically; concurrent requests
+  cannot leave two defaults on one surface.
+- The fourth pin on a surface is refused with a message naming the limit, not a
+  generic error.
+- Pinned chips are keyboard reachable, appear in the command palette, and are
+  labelled as pinned to a screen reader.
+
+---
+
+### 16. Map snapshot and share — **S**
+
+- [x] Implement
+
+**Problem.** The URL already describes the view on Live and History, but nothing
+in the UI says so, and there is no way to save a picture of what the map is
+showing — the thing people actually want to send to someone.
+
+**Approach.** Two buttons in the existing `.map-controls` cluster
+(`RadarMap.tsx:1340`).
+
+*Copy link* writes the current viewport into the URL on demand — `getViewport()`
+is already exposed through the imperative handle (`RadarMap.tsx:748`) — then
+copies it. Writing the viewport on demand rather than continuously keeps the
+history stack clean.
+
+*Download image* is not a one-liner: the map is constructed without
+`preserveDrawingBuffer` (`RadarMap.tsx:755`), so `canvas.toDataURL()` returns
+blank. Prefer forcing a synchronous redraw and reading inside a
+`map.once('render')` callback over enabling the flag permanently; if the flag
+proves necessary, measure it against the load smoke before keeping it. Compose
+the result onto a 2D canvas with a caption strip: receiver name, timestamp in
+the display time zone, aircraft count, and the attribution text the compact
+`AttributionControl` shows (`RadarMap.tsx:775`).
+
+**Files.** `RadarMap.tsx`, new `apps/web/src/lib/map-snapshot.ts` (also used by
+item 17), `LivePage.tsx`, `HistoryPage.tsx`, `styles/live.css`.
+
+**Acceptance.**
+- The copied link restores an identical view — viewport, filters, selection, and
+  replay position where applicable.
+- The PNG carries the tile provider attribution (OpenFreeMap, OpenMapTiles,
+  OpenStreetMap) legibly at the exported size.
+- Frame cost is unchanged when no snapshot is being taken; if
+  `preserveDrawingBuffer` is enabled, the load smoke shows under 5% regression.
+- Copy reports success and failure through an `aria-live` region, and falls back
+  to a selectable read-only input where the clipboard API is unavailable — a
+  non-secure-context LAN deployment is the normal case, not an edge case.
+
+---
+
+### 13. Multi-track profile comparison — **S**
+
+- [x] Implement
+
+**Problem.** Up to eight tracks can be selected and drawn on the History map
+(`HistoryPage.tsx:518`), but `FlightProfile` renders only the focused one
+(`HistoryPage.tsx:1046`). Comparing two approaches to the same runway means
+clicking *Profile* back and forth (`HistoryPage.tsx:1028`) and holding the shape
+in your head.
+
+**Approach.** Take `tracks: TrackResponse[]` plus the focused id instead of a
+single track. Two x-axis modes: absolute time (default, matching
+`SessionTimeline`) and *align on start*, which is what makes approach profiles
+comparable. Cap the overlay at four series — beyond that the chart stops
+answering the question — and offer the rest through the existing focus control.
+
+Colour has to change meaning when comparing: the per-point ramp
+(`track-colour.ts`) is unreadable across four overlaid lines, so in comparison
+mode each series takes its map line's identity colour and the ramp is retained
+only for the single-track case. The focused series draws last, at full width;
+the others sit at reduced opacity.
+
+**Files.** `FlightProfile.tsx`, `HistoryPage.tsx`, `lib/track-colour.ts`
+(per-track identity colours, shared with the map and `SessionTimeline.tsx`),
+`styles/history.css`.
+
+**Acceptance.**
+- Four overlaid tracks stay legible in both themes and are distinguishable
+  without relying on colour alone — a dash pattern or an inline series label.
+- The accessible data table added under the chart (item 23) lists every series.
+- Single-track rendering, including the per-point colour ramp, is unchanged.
+- Axis mode is captured in the URL and in saved views.
+- The shared crosshair reports the focused series' values; scrubbing still
+  drives replay for all selected tracks.
+
+---
+
+### 23. Chart accessibility and data-table parity — **S**
+
+- [x] Implement
+
+**Problem.** Insights sets the pattern — every chart has a keyboard-reachable
+`details.chart-data-table` fallback (`InsightsPage.tsx:173`, `:608`). Four charts
+never adopted it:
+
+- the flight profile (`FlightProfile.tsx:158`) — `role="img"` with one label;
+- the range profile (`RangeProfile.tsx:22`) — same;
+- the activity pattern grid (`ActivityPattern.tsx:24`) — per-cell labels, no
+  table, and the percentage-change annotation lives only in a `title`;
+- the aircraft profile activity bars (`AircraftProfilePage.tsx:25`) — `title`
+  attributes only, which a keyboard user never reaches.
+
+The cross-cutting requirements demand this, so it is a standing regression
+rather than a new feature.
+
+**Approach.** Extract the existing markup into a shared `ChartDataTable` taking
+a caption, columns, rows, and an optional row cap, then adopt it in Insights
+(no visual change) and in the four charts above. Values format through the
+existing helpers so unit preferences apply automatically. Replace
+`title`-only tooltips with content that is also reachable by keyboard.
+
+**Files.** New `apps/web/src/components/ChartDataTable.tsx`, `InsightsPage.tsx`,
+`FlightProfile.tsx`, `RangeProfile.tsx`, `ActivityPattern.tsx`,
+`AircraftProfilePage.tsx`, `styles/insights.css`.
+
+**Acceptance.**
+- Every chart in the app has a keyboard-reachable table of the values it plots.
+- Tables honour unit preferences and render unavailable values as `—`.
+- Capped tables state the cap, as the coverage table already does at 50 rows.
+- The `@axe-core/playwright` pass stays clean on Insights, History, and the
+  aircraft profile, in both themes.
+
+---
+
+### 25. Receiver records — **S**
+
+- [x] Implement
+
+**Problem.** Insights reports maxima for the selected range only. The receiver's
+all-time records — farthest contact, highest, closest approach, busiest day,
+longest session, most-observed airframe — are the numbers a hobbyist actually
+shows people, and they already exist in aggregates that are retained
+indefinitely (`aircraft_summary`, `daily_aircraft_summary`,
+`daily_range_histogram`, `daily_coverage_cells`) long after detailed tracks
+expire. Nothing surfaces them.
+
+**Approach.** One endpoint, `GET /api/v1/insights/records`, returning a small
+fixed set of records, each with the ICAO and timestamp behind it so it can link
+onward. Render as a compact panel at the top of Insights, above the date range
+controls, explicitly labelled as all-time and range-independent — otherwise it
+reads as a bug when the numbers do not move with the date picker.
+
+Every figure must come from an indexed aggregate; nothing here may scan
+`position_samples`.
+
+**Files.** `apps/server/src/db/insights-repository.ts`,
+`apps/server/src/routes/api.ts`, `packages/shared/src/contracts.ts`,
+`apps/web/src/lib/api.ts`, `InsightsPage.tsx`, `styles/insights.css`.
+
+**Acceptance.**
+- The records query stays under 100 ms against a year of aggregates and is
+  index-backed — verified with `EXPLAIN` in the repository test.
+- Each record links to the aircraft profile, and to History when the session is
+  still within detailed retention; records whose track has expired still show,
+  with the link degraded to the profile.
+- A receiver with no data yet shows an explained empty state, not a row of
+  zeros.
+- Figures follow unit preferences and the display time zone.
+
+---
+
+### 17. Insights drill-down and export polish — **S**
+
+- [x] Implement
+
+**Problem.** The activity chart drills through to History
+(`InsightsPage.tsx:571`) and the leader lists link out (`:302`), but the range
+profile (`RangeProfile.tsx`) and the pattern grid (`ActivityPattern.tsx`) are
+dead ends, the activity chart has no per-series show/hide (reports, positioned
+reports, and availability are drawn unconditionally), and export is CSV and
+GeoJSON only.
+
+**Approach.**
+- *Pattern grid cell → History*: filter to that weekday-hour across the current
+  range. `sessionQuerySchema` (`contracts.ts:857`) already carries `from`/`to`,
+  so this needs either repeated ranges in the query or a new weekday-hour
+  parameter — prefer the parameter, and back it with the existing start-time
+  index.
+- *Range sector → coverage, not History*: the sector data comes from
+  `daily_range_histogram`, which is aggregated and cannot name the sessions it
+  counted. Land the sector drill-down on the coverage map filtered to that
+  bearing wedge instead of inventing a History query that would return a
+  different set from the one the chart shows. Say this in the UI copy.
+- *Per-series toggles* on the activity chart, persisted with the other insights
+  preferences and captured in the saved view configuration.
+- *Chart image export* reusing the compositor from item 16: serialise the SVG to
+  a canvas, caption it with the receiver name and range.
+
+**Files.** `InsightsPage.tsx`, `ActivityPattern.tsx`, `RangeProfile.tsx`,
+`lib/map-snapshot.ts`, `HistoryPage.tsx`, `packages/shared/src/contracts.ts`,
+`apps/server/src/db/history-repository.ts`, `apps/server/src/routes/api.ts`.
+
+**Acceptance.**
+- Every drill-down lands on a query that returns exactly the population the
+  chart element counted — asserted against a seeded dataset, not checked by eye.
+  Where that is not possible, the drill-down goes somewhere it *is* true and the
+  UI says what it is showing.
+- Series visibility persists across reloads and is captured in saved views.
+- Exported chart PNGs are legible in both themes and carry the range and
+  receiver name.
+- Drill-downs navigate without a document reload (item 22).
 
 ---
 
