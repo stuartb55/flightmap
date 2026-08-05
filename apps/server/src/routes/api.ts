@@ -23,6 +23,7 @@ import { z } from "zod";
 import type { FlightRepository } from "../db/repository.js";
 import type { ReceiverCollector } from "../ingestion/collector.js";
 import type { LiveHub } from "../realtime/live-hub.js";
+import { AirportImportError, type AirportImportService } from "../services/airports.js";
 import type { StatusService } from "../services/status.js";
 import type { AppSettingsService } from "../settings.js";
 import {
@@ -42,6 +43,7 @@ export type ApiDependencies = {
   hub: LiveHub;
   status: StatusService;
   settings: AppSettingsService;
+  airportImport: AirportImportService;
   applyRuntimeSettings: () => Promise<void>;
   /** False until boot-time settings have loaded; `/health/ready` reports
    *  `not_ready` rather than the process exiting on a database blip. */
@@ -58,6 +60,7 @@ export async function registerApiRoutes(
     hub,
     status,
     settings,
+    airportImport,
     applyRuntimeSettings,
     bootstrapped = () => true
   } = dependencies;
@@ -96,6 +99,26 @@ export async function registerApiRoutes(
     reply.header("etag", etag);
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
     return reply.type("application/json; charset=utf-8").send(body);
+  });
+
+  /*
+   * Rebuilds the airport dataset from the configured sources. A mutation, so it
+   * needs a matching Origin like every other one, and it updates the settings
+   * in this process rather than only in the database — which is what lets the
+   * running application serve the new dataset without a restart.
+   */
+  app.post("/api/v1/airports/refresh", async (_request, reply) => {
+    try {
+      return await airportImport.refresh();
+    } catch (error) {
+      if (!(error instanceof AirportImportError)) throw error;
+      // The centre being unknown is a precondition the operator can fix; a
+      // download failure is upstream. Neither is a bug in this server, so
+      // neither should read as one.
+      return reply
+        .code(error.code === "AIRPORT_IMPORT_RUNNING" ? 409 : 422)
+        .send({ error: { code: error.code, message: error.message } });
+    }
   });
 
   app.patch("/api/v1/settings", async (request) => {

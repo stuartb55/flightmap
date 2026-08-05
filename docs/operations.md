@@ -186,18 +186,23 @@ but uncached background tiles and metadata updates will be unavailable.
 
 ## Operator-run data builds
 
-Two datasets are built on request rather than fetched while the application is
-serving. Neither is on a schedule; run them when you want the data refreshed.
+Two datasets are refreshed on request rather than while the application serves.
 
-| Command | What it does |
-| --- | --- |
-| `npm run metadata:refresh` | Refreshes the aircraft registry (registration, type, operator). |
-| `npm run airports:build` | Rebuilds the map's airport and runway dataset from a local OurAirports CSV export. See [airports](airports.md). |
+**Airports** — **Settings → Airports → Download now**. The server fetches the
+OurAirports files, keeps what is within the configured radius, and applies the
+result immediately; no restart, no command line. Radius, the smallest runway to
+include, and both source URLs are on the same card. It needs internet access on
+the server. See [airports](airports.md).
 
-`airports:build` needs the CSV files on disk and writes the `mapAirports`
-setting. Restart the application afterwards: the build writes the settings row
-directly, so a running instance keeps serving the previous dataset until it
-reloads. Until the build is run there is no airport data, and the map's
+**Aircraft metadata** — configured under Settings → Aircraft metadata and
+refreshed on a schedule, or with `npm run metadata:refresh`.
+
+For a receiver with no internet access, the airport dataset can also be built
+from files carried in by hand — `npm run airports:build`, which then needs a
+restart because it writes the settings row from outside the running process.
+[`airports.md`](airports.md) has the Compose form of that.
+
+Until airports are downloaded there is no airport data, and the map's
 **Airports** layer toggle is disabled with that reason shown — which is a
 supported state, not a fault.
 

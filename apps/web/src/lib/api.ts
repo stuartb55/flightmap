@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import type {
   AircraftActivityResponse,
+  AirportImportSummary,
   AirportsResponse,
   CoverageCellDetailResponse,
   CustomAlertRule,
@@ -24,6 +25,7 @@ import type {
 import {
   aircraftActivityResponseSchema,
   aircraftDetailResponseSchema,
+  airportImportSummarySchema,
   airportsResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
@@ -445,6 +447,19 @@ export const api = {
 
   settings(signal?: AbortSignal) {
     return request<AppSettingsResponse>('/settings', { signal })
+  },
+
+  /**
+   * Rebuilds the airport dataset from the configured sources. Slow by nature —
+   * it downloads two files — so the caller shows progress rather than assuming
+   * this returns promptly.
+   */
+  refreshAirports() {
+    return request<AirportImportSummary>(
+      '/airports/refresh',
+      { method: 'POST' },
+      airportImportSummarySchema,
+    )
   },
 
   /**

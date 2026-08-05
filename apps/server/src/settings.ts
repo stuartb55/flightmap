@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { airportSchema, mapWaypointSchema, type Airport } from "@flightmap/shared";
+import {
+  airportSchema,
+  isoDateTimeSchema,
+  mapWaypointSchema,
+  type Airport
+} from "@flightmap/shared";
 import { z } from "zod";
 import { defaultMapAirports } from "./default-airports.js";
 import { defaultMapWaypoints } from "./default-waypoints.js";
@@ -61,6 +66,18 @@ const settingsShape = {
    * an unbounded blob in the settings row.
    */
   mapAirports: z.array(airportSchema).max(4_000),
+  /**
+   * Where the airport import downloads its two OurAirports exports from, and
+   * how much of them to keep. These are the choices worth an operator's
+   * attention; the download's own safety limits are fixed in
+   * `services/airports.ts` because nobody should have to reason about them.
+   */
+  airportDataUrl: httpUrlSchema,
+  airportRunwayDataUrl: httpUrlSchema,
+  airportRadiusNm: z.number().positive().max(1_000),
+  airportMinimumRunwayFt: z.number().int().min(0).max(20_000),
+  /** When the dataset was last built, so Settings can say. Null until it is. */
+  mapAirportsUpdatedAt: isoDateTimeSchema.nullable(),
   historyRetentionDays: z.number().int().min(1).max(365),
   sessionGapSeconds: z.number().int().min(60).max(3_600),
   currentAircraftTtlSeconds: z.number().int().min(15).max(3_600),
@@ -145,6 +162,14 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   rangeRingsNm: [5, 10, 25, 50, 100],
   mapWaypoints: [...defaultMapWaypoints],
   mapAirports: [...defaultMapAirports],
+  airportDataUrl:
+    "https://davidmegginson.github.io/ourairports-data/airports.csv",
+  airportRunwayDataUrl:
+    "https://davidmegginson.github.io/ourairports-data/runways.csv",
+  airportRadiusNm: 250,
+  // 1,000 m: a licensed aerodrome clears it, a farm strip does not.
+  airportMinimumRunwayFt: 3_281,
+  mapAirportsUpdatedAt: null,
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,

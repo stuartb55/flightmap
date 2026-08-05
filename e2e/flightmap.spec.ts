@@ -309,6 +309,49 @@ const AIRPORT_FIXTURE = [
   },
 ]
 
+/*
+ * The dataset is built from the Settings page, so the flow worth covering is
+ * the one a person drives. The success path needs the real OurAirports files,
+ * which is not something an acceptance test should depend on — that is covered
+ * by the service and component tests. What is covered here is the contract that
+ * survives a bad day: a source that cannot be read is reported in words, on the
+ * page, and leaves both the stored dataset and the rest of the form alone.
+ */
+test('reports an airport download it could not complete', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The settings form is a desktop control')
+  const before = await (await page.request.get('/api/v1/airports')).json()
+
+  /*
+   * The centre is checked before anything is downloaded, and the receiver's own
+   * position only arrives on the first `receiver.json` poll — so pin it here,
+   * or this races that and reports the wrong failure.
+   */
+  await page.request.patch('/api/v1/settings', {
+    data: {
+      receiverLatitude: 53.61,
+      receiverLongitude: -2.31,
+      airportDataUrl: 'http://127.0.0.1:8080/api/v1/nothing-here.csv',
+    },
+  })
+  await page.goto('/settings')
+  const card = page.getByRole('heading', { name: 'Airports' }).locator('xpath=ancestor::section')
+  await expect(card).toBeVisible({ timeout: 15_000 })
+  await card.getByRole('button', { name: /Download/ }).click()
+
+  await expect(card.getByRole('alert')).toContainText(/nothing-here\.csv/, { timeout: 30_000 })
+  // The form is still usable, and nothing was thrown away.
+  await expect(page.getByRole('button', { name: 'Save settings' })).toBeEnabled()
+  expect(await (await page.request.get('/api/v1/airports')).json()).toEqual(before)
+
+  await page.request.patch('/api/v1/settings', {
+    data: {
+      receiverLatitude: null,
+      receiverLongitude: null,
+      airportDataUrl: 'https://davidmegginson.github.io/ourairports-data/airports.csv',
+    },
+  })
+})
+
 test('draws airports and credits their source once configured', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The layer menu is a desktop control')
   // Set before the first navigation: the endpoint is cached, so a page that
