@@ -503,7 +503,12 @@ test('filters, compares, saves, restores, and exports Insights views', async ({ 
   const records = page.getByRole('region', { name: 'All-time receiver records' })
   await expect(records).toBeVisible()
   await expect(records).toContainText('do not change with the date range below')
-  await expect(records.locator('li')).toHaveCount(6)
+  // Only records the receiver has actually set are listed, and a stack that
+  // has been up for two minutes has not set all six — so the count is bounded,
+  // not fixed.
+  const listed = records.locator('li')
+  expect(await listed.count()).toBeGreaterThan(0)
+  expect(await listed.count()).toBeLessThanOrEqual(6)
   const before = await records.locator('li strong').allTextContents()
   let recordRequests = 0
   page.on('request', (request) => {
