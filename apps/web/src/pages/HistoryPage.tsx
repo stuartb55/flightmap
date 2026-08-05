@@ -19,7 +19,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { RadarMap } from '../components/RadarMap'
-import { FlightProfile } from '../components/FlightProfile'
+import {
+  FlightProfile,
+  defaultProfileAxisMode,
+  parseProfileAxisMode,
+  type ProfileAxisMode,
+} from '../components/FlightProfile'
 import { SessionTimeline } from '../components/SessionTimeline'
 import type { RadarMapHandle } from '../components/RadarMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
@@ -129,6 +134,7 @@ export function restoredTrackState(search: string) {
     selectedSessionIds,
     replayTime: Number.isFinite(replayTime) ? replayTime : null,
     resolution,
+    profileAxis: parseProfileAxisMode(params.get('profile')),
   }
 }
 
@@ -138,12 +144,14 @@ export function historyUrl(
   selectedSessionIds: string[],
   replayTime: number | null,
   resolution: Resolution,
+  profileAxis: ProfileAxisMode = defaultProfileAxisMode,
 ) {
   const params = new URLSearchParams(filtersSearch(filters).replace(/^\?/, ''))
   if (sort !== defaultSessionSort) params.set('sort', sort)
   for (const id of selectedSessionIds.slice(0, 8)) params.append('session', id)
   if (replayTime != null) params.set('replay', new Date(replayTime).toISOString())
   if (resolution !== 'auto') params.set('resolution', resolution)
+  if (profileAxis !== defaultProfileAxisMode) params.set('profile', profileAxis)
   const query = params.toString()
   return `/history${query ? `?${query}` : ''}`
 }
@@ -261,6 +269,7 @@ export function HistoryPage() {
   const [trackError, setTrackError] = useState<string | null>(null)
   const [searchNotice, setSearchNotice] = useState<string | null>(null)
   const [resolution, setResolution] = useState<Resolution>('auto')
+  const [profileAxis, setProfileAxis] = useState<ProfileAxisMode>(defaultProfileAxisMode)
   const [replayTime, setReplayTime] = useState<number | null>(null)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(5)
@@ -468,6 +477,7 @@ export function HistoryPage() {
         configuration.selectedSessionIds,
         configuration.replayTime,
         configuration.resolution,
+        configuration.profileAxis,
       ),
       // The default view is where the page starts, so it replaces the entry
       // rather than leaving Back pointing at a view nobody asked for.
@@ -498,6 +508,7 @@ export function HistoryPage() {
     setAppliedFilters(next)
     setSort(nextSort)
     setResolution(restored.resolution)
+    setProfileAxis(restored.profileAxis)
     void search(next, nextSort)
     restoreAbortRef.current?.abort()
     const controller = new AbortController()
@@ -535,7 +546,7 @@ export function HistoryPage() {
     setAppliedFilters(filters)
     // A new search drops the selection, but keeps how the results are ordered
     // and how finely they are sampled — both are choices about the search.
-    const nextUrl = historyUrl(filters, sort, [], null, resolution)
+    const nextUrl = historyUrl(filters, sort, [], null, resolution, profileAxis)
     const nextSearch = nextUrl.slice('/history'.length)
     if (routeSearch === nextSearch) void search(filters, sort)
     else navigate(nextUrl)
@@ -695,9 +706,10 @@ export function HistoryPage() {
         selectedTracks.map((track) => track.session.id),
         replayTimeRef.current,
         resolution,
+        profileAxis,
       ),
     )
-  }, [appliedFilters, resolution, selectedTracks, sort])
+  }, [appliedFilters, profileAxis, resolution, selectedTracks, sort])
   const writeUrlRef = useRef(writeUrl)
   writeUrlRef.current = writeUrl
 
@@ -707,7 +719,7 @@ export function HistoryPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => writeUrlRef.current(), 300)
     return () => window.clearTimeout(timer)
-  }, [appliedFilters, resolution, selectedTracks, sort])
+  }, [appliedFilters, profileAxis, resolution, selectedTracks, sort])
 
   // A playing replay is persisted on a fixed interval, and once more when it
   // stops, so the address bar stays close to the visible position without
@@ -1017,6 +1029,7 @@ export function HistoryPage() {
             selectedSessionIds: selectedTracks.map((track) => track.session.id),
             resolution,
             replayTime,
+            profileAxis,
             mapLayers,
             viewport: historyMapRef.current?.getViewport() ?? null,
           })}
@@ -1086,7 +1099,11 @@ export function HistoryPage() {
 
           {focusedTrack ? (
             <FlightProfile
-              track={focusedTrack}
+              tracks={selectedTracks}
+              focusedTrackId={focusedTrackId}
+              onFocusTrack={setFocusedTrackId}
+              axisMode={profileAxis}
+              onAxisModeChange={setProfileAxis}
               colourMode={trackColourMode}
               replayTime={replayTime}
               onReplayTime={(time) => {

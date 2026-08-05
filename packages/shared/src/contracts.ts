@@ -507,7 +507,13 @@ export const historySavedViewConfigurationSchema = savedViewBaseSchema
     sort: sessionSortSchema,
     selectedSessionIds: z.array(z.string().uuid()).max(8),
     resolution: z.enum(["auto", "1s", "5s", "15s", "60s"]),
-    replayTime: z.number().finite().nonnegative().nullable()
+    replayTime: z.number().finite().nonnegative().nullable(),
+    /**
+     * How the flight profile lays out its x axis when several tracks are
+     * overlaid. Defaulted rather than required, so a view saved before
+     * comparison existed still parses.
+     */
+    profileAxis: z.enum(["absolute", "aligned"]).default("absolute")
   })
   .strict();
 

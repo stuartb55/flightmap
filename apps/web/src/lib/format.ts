@@ -240,6 +240,23 @@ export function formatDuration(start: string, end: string | null): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
+/**
+ * Time since a series began, for an axis that has been aligned on start. It is
+ * a difference rather than a clock reading, so it carries no time zone and
+ * keeps seconds: aligned approach profiles are compared at a scale where a
+ * minute-resolution label says nothing.
+ */
+export function formatElapsed(milliseconds: number | null | undefined): string {
+  if (milliseconds == null || !Number.isFinite(milliseconds)) return '—'
+  const total = Math.max(0, Math.round(milliseconds / 1000))
+  const seconds = `${total % 60}`.padStart(2, '0')
+  const minutes = Math.floor(total / 60) % 60
+  const hours = Math.floor(total / 3600)
+  return hours
+    ? `+${hours}:${`${minutes}`.padStart(2, '0')}:${seconds}`
+    : `+${minutes}:${seconds}`
+}
+
 export function formatBytes(value: number | null | undefined): string {
   if (value == null) return '—'
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`

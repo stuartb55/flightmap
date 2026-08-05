@@ -424,8 +424,50 @@ test('restores selected history tracks, replay position, and exports after refre
   await second.click()
   const timeline = page.getByRole('region', { name: 'Session timeline' })
   await expect(timeline.locator('.timeline-lane')).toHaveCount(2)
+
+  /*
+   * A second track also turns the profile into a comparison: one line per
+   * series, each with its own dash so the two are told apart without relying
+   * on colour, and an axis that can be aligned on each track's own start —
+   * which is the only way two approaches are comparable.
+   */
+  const profile = page.getByRole('region', { name: 'Flight profile and event timeline' })
+  const comparisonLines = profile.locator('path.profile-line.comparison')
+  await expect(profile.locator('.profile-series-legend li')).toHaveCount(2)
+  await expect(comparisonLines).toHaveCount(2)
+  expect(
+    await comparisonLines.evaluateAll(
+      (paths) =>
+        new Set(paths.map((path) => (path as SVGPathElement).style.strokeDasharray)).size,
+    ),
+  ).toBe(2)
+  await expect(profile.getByRole('button', { name: 'Absolute time' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await profile.getByRole('button', { name: 'Align on start' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('profile')).toBe('aligned')
+  // Every series keeps its own keyboard-reachable table of what it plots, and
+  // the tables follow the axis the chart is drawn on.
+  const disclosures = profile.locator('details.chart-data-table > summary')
+  await expect(disclosures).toHaveCount(2)
+  for (const disclosure of await disclosures.all()) await disclosure.click()
+  await expect(profile.getByRole('table', { name: /Flight profile values/ })).toHaveCount(2)
+  await expect(profile.locator('table thead th').first()).toHaveText('Elapsed')
+  // The themed sweep above only ever sees History with nothing selected, so
+  // the comparison markup is checked where it actually appears.
+  const profileAudit = await new AxeBuilder({ page }).include('.flight-profile').analyze()
+  expect(
+    profileAudit.violations.filter((violation) =>
+      ['serious', 'critical'].includes(violation.impact ?? ''),
+    ),
+  ).toEqual([])
+
   await second.click()
   await expect(timeline).toBeHidden()
+  // One track has nothing to compare with, so the axis control stands down —
+  // but the choice is still in the URL, and survives the reload below.
+  await expect(profile.getByRole('button', { name: 'Align on start' })).toBeHidden()
 
   const downloadPromise = page.waitForEvent('download')
   await tray.getByRole('link', { name: /telemetry as CSV/ }).first().click()
@@ -444,6 +486,7 @@ test('restores selected history tracks, replay position, and exports after refre
   await expect(page.getByRole('region', { name: 'Selected tracks' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: /Pause replay|Play replay/ })).toBeVisible()
   await expect(page.getByLabel('Sort sessions')).toHaveValue('closest_asc')
+  expect(new URL(page.url()).searchParams.get('profile')).toBe('aligned')
 })
 
 test('filters, compares, saves, restores, and exports Insights views', async ({ page }, testInfo) => {

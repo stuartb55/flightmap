@@ -12,6 +12,7 @@ import {
   formatDateTimeInput,
   formatDistance,
   formatDuration,
+  formatElapsed,
   formatSpeed,
   formatTime,
   formatVerticalRate,
@@ -85,6 +86,15 @@ describe('value formatting', () => {
     expect(formatDuration('2026-07-29T12:00:00.000Z', '2026-07-29T12:45:00.000Z')).toBe('45m')
     expect(formatDuration('2026-07-29T10:00:00.000Z', '2026-07-29T12:45:00.000Z')).toBe('2h 45m')
     expect(formatDuration('nonsense', null)).toBe('—')
+    // Elapsed is a difference, not a clock reading: no time zone, and
+    // seconds kept, because aligned approach profiles are compared at that
+    // scale.
+    expect(formatElapsed(0)).toBe('+0:00')
+    expect(formatElapsed(95_000)).toBe('+1:35')
+    expect(formatElapsed(3_723_000)).toBe('+1:02:03')
+    expect(formatElapsed(-5_000)).toBe('+0:00')
+    expect(formatElapsed(Number.NaN)).toBe('—')
+    expect(formatElapsed(null)).toBe('—')
     expect(formatBytes(2_048)).toBe('2.0 KB')
     expect(formatBytes(5 * 1024 ** 2)).toBe('5.0 MB')
     expect(formatBytes(3 * 1024 ** 3)).toBe('3.0 GB')
