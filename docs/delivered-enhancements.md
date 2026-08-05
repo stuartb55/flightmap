@@ -1,10 +1,11 @@
-# Delivered UX enhancements — phases 1 and 2
+# Delivered UX enhancements — phases 1 to 3
 
-The first two phases of the post-v1 user-experience backlog, delivered in full.
+The delivered phases of the post-v1 user-experience backlog: tiers 0, 1 and 2 in
+full.
 Items are kept here in their original form as the record of what was specified
 and accepted; the code is the reference for how it behaves today.
 
-The remaining backlog lives in [`../plan.md`](../plan.md). The original v1 build
+What remains — the two tier-3 bets — lives in [`../plan.md`](../plan.md). The original v1 build
 specification is [`v1-build-plan.md`](v1-build-plan.md).
 
 Effort key: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3–5 days.
@@ -639,9 +640,199 @@ GeoJSON only.
 
 ---
 
+## Phase 3 — the rest of tier 2
+
+The last two tier-2 items. Both added data to a server path and each took its own
+release. Item 18, in-app help, was dropped before implementation.
+
+### 24. New-to-this-receiver sightings — **M**
+
+- [x] Implement
+
+**Problem.** `aircraft_summary.first_seen_at` is the canonical record of when
+this receiver first heard each airframe (`001_initial.sql:138`), retained
+indefinitely, and nothing in the live UI uses it. Seeing an airframe for the
+first time is the moment most worth noticing, and today you cannot tell.
+
+Note the history: a first-seen *alert* existed and was deliberately removed as
+noise in migration `009_focused_alerts.sql` ("a new ICAO address is routine
+receiver history, not an event requiring attention"). That judgement stands.
+This item is the passive alternative — a marker you can go looking for, never a
+notification, never an `alert_events` row.
+
+**Approach.** The plumbing is half built already, which shrinks the server side
+of this item and pins down exactly where the edits go:
+
+- `Aircraft.firstSeenAt` already exists on the client type (`types.ts:70`);
+- the detail adapter populates it from the summary (`adapters.ts:230`), and
+  `AircraftDetailPanel.tsx:418` already prefers `summary?.firstSeenAt ??
+  aircraft.firstSeenAt`;
+- the live adapter hardcodes `firstSeenAt: null` (`adapters.ts:82`) because the
+  live payload does not carry it.
+
+So: add one more `LEFT JOIN aircraft_summary` to the snapshot query
+(`live-repository.ts:57` already joins `watchlist`, `alert_events`, and
+`aircraft_metadata` in a single statement, so this costs a join, not a round
+trip), add `firstSeenAt` to `liveAircraftSchema` (`contracts.ts:44`–`:87`) as a
+nullable ISO timestamp, and replace the hardcoded `null` in the live adapter.
+
+*Why the client derives "new", not the server.* `LiveAircraftDiff` suppresses
+rows whose `JSON.stringify` is byte-identical to the previous tick
+(`aircraft-diff.ts:16`). A static `firstSeenAt` rides along on rows already being
+sent and changes nothing; a server-computed `isNew`, or anything relative to
+`now`, would flip and push otherwise-unchanged rows onto the wire every second.
+Cover this with a diff test that runs two identical snapshots carrying
+`firstSeenAt` and asserts the second yields no rows.
+
+*Threshold preference.* Off / since this session started / last 24 hours / last
+7 days, defaulting to *since this session started*. Store it in a new
+`apps/web/src/lib/sighting-preferences.ts` following the `unit-preferences.ts`
+pattern, and fail safe on corrupt storage. "Since this session started" needs an
+anchor that survives a reload but not a new tab-session: write the timestamp to
+`sessionStorage` on first mount and read it from there.
+
+*Filter.* Add `newOnly: boolean` to `AircraftFilters`
+(`aircraft-filter.ts:16`) and `defaultAircraftFilters`. The trap: the live saved
+view schema mirrors that object and is `.strict()`
+(`contracts.ts:457`–`:471`), so the new key must be added there with
+`.default(false)` or every previously saved live view fails to parse. Add a
+regression test that parses a saved-view payload without the key.
+
+*Surfaces.* A short text badge ("NEW") in the table's aircraft cell and in the
+detail panel, the filter above, and an optional map emphasis. Emphasis
+precedence where an aircraft is more than one thing: emergency, then alert, then
+watchlist, then new — new sightings must never mask an alert. No sound, no nav
+badge, no alert feed entry.
+
+**Files.** `apps/server/src/db/live-repository.ts`,
+`packages/shared/src/contracts.ts`, `apps/web/src/lib/adapters.ts`,
+`apps/web/src/lib/aircraft-filter.ts`, new
+`apps/web/src/lib/sighting-preferences.ts`, `AircraftTable.tsx`,
+`AircraftFilters.tsx`, `AircraftDetailPanel.tsx`, `RadarMap.tsx` (map emphasis),
+`SettingsPage.tsx` (threshold control), `styles/live.css`.
+
+**Acceptance.**
+- The added join does not measurably slow the 1 Hz snapshot at 1,000 aircraft —
+  asserted against the existing load smoke (`npm run test:load`).
+- The delta payload is unchanged in size and frequency for aircraft whose
+  telemetry has not changed, asserted by the `LiveAircraftDiff` test above.
+- An aircraft with no summary row renders as unknown (`—`), never as "new".
+- A live saved view written before this item still parses, and the filter round
+  trips through save and apply.
+- No `alert_events` row is written under any circumstance, and the alert rule
+  constraint from migration 009 is untouched.
+- The badge meets AA contrast in both themes, is not conveyed by colour alone,
+  and is announced by a screen reader as part of the aircraft's row label.
+- An aircraft that is both new and alerting shows the alert emphasis on the map.
+
+---
+
+### 14. Airport and runway layer — **M**
+
+- [x] Implement
+
+**Problem.** The map shows configurable arrival and departure fixes
+(`apps/server/src/default-waypoints.ts`, `apps/web/src/components/waypoints.ts`)
+but no airports, so tracks converge on nothing visible and a descending approach
+has no context.
+
+**Approach.** Three decisions carry this item.
+
+*Build time, never runtime.* A new CLI beside `metadata-cli.ts` reads an
+OurAirports CSV export (`airports.csv`, `runways.csv`) from a local path or a
+configured URL, filters to a radius of the receiver, and writes the result. It
+runs when an operator asks it to, exactly like `npm run metadata:refresh` does
+today, and the app never fetches airport data at runtime. Add
+`npm run airports:build` alongside the existing script. The CLI must be
+deterministic: same input files and radius, byte-identical output, so a
+regenerated dataset produces a reviewable diff.
+
+*Delivered as an endpoint, not as page config.* `mapWaypoints` reaches the
+client inside the `flightmap-config` meta tag that the server injects into
+`index.html` (`app.ts:249`), URI-encoded. That is fine for 11 waypoints and
+wrong for a few thousand airport and runway records: it would land in every page
+load and in the page cache. Serve the dataset from a new
+`GET /api/v1/airports` with a strong `ETag` and a long `max-age`, add a
+`StaleWhileRevalidate` runtime cache entry for it in `vite.config.ts`, and let
+the layer render empty until the response arrives. The settings row stays the
+source of truth so a deployment can replace or empty it, as with `mapWaypoints`.
+
+*Storage shape.* A `mapAirports` application setting following `mapWaypoints`
+(`settings.ts:55`, `:126`) — an array validated by a new `airportSchema` in
+`packages/shared/src/contracts.ts` carrying ICAO/IATA, name, position, elevation,
+a size or importance rank for label priority, and a runway list of ident plus
+threshold coordinates. Ship the default empty rather than bundling the reference
+deployment's airports into the repository; the CLI populates it. A deployment
+that never runs the CLI sees no layer and no error.
+
+*Rendering.* A new `airports` GeoJSON source and three layers in `RadarMap.tsx`,
+inserted below the aircraft symbol layers so traffic always wins:
+
+- runway centrelines (line) above roughly zoom 11;
+- airport symbols from mid zoom;
+- airport labels with `text-allow-overlap: false` and a `symbol-sort-key` driven
+  by the importance rank, so when two labels collide the major airport survives
+  rather than whichever sorted first.
+
+The layer toggle is a new `airports` key on `mapLayerPreferencesSchema`
+(`contracts.ts:388`). That object is `.strict()`, so the key must carry
+`.default(false)` for the same reason `allTrails` does (`contracts.ts:397`):
+every saved view and every stored preference written before this item must still
+parse. Add it to `defaultMapLayers` (`map-preferences.ts:10`) and to the
+`MapLayerMenu` options list (`MapLayerMenu.tsx:5`).
+
+*Attribution.* OurAirports data is dedicated to the public domain; record the
+source, the export date, and the licence claim in a new `docs/airports.md`, and
+add a credit to the map attribution string (`RadarMap.tsx:840`). The snapshot
+compositor reads its attribution from the rendered control
+(`RadarMap.tsx:836`–`:842`), so exported PNGs pick the credit up with no extra
+work — verify that rather than assume it.
+
+**Files.** New `apps/server/src/airports-cli.ts`, new
+`apps/server/src/default-airports.ts` (empty default plus the type),
+`apps/server/src/settings.ts`, `apps/server/src/routes/api.ts`,
+`packages/shared/src/contracts.ts`, new `apps/web/src/components/airports.ts`
+(GeoJSON assembly, mirroring `waypoints.ts`), `RadarMap.tsx`,
+`MapLayerMenu.tsx`, `apps/web/src/lib/map-preferences.ts`,
+`apps/web/vite.config.ts`, `package.json` (script), new `docs/airports.md`.
+
+**Acceptance.**
+- The layer toggles alongside the others, persists, and is captured in saved
+  views; a saved view written before this item still parses.
+- The payload stays within a stated budget — 250 kB gzipped for a 250 nm radius
+  is the working target. Document the actual figure for the reference deployment
+  in `docs/airports.md`, and assert the endpoint's response size in a test.
+- The dataset is fetched once and served from cache on subsequent loads; the
+  index.html config blob is unchanged in size.
+- Labels declutter: no overlapping airport labels at any zoom, on either theme,
+  and the major airport wins a collision against a nearby airfield.
+- The source and licence are documented and appear in the map attribution and in
+  an exported snapshot.
+- A deployment with no airport data renders no layer, logs nothing, and shows no
+  error; the layer toggle is either hidden or disabled with an explanation.
+- The CLI runs offline against local CSV files and produces identical output on
+  a second run.
+
+**Open questions to settle before starting.**
+- Radius, or a bounding box, or "airports with a runway over N metres" — radius
+  alone pulls in a lot of grass strips.
+- Whether runway data justifies its share of the budget at all, or whether
+  centrelines should be a separate, higher zoom-gated fetch.
+
+**How they were settled.** Radius *and* a size rule, both adjustable on the CLI:
+large and medium airports are kept unconditionally, a small one only with a
+runway over 1,000 m (`--min-runway-ft`), and heliports, seaplane bases and closed
+fields never. Runways earn their place in the same fetch — the reference
+deployment's whole dataset, 137 airports and 175 centrelines, is 41,940 bytes or
+about 9 kB gzipped against a 250 kB budget, so a second zoom-gated request would
+have been complexity for nothing. See [`airports.md`](airports.md).
+
+---
+
 ## Notes on numbering
 
-Items 8, 11, and 19 were dropped before implementation (notifications,
-onboarding, and multi-receiver support) in commit `cf7caf3`. The gaps in the
+Items 8, 11, 18 and 19 were dropped before implementation (notifications,
+onboarding, in-app help, and multi-receiver support); the first three of those in
+commit `cf7caf3` and item 18 in `33f3230`. The gaps in the
 numbering are deliberate: the surviving numbers are stable identifiers used in
 branch names and pull request titles.

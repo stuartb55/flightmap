@@ -1,5 +1,7 @@
-import { mapWaypointSchema } from "@flightmap/shared";
+import { createHash } from "node:crypto";
+import { airportSchema, mapWaypointSchema, type Airport } from "@flightmap/shared";
 import { z } from "zod";
+import { defaultMapAirports } from "./default-airports.js";
 import { defaultMapWaypoints } from "./default-waypoints.js";
 import type { Config } from "./config.js";
 import type { Database } from "./db/database.js";
@@ -53,6 +55,12 @@ const settingsShape = {
       [...new Set(values)].sort((left, right) => left - right)
     ),
   mapWaypoints: z.array(mapWaypointSchema).max(200),
+  /**
+   * Written by `npm run airports:build`, not by hand. The ceiling is well above
+   * what a 250 nm radius produces and is here so a malformed import cannot put
+   * an unbounded blob in the settings row.
+   */
+  mapAirports: z.array(airportSchema).max(4_000),
   historyRetentionDays: z.number().int().min(1).max(365),
   sessionGapSeconds: z.number().int().min(60).max(3_600),
   currentAircraftTtlSeconds: z.number().int().min(15).max(3_600),
@@ -80,6 +88,18 @@ const settingsShape = {
   maintenanceEnabled: z.boolean(),
   metadataUpdatesEnabled: z.boolean()
 };
+
+/**
+ * Settings are handed out as copies so a caller cannot mutate what is stored.
+ * Airports nest one level deeper than waypoints, so the runway array has to be
+ * copied too or the copy shares it.
+ */
+function cloneAirports(airports: readonly Airport[]): Airport[] {
+  return airports.map((airport) => ({
+    ...airport,
+    runways: airport.runways.map((runway) => ({ ...runway }))
+  }));
+}
 
 function coordinatesConfiguredTogether(
   settings: {
@@ -124,6 +144,7 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   mapStyleUrlLight: "https://tiles.openfreemap.org/styles/bright",
   rangeRingsNm: [5, 10, 25, 50, 100],
   mapWaypoints: [...defaultMapWaypoints],
+  mapAirports: [...defaultMapAirports],
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,
@@ -150,8 +171,27 @@ export class AppSettingsService {
   private updatedAt: string | null = null;
   private loaded = false;
   private readonly runtimeConfigs = new Set<Record<string, unknown>>();
+  private airports: { body: string; etag: string } | null = null;
 
   constructor(private readonly database: Database) {}
+
+  /**
+   * The airport dataset as it goes on the wire, serialised once per change
+   * rather than once per request. It is the largest thing this service holds
+   * and the endpoint serving it is meant to be answered from cache, so the
+   * common case should be an ETag comparison and nothing else.
+   *
+   * The ETag is over the body, so a rebuild that happens to produce identical
+   * bytes does not invalidate anyone's cached copy.
+   */
+  airportsPayload(): { body: string; etag: string } {
+    this.airports ??= (() => {
+      const body = JSON.stringify({ items: this.current.mapAirports });
+      const digest = createHash("sha256").update(body).digest("base64url");
+      return { body, etag: `"${digest.slice(0, 27)}"` };
+    })();
+    return this.airports;
+  }
 
   /** False until persisted settings have been read; boot serves defaults. */
   isLoaded(): boolean {
@@ -190,7 +230,8 @@ export class AppSettingsService {
       settings: {
         ...this.current,
         rangeRingsNm: [...this.current.rangeRingsNm],
-        mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint }))
+        mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint })),
+        mapAirports: cloneAirports(this.current.mapAirports)
       },
       updatedAt: this.updatedAt
     };
@@ -201,7 +242,8 @@ export class AppSettingsService {
       ...bootConfig,
       ...this.current,
       rangeRingsNm: [...this.current.rangeRingsNm],
-      mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint }))
+      mapWaypoints: this.current.mapWaypoints.map((waypoint) => ({ ...waypoint })),
+      mapAirports: cloneAirports(this.current.mapAirports)
     };
     this.runtimeConfigs.add(config);
     return config;
@@ -230,10 +272,12 @@ export class AppSettingsService {
   /** Runtime configs are handed out as live objects and updated in place. */
   private apply(settings: AppSettings): void {
     this.current = settings;
+    this.airports = null;
     for (const config of this.runtimeConfigs) {
       Object.assign(config, settings, {
         rangeRingsNm: [...settings.rangeRingsNm],
-        mapWaypoints: settings.mapWaypoints.map((waypoint) => ({ ...waypoint }))
+        mapWaypoints: settings.mapWaypoints.map((waypoint) => ({ ...waypoint })),
+        mapAirports: cloneAirports(settings.mapAirports)
       });
     }
   }

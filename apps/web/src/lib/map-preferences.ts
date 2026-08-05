@@ -13,6 +13,9 @@ export const defaultMapLayers: MapLayerPreferences = {
   aircraftLabels: true,
   trails: true,
   allTrails: false,
+  // Off by default because most deployments have no airport data until an
+  // operator runs `npm run airports:build`.
+  airports: false,
   manchesterWaypoints: true,
 }
 

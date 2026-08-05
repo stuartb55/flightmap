@@ -80,6 +80,24 @@ export async function registerApiRoutes(
 
   app.get("/api/v1/settings", async () => settings.get());
 
+  /*
+   * The airport dataset, served on its own rather than injected into the page.
+   *
+   * The strong ETag is what does the work: the body is transferred once and
+   * every later request is a conditional one answered with 304 and no body. The
+   * max-age is deliberately short rather than a day, because the URL carries no
+   * content hash — an operator who has just rebuilt the dataset should see it
+   * within minutes, not tomorrow, and the service worker's StaleWhileRevalidate
+   * entry means nobody waits for that revalidation either way.
+   */
+  app.get("/api/v1/airports", async (request, reply) => {
+    const { body, etag } = settings.airportsPayload();
+    reply.header("cache-control", "public, max-age=300, must-revalidate");
+    reply.header("etag", etag);
+    if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+    return reply.type("application/json; charset=utf-8").send(body);
+  });
+
   app.patch("/api/v1/settings", async (request) => {
     const response = await settings.update(request.body ?? {});
     await applyRuntimeSettings();

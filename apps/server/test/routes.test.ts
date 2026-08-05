@@ -63,6 +63,10 @@ function dependencies() {
         settings: { receiverName: "Home receiver" },
         updatedAt: null
       }),
+      airportsPayload: vi.fn().mockReturnValue({
+        body: '{"items":[]}',
+        etag: '"airports-etag"'
+      }),
       update: vi.fn().mockResolvedValue({
         settings: { receiverName: "Roof receiver" },
         updatedAt: "2026-07-29T12:00:00.000Z"
@@ -575,6 +579,61 @@ describe("web application delivery", () => {
       await rm(webDirectory, { recursive: true, force: true });
     }
   });
+
+  /*
+   * The airport dataset must not reach the page. This blob is URI-encoded into
+   * every page load and into the page cache; eleven waypoints belong in it and
+   * a few thousand airport records do not. The endpoint exists for that reason,
+   * so this is the assertion that keeps them apart.
+   */
+  it("keeps the airport dataset out of the injected page config", async () => {
+    const webDirectory = await mkdtemp(join(tmpdir(), "flightmap-web-"));
+    await writeFile(
+      join(webDirectory, "index.html"),
+      "<html><head></head><body></body></html>"
+    );
+    const airports = Array.from({ length: 400 }, (_, index) => ({
+      icao: `EG${index.toString().padStart(2, "0")}`,
+      iata: null,
+      name: `Aerodrome number ${index}`,
+      latitude: 53.4,
+      longitude: -2.3,
+      elevationFt: 250,
+      rank: 2,
+      runways: []
+    }));
+
+    const withAirports = async (mapAirports: unknown[]) => {
+      const server = await buildApp({
+        config: {
+          ...loadConfig({
+            NODE_ENV: "test",
+            SERVE_WEB: "true",
+            WEB_DIST_DIR: webDirectory
+          }),
+          mapAirports
+        } as never,
+        dependencies: dependencies() as never,
+        logger: false
+      });
+      try {
+        return (await server.inject("/")).body;
+      } finally {
+        await server.close();
+      }
+    };
+
+    try {
+      const empty = await withAirports([]);
+      const populated = await withAirports(airports);
+
+      expect(populated.length).toBe(empty.length);
+      expect(populated).not.toContain("Aerodrome");
+      expect(decodeURIComponent(populated)).not.toContain("mapAirports");
+    } finally {
+      await rm(webDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("cursor validation", () => {
@@ -598,5 +657,47 @@ describe("cursor validation", () => {
           : repository.alerts({ limit: 50, cursor });
     await expect(promise).rejects.toMatchObject({ code: "INVALID_CURSOR" });
     expect(database.query).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * The airport dataset is served on its own endpoint precisely so it stays out
+ * of every page load, and it is meant to be answered from cache. The headers
+ * are what make that true, so they are the contract worth pinning.
+ */
+describe("the airport dataset endpoint", () => {
+  it("serves the dataset with a strong ETag and a revalidating max-age", async () => {
+    const server = await app();
+    const response = await server.inject("/api/v1/airports");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["etag"]).toBe('"airports-etag"');
+    expect(response.headers["cache-control"]).toBe(
+      "public, max-age=300, must-revalidate"
+    );
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.json()).toEqual({ items: [] });
+  });
+
+  it("answers a matching If-None-Match with 304 and no body", async () => {
+    const server = await app();
+    const response = await server.inject({
+      url: "/api/v1/airports",
+      headers: { "if-none-match": '"airports-etag"' }
+    });
+
+    expect(response.statusCode).toBe(304);
+    expect(response.body).toBe("");
+  });
+
+  it("sends the dataset again when the client holds a stale ETag", async () => {
+    const server = await app();
+    const response = await server.inject({
+      url: "/api/v1/airports",
+      headers: { "if-none-match": '"an-older-build"' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ items: [] });
   });
 });

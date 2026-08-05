@@ -23,7 +23,9 @@
     "db:maintenance": "node dist/maintenance-cli.js",
     "db:maintenance:dev": "tsx src/maintenance-cli.ts",
     "metadata:refresh": "node dist/metadata-cli.js",
-    "metadata:refresh:dev": "tsx src/metadata-cli.ts"
+    "metadata:refresh:dev": "tsx src/metadata-cli.ts",
+    "airports:build": "node dist/airports-cli.js",
+    "airports:build:dev": "tsx src/airports-cli.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.2",

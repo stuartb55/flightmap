@@ -666,6 +666,20 @@
   accent-color: var(--accent);
 }
 
+/*
+ * A layer this deployment has no data for. The label keeps full contrast so the
+ * reason stays readable — it is the useful part — while the control itself
+ * shows it cannot be operated.
+ */
+.map-layer-menu label.layer-unavailable strong {
+  color: var(--muted-bright);
+}
+
+.map-layer-menu label.layer-unavailable input {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .map-layer-menu > p {
   margin: 0;
   padding: 9px 12px;
@@ -1261,6 +1275,11 @@
 .map-waypoint-key i.departure {
   border-color: var(--hue-21);
   background: rgb(var(--accent-rgb) / 0.16);
+}
+
+.map-waypoint-key i.airport {
+  border-color: var(--muted-bright);
+  background: rgb(var(--line-pale-rgb) / 0.2);
 }
 
 .map-waypoint-key i.new-sighting {

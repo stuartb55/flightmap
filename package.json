@@ -24,7 +24,8 @@
     "test:load": "node infra/scripts/load-smoke.mjs",
     "db:migrate": "npm run db:migrate -w @flightmap/server",
     "db:maintenance": "npm run db:maintenance -w @flightmap/server",
-    "metadata:refresh": "npm run metadata:refresh -w @flightmap/server"
+    "metadata:refresh": "npm run metadata:refresh -w @flightmap/server",
+    "airports:build": "npm run airports:build -w @flightmap/server"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@^7.0.2",

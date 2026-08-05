@@ -14,3 +14,21 @@ describe('map layer preferences', () => {
     )
   })
 })
+
+/*
+ * `mapLayerPreferencesSchema` is strict, so every key added after the original
+ * set has to carry a default or a preference written before it stops parsing
+ * and the reader silently loses every other choice they had made.
+ */
+describe('layer keys added after the original set', () => {
+  it('accepts a stored preference written before the airport layer existed', () => {
+    const { airports, ...beforeAirports } = defaultMapLayers
+    expect(airports).toBe(false)
+    expect(readMapLayers({ getItem: () => JSON.stringify({ ...beforeAirports, coverage: true }) }))
+      .toEqual({ ...defaultMapLayers, coverage: true })
+  })
+
+  it('keeps the airport layer off by default, since most deployments have no data', () => {
+    expect(defaultMapLayers.airports).toBe(false)
+  })
+})

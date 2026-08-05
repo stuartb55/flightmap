@@ -406,6 +406,9 @@ export const mapLayerPreferencesSchema = z
     // stored preferences written before it still parse, rather than every one
     // of them failing this strict object for a missing key.
     allTrails: z.boolean().default(false),
+    // Added with the airport layer, and defaulted for the same reason: every
+    // saved view and stored preference written before it must still parse.
+    airports: z.boolean().default(false),
     // Named for the reference deployment; the waypoints themselves are
     // configuration. Renaming would invalidate every persisted saved view.
     manchesterWaypoints: z.boolean()
@@ -440,6 +443,52 @@ export const mapWaypointSchema = z
     longitude: z.number().min(-180).max(180)
   })
   .strict();
+
+/**
+ * One runway, as a centreline between its two threshold coordinates. Both ends
+ * are needed because a centreline is the only part of an airport that says
+ * which way traffic is pointing; a single airport point cannot.
+ */
+export const airportRunwaySchema = z
+  .object({
+    /** Paired designators as published, e.g. "05L/23R". */
+    ident: z.string().trim().min(1).max(16),
+    lengthFt: z.number().int().positive().max(30_000).nullable(),
+    lowLatitude: z.number().min(-90).max(90),
+    lowLongitude: z.number().min(-180).max(180),
+    highLatitude: z.number().min(-90).max(90),
+    highLongitude: z.number().min(-180).max(180)
+  })
+  .strict();
+
+/**
+ * A display-only airport, configured per receiver in the same spirit as
+ * `mapWaypoints`: the deployment owns the list, and the shipped default is
+ * empty. `apps/server/src/airports-cli.ts` populates it from an OurAirports
+ * export; see `docs/airports.md`.
+ */
+export const airportSchema = z
+  .object({
+    /** ICAO location indicator where one exists, else the OurAirports ident. */
+    icao: z.string().trim().min(2).max(8),
+    iata: z.string().trim().length(3).nullable(),
+    name: z.string().trim().min(1).max(80),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    elevationFt: z.number().int().min(-2_000).max(30_000).nullable(),
+    /**
+     * 3 for a large airport, 2 medium, 1 small. Drives `symbol-sort-key`, so
+     * when two labels collide the major airport is the one that survives
+     * rather than whichever happened to sort first.
+     */
+    rank: z.number().int().min(1).max(3),
+    runways: z.array(airportRunwaySchema).max(16)
+  })
+  .strict();
+
+export const airportsResponseSchema = z.object({
+  items: z.array(airportSchema)
+});
 
 export const mapDisplayPreferencesSchema = z.object({
   trailMinutes: z.union([z.literal(1), z.literal(5), z.literal(15), z.literal(30)]).default(15),
@@ -1177,6 +1226,9 @@ export type InsightSeriesPoint = z.infer<typeof insightSeriesPointSchema>;
 export type InsightLeader = z.infer<typeof insightLeaderSchema>;
 export type InsightMetrics = z.infer<typeof insightMetricsSchema>;
 export type MapWaypoint = z.infer<typeof mapWaypointSchema>;
+export type Airport = z.infer<typeof airportSchema>;
+export type AirportRunway = z.infer<typeof airportRunwaySchema>;
+export type AirportsResponse = z.infer<typeof airportsResponseSchema>;
 export type InsightOverview = z.infer<typeof insightOverviewSchema>;
 export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<

@@ -41,6 +41,7 @@ import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-ban
 import { aircraftLabel, formatAltitude, formatDateTime } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { useNewSightingCutoff } from '../lib/sighting-preferences'
+import { useAirports } from '../lib/use-airports'
 import { useSearchParams } from '../lib/router'
 import { useModalFocus } from '../lib/use-modal-focus'
 import { useAppCommands } from '../lib/app-commands'
@@ -81,6 +82,7 @@ function storedFilters(): AircraftFilterState {
 export function LivePage() {
   const units = useUnitPreferences()
   const newSince = useNewSightingCutoff()
+  const airports = useAirports()
   const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
   const dispatch = useLiveDispatch()
@@ -606,6 +608,7 @@ export function LivePage() {
           mapDisplay={mapDisplay}
           onMapDisplayChange={setMapDisplay}
           coverageCells={coverage.cells}
+          airports={airports}
           trails={mapLayers.allTrails ? trails : undefined}
           initialViewport={sharedViewport}
           bottomInset={mapBottomInset}
