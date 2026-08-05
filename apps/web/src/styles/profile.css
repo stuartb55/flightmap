@@ -155,9 +155,17 @@
 .range-sector { fill: transparent; stroke: none; cursor: pointer; }
 .range-sector:hover { fill: rgb(var(--accent-rgb) / 0.16); }
 .range-sector.selected { fill: rgb(var(--accent-rgb) / 0.28); stroke: var(--accent); stroke-width: 1.5; }
-.range-sector:focus-visible { fill: rgb(var(--accent-rgb) / 0.22); outline: 3px solid var(--text); outline-offset: -2px; }
+/* An `outline` on an SVG path is drawn around its bounding box, which for a
+   five-degree wedge is a rectangle several times its size — the browser's own
+   ring included. It is suppressed on focus of any kind and replaced with a
+   stroke, which follows the shape it belongs to. */
+.range-sector:focus { outline: none; }
+.range-sector:focus-visible { fill: rgb(var(--accent-rgb) / 0.22); stroke: var(--text); stroke-width: 2.5; }
 .range-median { fill: rgb(var(--blue-rgb) / 0.12); stroke: var(--blue); stroke-width: 1.5; }
 .range-profile-summary > p { display: flex; align-items: center; gap: 7px; color: var(--muted-bright); }
+/* Two notes now sit here — availability and the sector drill-down — and inline
+   `small` runs them into one sentence. */
+.range-profile-summary > small { display: block; margin-top: 9px; }
 .range-profile-summary i { width: 18px; height: 3px; background: var(--accent); }
 .range-profile-summary i.median { background: var(--blue); }
 .range-profile-summary ol { margin: 8px 0 14px; padding: 0; list-style: none; }

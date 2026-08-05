@@ -401,6 +401,25 @@ export const mapLayerPreferencesSchema = z
   })
   .strict();
 
+/**
+ * Which series the Insights activity chart draws. Every one defaults to shown,
+ * so a stored preference or a saved view written before the toggles existed
+ * parses to the chart as it was.
+ */
+export const insightSeriesPreferencesSchema = z
+  .object({
+    reports: z.boolean().default(true),
+    positionedReports: z.boolean().default(true),
+    receiverAvailability: z.boolean().default(true)
+  })
+  .strict();
+
+export const defaultInsightSeries: InsightSeriesPreferences = {
+  reports: true,
+  positionedReports: true,
+  receiverAvailability: true
+};
+
 /** A display-only reference point, configured per receiver. */
 export const mapWaypointSchema = z
   .object({
@@ -532,7 +551,9 @@ export const insightsSavedViewConfigurationSchema = savedViewBaseSchema
     bucket: z.enum(["hour", "day"]),
     preset: z.enum(["today", "24h", "7d", "30d", "custom"]),
     sort: z.literal("reports_desc"),
-    compare: z.boolean()
+    compare: z.boolean(),
+    /** Defaulted so a view saved before the toggles existed still parses. */
+    series: insightSeriesPreferencesSchema.default(defaultInsightSeries)
   })
   .strict();
 
@@ -1124,6 +1145,9 @@ export type DismissAlertsResponse = z.infer<
 >;
 export type WatchlistResponse = z.infer<typeof watchlistResponseSchema>;
 export type MapLayerPreferences = z.infer<typeof mapLayerPreferencesSchema>;
+export type InsightSeriesPreferences = z.infer<
+  typeof insightSeriesPreferencesSchema
+>;
 export type MapDisplayPreferences = z.infer<typeof mapDisplayPreferencesSchema>;
 export type MapViewport = z.infer<typeof mapViewportSchema>;
 export type SavedViewConfiguration = z.infer<

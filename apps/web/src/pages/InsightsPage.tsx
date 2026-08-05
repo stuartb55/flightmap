@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CoverageCell,
   CoverageCellDetailResponse,
@@ -6,6 +6,7 @@ import type {
   InsightLeader,
   InsightOverview,
   InsightPatternsResponse,
+  InsightSeriesPreferences,
   RangeProfileResponse,
   ReceiverRecord,
   ReceiverRecordKind,
@@ -53,6 +54,7 @@ import {
   useUnitPreferences,
 } from '../lib/unit-preferences'
 import { useMapLayers } from '../lib/map-preferences'
+import { useInsightSeries } from '../lib/insight-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
 import { Link, useLocation } from '../lib/router'
@@ -88,7 +90,26 @@ function seriesLabel(point: InsightSeriesPoint, bucket: 'hour' | 'day') {
       )
 }
 
-function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSelect: (point: InsightSeriesPoint) => void }) {
+/*
+ * The three things the activity chart plots. Reports and positioned reports
+ * share the report scale; availability is a percentage drawn against the full
+ * height, which is why it is a line rather than a fourth bar.
+ */
+const seriesLabels: Record<keyof InsightSeriesPreferences, string> = {
+  reports: 'Reports',
+  positionedReports: 'Positioned reports',
+  receiverAvailability: 'Receiver availability',
+}
+
+function ActivityChart({
+  overview,
+  series,
+  onSelect,
+}: {
+  overview: InsightOverview
+  series: InsightSeriesPreferences
+  onSelect: (point: InsightSeriesPoint) => void
+}) {
   const width = 760
   const height = 220
   const chartTop = 18
@@ -100,15 +121,17 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
     (best, point) => (!best || point.reports > best.reports ? point : best),
     null,
   )
-  const availabilityPoints = overview.series.flatMap((point, index) =>
-    point.receiverAvailabilityPercent == null
-      ? []
-      : [{
-          x: index * barSpace + barSpace / 2,
-          y: chartBottom - (point.receiverAvailabilityPercent / 100) * (chartBottom - chartTop),
-          value: point.receiverAvailabilityPercent,
-        }],
-  )
+  const availabilityPoints = !series.receiverAvailability
+    ? []
+    : overview.series.flatMap((point, index) =>
+        point.receiverAvailabilityPercent == null
+          ? []
+          : [{
+              x: index * barSpace + barSpace / 2,
+              y: chartBottom - (point.receiverAvailabilityPercent / 100) * (chartBottom - chartTop),
+              value: point.receiverAvailabilityPercent,
+            }],
+      )
 
   return (
     <>
@@ -117,6 +140,13 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
           ? `Busiest ${overview.bucket}: ${seriesLabel(busiest, overview.bucket)}, with ${busiest.reports.toLocaleString('en-GB')} reports from ${busiest.uniqueAircraft.toLocaleString('en-GB')} aircraft.`
           : 'No activity was recorded in this range.'}
       </p>
+      {!series.reports && !series.positionedReports && !series.receiverAvailability ? (
+        // Empty axes look like a failed request. Say which it is.
+        <p className="chart-summary" role="status">
+          Every series is hidden. Choose one above to draw the chart; the data table below still
+          lists every value.
+        </p>
+      ) : null}
       {overview.series.length ? (
         <svg
           className="activity-chart"
@@ -131,25 +161,67 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
             const barHeight = Math.max(1, (point.reports / maxReports) * (chartBottom - chartTop))
             const x = index * barSpace + (barSpace - barWidth) / 2
             const barLabel = `${seriesLabel(point, overview.bucket)}: ${point.reports.toLocaleString('en-GB')} reports, ${point.uniqueAircraft.toLocaleString('en-GB')} aircraft`
+            /*
+             * Positioned reports are a subset of reports, so they are drawn as
+             * a narrower bar inside the same column rather than beside it:
+             * the inset shows the shortfall as a gap, which is the thing worth
+             * seeing. With reports hidden it stands on its own at full width.
+             */
+            const positionedWidth = series.reports ? Math.max(2, barWidth * 0.5) : barWidth
+            const positionedHeight = Math.max(
+              1,
+              (point.positionedReports / maxReports) * (chartBottom - chartTop),
+            )
             return (
-              <rect
-                key={point.bucketStart}
-                x={x}
-                y={chartBottom - barHeight}
-                width={barWidth}
-                height={barHeight}
-                rx="2"
-                className="chart-bar"
-                role="button"
-                tabIndex={0}
-                aria-label={barLabel}
-                onClick={() => onSelect(point)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') onSelect(point)
-                }}
-              >
-                <title>{barLabel}</title>
-              </rect>
+              <g key={point.bucketStart}>
+                {series.reports ? (
+                  <rect
+                    x={x}
+                    y={chartBottom - barHeight}
+                    width={barWidth}
+                    height={barHeight}
+                    rx="2"
+                    className="chart-bar"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={barLabel}
+                    onClick={() => onSelect(point)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                    }}
+                  >
+                    <title>{barLabel}</title>
+                  </rect>
+                ) : null}
+                {series.positionedReports ? (
+                  <rect
+                    x={x + (barWidth - positionedWidth) / 2}
+                    y={chartBottom - positionedHeight}
+                    width={positionedWidth}
+                    height={positionedHeight}
+                    rx="2"
+                    className="chart-bar positioned"
+                    // With reports drawn, the column already carries a button
+                    // and a second one on the same target would be two tab
+                    // stops onto the same drill-down.
+                    {...(series.reports
+                      ? { 'aria-hidden': true }
+                      : {
+                          role: 'button',
+                          tabIndex: 0,
+                          'aria-label': `${seriesLabel(point, overview.bucket)}: ${point.positionedReports.toLocaleString('en-GB')} positioned reports`,
+                          onClick: () => onSelect(point),
+                          onKeyDown: (event: KeyboardEvent<SVGElement>) => {
+                            if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                          },
+                        })}
+                  >
+                    <title>
+                      {`${seriesLabel(point, overview.bucket)}: ${point.positionedReports.toLocaleString('en-GB')} positioned reports`}
+                    </title>
+                  </rect>
+                ) : null}
+              </g>
             )
           })}
           {availabilityPoints.length > 1 ? (
@@ -178,9 +250,15 @@ function ActivityChart({ overview, onSelect }: { overview: InsightOverview; onSe
             ))}
         </svg>
       ) : null}
-      {availabilityPoints.length ? (
-        <p className="chart-legend"><i aria-hidden="true" /> Receiver availability</p>
-      ) : null}
+      <p className="chart-legend">
+        {series.reports ? <span><i className="reports" aria-hidden="true" /> Reports</span> : null}
+        {series.positionedReports ? (
+          <span><i className="positioned" aria-hidden="true" /> Positioned reports</span>
+        ) : null}
+        {availabilityPoints.length ? (
+          <span><i className="availability" aria-hidden="true" /> Receiver availability</span>
+        ) : null}
+      </p>
       <ChartDataTable
         summary="View activity data table"
         caption="Activity chart values"
@@ -486,6 +564,7 @@ export function InsightsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [compare, setCompare] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
+  const [series, setSeries] = useInsightSeries()
   const coverageMapRef = useRef<CoverageMapHandle>(null)
   const coveragePanelRef = useRef<HTMLElement>(null)
 
@@ -497,6 +576,7 @@ export function InsightsPage() {
     setCustomTo(formatDateTimeInput(new Date(configuration.to)))
     setMapLayers(configuration.mapLayers)
     setCompare(configuration.compare)
+    setSeries(configuration.series)
     if (configuration.viewport) {
       const viewport = configuration.viewport
       window.setTimeout(() => coverageMapRef.current?.applyViewport(viewport), 0)
@@ -666,6 +746,7 @@ export function InsightsPage() {
               preset,
               sort: 'reports_desc',
               compare,
+              series,
               mapLayers,
               viewport: coverageMapRef.current?.getViewport() ?? null,
             })}
@@ -778,9 +859,28 @@ export function InsightsPage() {
           ) : (
             <>
               <section className="insight-panel activity-panel">
-                <header><div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div><small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small></header>
+                <header>
+                  <div><span className="eyebrow">ACTIVITY</span><h2>Reports by {overview.bucket}</h2></div>
+                  <div className="preset-tabs" role="group" aria-label="Activity chart series">
+                    {(Object.keys(seriesLabels) as (keyof InsightSeriesPreferences)[]).map((key) => (
+                      <button
+                        type="button"
+                        key={key}
+                        aria-pressed={series[key]}
+                        onClick={() => setSeries({ ...series, [key]: !series[key] })}
+                      >
+                        {seriesLabels[key]}
+                      </button>
+                    ))}
+                  </div>
+                  <small>{formatDateTime(overview.from)} — {formatDateTime(overview.to)}</small>
+                </header>
                 <ReceiverContext series={overview.series} />
-                <ActivityChart overview={overview} onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }} />
+                <ActivityChart
+                  overview={overview}
+                  series={series}
+                  onSelect={(point) => { navigate(`/history?from=${encodeURIComponent(point.bucketStart)}&to=${encodeURIComponent(point.bucketEnd)}`) }}
+                />
               </section>
 
               <section className="insight-panel">

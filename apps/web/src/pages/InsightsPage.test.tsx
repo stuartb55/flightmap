@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
+import { defaultInsightSeries } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InsightsPage, cellsOnBearing, insightRangeForPreset, patternCellHref } from './InsightsPage'
 import { Router } from '../lib/router'
@@ -141,6 +142,9 @@ const records = {
 describe('InsightsPage', () => {
   beforeEach(() => {
     resetSavedViews()
+    // The series toggles persist by design, so each test starts from the
+    // stored default rather than from whatever the previous one chose.
+    localStorage.removeItem('flightmap.insight-series.v1')
     vi.mocked(api.savedViews).mockResolvedValue([])
     window.history.replaceState(null, '', '/insights')
     vi.mocked(api.insightsOverview).mockResolvedValue(overview())
@@ -272,6 +276,7 @@ describe('InsightsPage', () => {
           bucket: 'day',
           preset: '30d',
           sort: 'reports_desc',
+          series: defaultInsightSeries,
           compare: false,
           mapLayers: defaultMapLayers,
           viewport: null,
@@ -289,6 +294,43 @@ describe('InsightsPage', () => {
     expect(api.insightsOverview).toHaveBeenCalledWith(
       expect.objectContaining({ from: '2026-07-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' }),
       expect.any(AbortSignal),
+    )
+  })
+
+  it('applies the series visibility a saved view carries', async () => {
+    vi.mocked(api.savedViews).mockResolvedValue([
+      {
+        id: '2b0b6b9c-2a49-4e6f-9d5a-9f8d1a44e0b3',
+        name: 'Positions only',
+        surface: 'insights',
+        configuration: {
+          surface: 'insights',
+          from: '2026-07-02T00:00:00.000Z',
+          to: '2026-08-01T00:00:00.000Z',
+          bucket: 'day',
+          preset: '30d',
+          sort: 'reports_desc',
+          series: { reports: false, positionedReports: true, receiverAvailability: false },
+          compare: false,
+          mapLayers: defaultMapLayers,
+          viewport: null,
+        },
+        isDefault: true,
+        pinnedAt: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      },
+    ])
+    renderPage()
+    await screen.findByText('1,250')
+    const toggles = screen.getByRole('group', { name: 'Activity chart series' })
+    expect(within(toggles).getByRole('button', { name: 'Reports' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(within(toggles).getByRole('button', { name: 'Positioned reports' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     )
   })
 
@@ -454,6 +496,46 @@ describe('InsightsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all bearings' }))
     await waitFor(() => expect(screen.getByTestId('coverage-map')).toHaveTextContent('2 cells'))
+  })
+
+  it('hides and restores activity series, and remembers the choice', async () => {
+    const { container } = renderPage()
+    await screen.findByText('1,250')
+    const chart = () => container.querySelector('.activity-chart')!
+    const legend = () => container.querySelector('.chart-legend')!
+    const toggles = screen.getByRole('group', { name: 'Activity chart series' })
+    const reports = within(toggles).getByRole('button', { name: 'Reports' })
+    const positioned = within(toggles).getByRole('button', { name: 'Positioned reports' })
+    const availability = within(toggles).getByRole('button', { name: 'Receiver availability' })
+    expect(reports).toHaveAttribute('aria-pressed', 'true')
+    expect(chart().querySelectorAll('.chart-bar.positioned')).toHaveLength(1)
+
+    fireEvent.click(positioned)
+    expect(positioned).toHaveAttribute('aria-pressed', 'false')
+    expect(chart().querySelectorAll('.chart-bar.positioned')).toHaveLength(0)
+    expect(chart().querySelectorAll('.chart-bar')).toHaveLength(1)
+    // The legend follows what is drawn rather than listing every series.
+    expect(legend()).not.toHaveTextContent('Positioned reports')
+    expect(legend()).toHaveTextContent('Receiver availability')
+
+    fireEvent.click(availability)
+    expect(container.querySelector('.receiver-availability-point')).toBeNull()
+
+    fireEvent.click(reports)
+    // Blank axes read as a failed request, so the chart says which it is.
+    expect(screen.getByText(/Every series is hidden/)).toBeInTheDocument()
+    // The values are still reachable regardless of what is drawn.
+    expect(screen.getByText('View activity data table')).toBeInTheDocument()
+
+    // The choice survives a reload.
+    cleanup()
+    renderPage()
+    await screen.findByText('1,250')
+    const restored = screen.getByRole('group', { name: 'Activity chart series' })
+    expect(within(restored).getByRole('button', { name: 'Reports' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
   })
 
   it('keeps the rest of Insights when records are unavailable', async () => {
