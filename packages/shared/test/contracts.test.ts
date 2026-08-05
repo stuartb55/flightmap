@@ -265,4 +265,51 @@ describe("shared contracts", () => {
       })
     ).toThrow();
   });
+
+  it("defaults the history profile axis so views saved before it still load", () => {
+    const legacy = {
+      name: "Two approaches",
+      configuration: {
+        surface: "history",
+        filters: {
+          query: "",
+          icao: "",
+          callsign: "",
+          registration: "",
+          type: "",
+          operator: "",
+          from: "2026-08-01T00:00:00.000Z",
+          to: "2026-08-02T00:00:00.000Z",
+          alert: ""
+        },
+        sort: "started_desc",
+        selectedSessionIds: [],
+        resolution: "auto",
+        replayTime: null,
+        mapLayers: {
+          coverage: false,
+          rangeRings: true,
+          aircraftLabels: true,
+          trails: true,
+          allTrails: false,
+          manchesterWaypoints: true
+        },
+        viewport: null
+      }
+    };
+    expect(savedViewInputSchema.parse(legacy).configuration).toMatchObject({
+      profileAxis: "absolute"
+    });
+    const aligned = {
+      ...legacy,
+      configuration: { ...legacy.configuration, profileAxis: "aligned" }
+    };
+    expect(savedViewInputSchema.parse(aligned)).toEqual(aligned);
+    expect(() =>
+      savedViewInputSchema.parse({
+        ...legacy,
+        configuration: { ...legacy.configuration, profileAxis: "sideways" }
+      })
+    ).toThrow();
+  });
 });

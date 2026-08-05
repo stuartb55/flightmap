@@ -47,10 +47,11 @@
 .profile-grid { stroke-dasharray: 4 5; }
 .profile-line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 /* Comparison drops the unfocused series back so the one the readout and the
-   crosshair are reporting stays the line being read. They are still told apart
-   by their dash pattern, which the opacity does not touch. */
-.profile-line.comparison { stroke-width: 2; opacity: .58; }
-.profile-line.comparison.focused { stroke-width: 3.25; opacity: 1; }
+   crosshair are reporting stays the line being read. Most of that emphasis is
+   stroke width rather than opacity, which costs a line contrast: the dimming
+   itself lives in `comparisonDimming`, where a test holds it above 3:1. */
+.profile-line.comparison { stroke-width: 2; }
+.profile-line.comparison.focused { stroke-width: 3.5; }
 
 .profile-compare-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .profile-axis-tabs { display: flex; gap: 5px; }
@@ -73,7 +74,6 @@
   background: var(--panel-strong);
 }
 .profile-series-legend button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-dim); }
-.profile-series-legend small { color: var(--muted); font-size: var(--type-min); }
 .series-swatch { width: 28px; height: 8px; flex: none; }
 .series-swatch line { stroke-width: 2.5; }
 .profile-compare-note { margin: 8px 0 0; color: var(--muted); font-size: var(--type-min); }

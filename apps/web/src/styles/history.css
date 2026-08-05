@@ -48,6 +48,14 @@
   min-height: 0;
 }
 
+/* Comparing is the one case where giving up height first is the wrong trade:
+   a squeezed panel keeps the readout and loses the chart, and the chart is the
+   only reason to overlay tracks at all. The floor keeps the lines on screen
+   and lets the column scroll instead, which is what it is built to do. */
+.history-map-overlays > .flight-profile.comparing {
+  min-height: min(340px, 45vh);
+}
+
 .history-sidebar {
   position: relative;
   z-index: 10;

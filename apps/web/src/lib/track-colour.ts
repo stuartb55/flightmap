@@ -191,6 +191,14 @@ const identityDashes: ReadonlyArray<{ dash: string; pattern: string }> = [
   { dash: '12 4 2 4 2 4', pattern: 'dash-dot-dot' },
 ]
 
+/**
+ * How far back an unfocused comparison series is drawn. Any dimming costs the
+ * line contrast against what it sits on, so this is the strongest de-emphasis
+ * that leaves every identity colour above 3:1 on both panels — the focused
+ * series carries the rest of the emphasis in its stroke width.
+ */
+export const comparisonDimming = 0.78
+
 /** How one track is drawn when it is being compared against others. */
 export interface TrackIdentity {
   /** The series colour, for its whole length. */

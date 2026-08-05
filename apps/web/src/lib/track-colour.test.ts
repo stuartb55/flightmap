@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { colourSpans, trackColour, trackColourModes, trackIdentity } from './track-colour'
+import {
+  colourSpans,
+  comparisonDimming,
+  trackColour,
+  trackColourModes,
+  trackIdentity,
+} from './track-colour'
 import { altitudeBands } from './altitude-bands'
 import { aviationUnits, metricUnits } from './unit-preferences'
 import type { TrackPoint } from '../types'
@@ -168,6 +174,30 @@ describe('track identity', () => {
       expect(new Set(identities.map((identity) => identity.pattern)).size).toBe(slots.length)
     }
     expect(trackIdentity(0, 'dark').colour).not.toBe(trackIdentity(0, 'light').colour)
+  })
+
+  it('keeps a dimmed series above the threshold it was chosen against', () => {
+    // Dimming is compositing: the line the reader sees is the identity colour
+    // mixed with the panel, and it is that mix which has to clear 3:1.
+    const mix = (hex: string, background: string) =>
+      `#${[1, 3, 5]
+        .map((offset) => {
+          const front = Number.parseInt(hex.slice(offset, offset + 2), 16)
+          const behind = Number.parseInt(background.slice(offset, offset + 2), 16)
+          return Math.round(front * comparisonDimming + behind * (1 - comparisonDimming))
+            .toString(16)
+            .padStart(2, '0')
+        })
+        .join('')}`
+    for (const theme of ['dark', 'light'] as const) {
+      for (const slot of slots) {
+        const identity = trackIdentity(slot, theme)
+        expect(
+          ratio(mix(identity.colour, panel[theme]), panel[theme]),
+          `dimmed series ${slot} (${identity.colour}) on the ${theme} panel`,
+        ).toBeGreaterThanOrEqual(3)
+      }
+    }
   })
 
   it('wraps rather than running out, and tolerates a nonsense index', () => {

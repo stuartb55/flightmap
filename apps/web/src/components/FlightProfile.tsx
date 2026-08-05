@@ -11,7 +11,12 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { ChartDataTable } from './ChartDataTable'
 import { useResolvedTheme } from '../lib/theme'
-import { trackColour, trackIdentity, type TrackColourMode } from '../lib/track-colour'
+import {
+  comparisonDimming,
+  trackColour,
+  trackIdentity,
+  type TrackColourMode,
+} from '../lib/track-colour'
 import type { TrackPoint, TrackResponse } from '../types'
 
 type Metric = 'altitude' | 'speed' | 'verticalRate' | 'distance'
@@ -261,7 +266,10 @@ export function FlightProfile({
   }
 
   return (
-    <section className="flight-profile" aria-label="Flight profile and event timeline">
+    <section
+      className={`flight-profile ${comparing ? 'comparing' : ''}`.trim()}
+      aria-label="Flight profile and event timeline"
+    >
       <header>
         <div>
           <span className="eyebrow">FLIGHT PROFILE</span>
@@ -319,8 +327,9 @@ export function FlightProfile({
                       }}
                     />
                   </svg>
+                  {/* The swatch shows the pattern; the label names it, for a
+                      reader who is getting neither the colour nor the dash. */}
                   <strong>{trackLabel(line.track)}</strong>
-                  <small>{line.identity.pattern}</small>
                 </button>
               </li>
             ))}
@@ -372,7 +381,11 @@ export function FlightProfile({
               className={['profile-line', comparing ? 'comparison' : '', line.focused ? 'focused' : '']
                 .filter(Boolean)
                 .join(' ')}
-              style={{ stroke: run.colour, strokeDasharray: comparing ? line.identity.dash || undefined : undefined }}
+              style={{
+                stroke: run.colour,
+                strokeDasharray: comparing ? line.identity.dash || undefined : undefined,
+                opacity: comparing && !line.focused ? comparisonDimming : undefined,
+              }}
             />
           )),
         )}
