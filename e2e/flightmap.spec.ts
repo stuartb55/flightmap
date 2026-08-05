@@ -254,7 +254,7 @@ test('windows the live list instead of rendering every aircraft', async ({ page 
 })
 
 /*
- * The airport dataset is built by an operator, so a stock deployment has none
+ * The airport dataset is downloaded by an operator, so a stock deployment has none
  * and a configured one does. Both are acceptance criteria, and they are two
  * tests rather than one because the endpoint is cached on purpose: a fresh
  * context per state is the honest way to see each, and Playwright gives one
@@ -382,7 +382,9 @@ test('explains the airport layer rather than offering an empty one', async ({ pa
   await openFlightmap(page)
   const toggle = (await openLayerMenu(page)).getByRole('checkbox', { name: /Airports/ })
   await expect(toggle).toBeDisabled()
-  await expect(toggle.locator('xpath=ancestor::label')).toContainText('run the airports build')
+  await expect(toggle.locator('xpath=ancestor::label')).toContainText(
+    'download it on the Settings page',
+  )
   // No data, so nobody is credited for it.
   await expect(page.locator('.maplibregl-ctrl-attrib-inner')).not.toContainText('OurAirports')
 })
