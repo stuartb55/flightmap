@@ -449,6 +449,13 @@
   stroke-width: 1;
 }
 
+/* Drawn over the reports column it sits inside, so without this it swallows
+   the clicks meant for the drill-through underneath. It only becomes a target
+   in its own right when reports are hidden and it is the bar on show. */
+.chart-bar.positioned[aria-hidden='true'] {
+  pointer-events: none;
+}
+
 .receiver-availability-line {
   fill: none;
   stroke: var(--hue-27);
