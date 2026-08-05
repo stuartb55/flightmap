@@ -8,6 +8,7 @@ import { LiveHub } from "./realtime/live-hub.js";
 import { MaintenanceService } from "./services/maintenance.js";
 import { InsightBackfillService } from "./services/insight-backfill.js";
 import { MetadataService } from "./services/metadata.js";
+import { AirportImportService } from "./services/airports.js";
 import { StatusService } from "./services/status.js";
 import { AppSettingsService } from "./settings.js";
 
@@ -51,6 +52,17 @@ const maintenance = new MaintenanceService(
 const insightBackfill = new InsightBackfillService(database, logger);
 const metadata = new MetadataService(database, config, logger);
 const status = new StatusService(config, repository, collector.state);
+const airportImport = new AirportImportService(
+  settings,
+  config,
+  logger,
+  // The configured override wins, but a receiver that advertises its own
+  // position means an operator never has to type coordinates to use this.
+  () => {
+    const receiver = collector.state.realtime();
+    return { latitude: receiver.latitude, longitude: receiver.longitude };
+  }
+);
 const applyRuntimeSettings = async (): Promise<void> => {
   collector.applySettings();
   if (config.collectorEnabled) await collector.start();
@@ -68,6 +80,7 @@ const app = await buildApp({
     hub,
     status,
     settings,
+    airportImport,
     applyRuntimeSettings,
     bootstrapped: () => settings.isLoaded()
   },

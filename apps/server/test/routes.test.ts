@@ -11,6 +11,7 @@ import {
   RepositoryInputError
 } from "../src/db/repository.js";
 import { LiveHub } from "../src/realtime/live-hub.js";
+import { AirportImportError } from "../src/services/airports.js";
 
 function dependencies() {
   const receiver = {
@@ -70,6 +71,19 @@ function dependencies() {
       update: vi.fn().mockResolvedValue({
         settings: { receiverName: "Roof receiver" },
         updatedAt: "2026-07-29T12:00:00.000Z"
+      })
+    },
+    airportImport: {
+      refresh: vi.fn().mockResolvedValue({
+        airports: 137,
+        runways: 175,
+        byRank: { large: 23, medium: 74, small: 40 },
+        payloadBytes: 41_940,
+        gzippedBytes: 9_278,
+        centre: { latitude: 53.61, longitude: -2.31 },
+        radiusNm: 250,
+        minimumRunwayFt: 3_281,
+        updatedAt: "2026-08-05T12:00:00.000Z"
       })
     },
     applyRuntimeSettings: vi.fn().mockResolvedValue(undefined)
@@ -699,5 +713,85 @@ describe("the airport dataset endpoint", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ items: [] });
+  });
+});
+
+/*
+ * Rebuilding the dataset is a mutation like any other: it needs a matching
+ * Origin, and its failures are the operator's to act on rather than bugs, so
+ * they come back as readable messages with a code rather than a 500.
+ */
+describe("rebuilding the airport dataset", () => {
+  it("returns the summary of what was downloaded", async () => {
+    const server = await app();
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ airports: 137, runways: 175 });
+    await server.close();
+  });
+
+  it("rejects a request without a matching Origin", async () => {
+    const server = await app();
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: { host: "localhost:8080", origin: "http://evil.example" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it("turns an import failure into a readable message rather than a 500", async () => {
+    const dependencies_ = dependencies();
+    dependencies_.airportImport.refresh = vi.fn().mockRejectedValue(
+      new AirportImportError(
+        "The receiver position is not known yet",
+        "AIRPORT_CENTRE_UNKNOWN"
+      )
+    );
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: dependencies_ as never,
+      logger: false
+    });
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      error: { code: "AIRPORT_CENTRE_UNKNOWN" }
+    });
+    await server.close();
+  });
+
+  it("answers 409 while one is already running", async () => {
+    const dependencies_ = dependencies();
+    dependencies_.airportImport.refresh = vi.fn().mockRejectedValue(
+      new AirportImportError("Already running", "AIRPORT_IMPORT_RUNNING")
+    );
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: dependencies_ as never,
+      logger: false
+    });
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin
+    });
+
+    expect(response.statusCode).toBe(409);
+    await server.close();
   });
 });

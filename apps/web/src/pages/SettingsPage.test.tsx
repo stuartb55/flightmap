@@ -8,6 +8,7 @@ const apiMock = vi.hoisted(() => ({
   settings: vi.fn(),
   status: vi.fn(),
   updateSettings: vi.fn(),
+  refreshAirports: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({ api: apiMock }))
@@ -27,6 +28,12 @@ const defaultSettings: AppSettings = {
   mapStyleUrl: 'https://tiles.openfreemap.org/styles/dark',
   mapStyleUrlLight: 'https://tiles.openfreemap.org/styles/bright',
   rangeRingsNm: [5, 10, 25, 50, 100],
+  mapAirports: [],
+  mapAirportsUpdatedAt: null,
+  airportDataUrl: 'https://airports.example/airports.csv',
+  airportRunwayDataUrl: 'https://airports.example/runways.csv',
+  airportRadiusNm: 250,
+  airportMinimumRunwayFt: 3_281,
   historyRetentionDays: 30,
   sessionGapSeconds: 300,
   currentAircraftTtlSeconds: 60,
@@ -183,5 +190,120 @@ describe('SettingsPage', () => {
     fireEvent.submit(form!)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Save failed')
+  })
+})
+
+/*
+ * The airport dataset is built from this page rather than from a command line,
+ * so the page has to answer three questions on its own: what is on the map now,
+ * what happened when I pressed the button, and what to do when it failed.
+ */
+describe('the airport dataset card', () => {
+  beforeEach(() => {
+    apiMock.settings.mockResolvedValue({ settings: defaultSettings, updatedAt: null })
+    apiMock.status.mockResolvedValue({ database: { sizeBytes: 1_000, status: 'healthy' } })
+  })
+
+  it('says when there is no airport data, and offers to fetch it', async () => {
+    render(<SettingsPage />)
+    expect(await screen.findByText('No airport data yet')).toBeInTheDocument()
+    expect(
+      screen.getByText('The map layer stays hidden until this is downloaded.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download now/ })).toBeEnabled()
+  })
+
+  it('reports what a download produced and re-reads the stored settings', async () => {
+    apiMock.refreshAirports.mockResolvedValue({
+      airports: 137,
+      runways: 175,
+      byRank: { large: 23, medium: 74, small: 40 },
+      payloadBytes: 41_940,
+      gzippedBytes: 9_278,
+      centre: { latitude: 53.61, longitude: -2.31 },
+      radiusNm: 250,
+      minimumRunwayFt: 3_281,
+      updatedAt: '2026-08-05T12:00:00.000Z',
+    })
+    render(<SettingsPage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Download now/ }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      /Downloaded 137 airports and 175 runways within 250 nm/,
+    )
+    // The server applied it to its own settings, so the page re-reads them
+    // rather than trusting its own copy.
+    await waitFor(() => expect(apiMock.settings).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows what is already configured, and when it was fetched', async () => {
+    apiMock.settings.mockResolvedValue({
+      settings: {
+        ...defaultSettings,
+        mapAirports: [
+          {
+            icao: 'EGCC',
+            iata: 'MAN',
+            name: 'Manchester Airport',
+            latitude: 53.349375,
+            longitude: -2.279521,
+            elevationFt: 257,
+            rank: 3,
+            runways: [
+              {
+                ident: '05L/23R',
+                lengthFt: 10_000,
+                lowLatitude: 53.3451,
+                lowLongitude: -2.29274,
+                highLatitude: 53.3624,
+                highLongitude: -2.25714,
+              },
+            ],
+          },
+        ],
+        mapAirportsUpdatedAt: '2026-08-05T12:00:00.000Z',
+      },
+      updatedAt: null,
+    })
+    render(<SettingsPage />)
+
+    expect(await screen.findByText('1 airport · 1 runway')).toBeInTheDocument()
+    expect(screen.getByText(/Last downloaded/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download again/ })).toBeInTheDocument()
+  })
+
+  /*
+   * A download can fail for reasons that have nothing to do with this form —
+   * no internet, an unknown receiver position, a source that moved — so the
+   * reason has to be readable and the rest of the page has to keep working.
+   */
+  it('surfaces a failure without disturbing the rest of the form', async () => {
+    apiMock.refreshAirports.mockRejectedValue(
+      new Error('The receiver position is not known yet, so there is no centre to measure from.'),
+    )
+    render(<SettingsPage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Download now/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/receiver position is not known/)
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Download now/ })).toBeEnabled()
+  })
+
+  it('saves the radius and runway threshold with the rest of the settings', async () => {
+    apiMock.updateSettings.mockResolvedValue({ settings: defaultSettings, updatedAt: null })
+    render(<SettingsPage />)
+
+    const radius = await screen.findByLabelText(/Radius/)
+    await userEvent.clear(radius)
+    await userEvent.type(radius, '120')
+    fireEvent.submit(screen.getByRole('button', { name: 'Save settings' }).closest('form')!)
+
+    await waitFor(() =>
+      expect(apiMock.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ airportRadiusNm: 120, airportMinimumRunwayFt: 3_281 }),
+      ),
+    )
   })
 })

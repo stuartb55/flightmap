@@ -1,11 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import {
-  csvRecords,
-  parseArguments,
-  parseCsv,
-  selectAirports
-} from "../src/airports-cli.js";
+import { csvRecords, parseCsv, selectAirports } from "../src/domain/airports.js";
+import { parseArguments } from "../src/airports-cli.js";
 
 /*
  * Column names and order taken from the real OurAirports export. Only the

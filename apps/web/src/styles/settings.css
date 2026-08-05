@@ -346,3 +346,76 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/*
+ * The airport dataset panel: what is on the map now, and the button that
+ * changes it. Laid out like the storage meter above it — icon, a stack of
+ * text, and the action — but in the accent rather than the purple channel,
+ * because this one is something to act on rather than a level to watch.
+ */
+.settings-dataset-state {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px 11px;
+  padding: 12px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
+  border-radius: 8px;
+  background: rgb(var(--accent-rgb) / 0.05);
+  color: var(--accent);
+}
+
+.settings-dataset-state > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-dataset-state strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 15px;
+}
+
+.settings-dataset-state small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-dataset-state button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.settings-dataset-result,
+.settings-dataset-error {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-dataset-result {
+  border: 1px solid rgb(var(--accent-rgb) / 0.2);
+  background: rgb(var(--accent-rgb) / 0.06);
+  color: var(--text);
+}
+
+.settings-dataset-error {
+  border: 1px solid rgb(var(--red-rgb) / 0.28);
+  background: rgb(var(--red-rgb) / 0.08);
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  /* The button drops beneath the reading rather than squeezing it. */
+  .settings-dataset-state {
+    grid-template-columns: auto 1fr;
+  }
+
+  .settings-dataset-state button {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+}

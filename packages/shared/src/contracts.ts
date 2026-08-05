@@ -490,6 +490,26 @@ export const airportsResponseSchema = z.object({
   items: z.array(airportSchema)
 });
 
+/** What a Settings-driven airport download reports back. */
+export const airportImportSummarySchema = z.object({
+  airports: z.number().int().nonnegative(),
+  runways: z.number().int().nonnegative(),
+  byRank: z.object({
+    large: z.number().int().nonnegative(),
+    medium: z.number().int().nonnegative(),
+    small: z.number().int().nonnegative()
+  }),
+  payloadBytes: z.number().int().nonnegative(),
+  gzippedBytes: z.number().int().nonnegative(),
+  centre: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180)
+  }),
+  radiusNm: z.number().positive(),
+  minimumRunwayFt: z.number().int().nonnegative(),
+  updatedAt: isoDateTimeSchema
+});
+
 export const mapDisplayPreferencesSchema = z.object({
   trailMinutes: z.union([z.literal(1), z.literal(5), z.literal(15), z.literal(30)]).default(15),
   labelDensity: z.enum(["auto", "reduced", "full"]).default("auto")
@@ -1229,6 +1249,7 @@ export type MapWaypoint = z.infer<typeof mapWaypointSchema>;
 export type Airport = z.infer<typeof airportSchema>;
 export type AirportRunway = z.infer<typeof airportRunwaySchema>;
 export type AirportsResponse = z.infer<typeof airportsResponseSchema>;
+export type AirportImportSummary = z.infer<typeof airportImportSummarySchema>;
 export type InsightOverview = z.infer<typeof insightOverviewSchema>;
 export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<

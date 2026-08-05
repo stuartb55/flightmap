@@ -4,15 +4,16 @@ The map can draw airports near the receiver, with runway centrelines at high
 zoom, so a descending track converges on something visible instead of on empty
 space.
 
-The data is **built by an operator, never fetched at runtime**. Flightmap has no
-runtime dependency on a third-party API in its default configuration, and this
-does not introduce one: `npm run airports:build` reads local CSV files and
-writes an application setting, in exactly the way `npm run metadata:refresh`
-refreshes the aircraft registry.
+The dataset is **built when an operator asks for it, never while the map
+renders**. That is the same arrangement as the aircraft registry: a source is
+configured in Settings, the server downloads and validates it on request, and
+the result is stored as an application setting. The map layer reads the stored
+result from `GET /api/v1/airports` and never reaches outside.
 
-A deployment that never runs the build has no airport data. That is a supported
-state, not an error: the layer is not created, nothing is logged, and the
-**Airports** toggle in the map layer menu is disabled with the reason shown.
+A deployment that has never downloaded it has no airport data. That is a
+supported state, not an error: the layer is not created, nothing is logged, and
+the **Airports** toggle in the map layer menu is disabled with the reason
+shown.
 
 ## Source and licence
 
@@ -40,18 +41,67 @@ Download them on a machine with internet access; the build itself is offline.
 
 ## Building the dataset
 
+### From the Settings page
+
+**Settings → Airports → Download now.** The server fetches both OurAirports
+files, keeps what is in range, and applies the result to itself — the map has
+the new airports immediately, with no restart and nothing to run on a command
+line.
+
+The card shows what is on the map now and when it was last downloaded, and
+reports what each download produced or why it failed. Four things are
+configurable there, and saved with the rest of the settings:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| Radius | 250 nm | How far from the receiver to include |
+| Smallest runway to include | 3,281 ft (1,000 m) | What a *small* airfield needs to qualify |
+| Airports file | OurAirports `airports.csv` | Where the airport list comes from |
+| Runways file | OurAirports `runways.csv` | Where the centrelines come from |
+
+The centre of the radius is the receiver position: the Settings override if one
+is set, otherwise the position the receiver advertises in `receiver.json`. If
+neither is known the download stops and says so rather than guessing.
+
+Downloading needs internet access **on the server**. The download itself is
+bounded — 60 seconds and 64 MB per file, fixed rather than configurable, because
+those are limits rather than choices — and a file too small to be an OurAirports
+export is rejected. Every failure leaves the existing dataset alone: a map still
+showing yesterday's airports is a better answer than one that has lost them.
+
+### Without internet access on the server
+
+A receiver with no route to the internet can still have airports, by carrying
+the files in and running the CLI. This is the only reason the CLI exists.
+
 ```sh
 curl -sLO https://davidmegginson.github.io/ourairports-data/airports.csv
 curl -sLO https://davidmegginson.github.io/ourairports-data/runways.csv
+```
 
-# Check what you would get, without a database and without writing anything.
-npm run airports:build -- \
-  --airports ./airports.csv --runways ./runways.csv \
-  --latitude 53.61 --longitude -2.31 --dry-run
+Against a Compose deployment — the app container's root filesystem is read-only,
+so the files are bind-mounted rather than copied in:
 
-# Write it, using the configured receiver position as the centre.
+```sh
+docker compose run --rm --no-deps \
+  -v "$PWD/airports.csv:/data/airports.csv:ro" \
+  -v "$PWD/runways.csv:/data/runways.csv:ro" \
+  app node apps/server/dist/airports-cli.js \
+    --airports /data/airports.csv --runways /data/runways.csv
+
+docker compose restart app
+```
+
+Or, from a checkout with `DATABASE_URL` set:
+
+```sh
 npm run airports:build -- --airports ./airports.csv --runways ./runways.csv
 ```
+
+**The restart is only needed for this path.** The CLI writes the settings row
+directly, which is what lets it run while the application is stopped, so a
+running instance keeps serving the previous dataset until it reloads. The
+Settings page has no such problem, because the running server does the work.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -62,17 +112,11 @@ npm run airports:build -- --airports ./airports.csv --runways ./runways.csv
 | `--min-runway-ft N` | `3281` (1,000 m) | Length a *small* airport needs to qualify |
 | `--dry-run` | off | Print the summary; write nothing |
 
-The result is written to the `mapAirports` application setting, like
-`mapWaypoints`. A deployment can replace or empty it through the settings API.
+With `--dry-run` and an explicit centre the CLI needs no database at all, which
+makes it a cheap way to try a radius before committing to one.
 
-**Restart the application afterwards.** The build writes the settings row
-directly, which is what lets it run while the application is stopped; a running
-instance holds its settings in memory and keeps serving the previous dataset
-until it restarts. The command says so in its output.
-
-```sh
-docker compose restart app
-```
+Both paths share the same selection code, so they produce identical datasets
+from identical inputs.
 
 ### What gets included
 

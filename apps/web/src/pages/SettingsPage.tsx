@@ -1,7 +1,9 @@
 import {
   Database,
+  DownloadCloud,
   HardDrive,
   MapPinned,
+  Plane,
   RadioTower,
   Save,
   Server,
@@ -9,7 +11,7 @@ import {
 import { useEffect, useState, type FormEvent } from 'react'
 import { applyRuntimeConfig } from '../config'
 import { api } from '../lib/api'
-import { formatBytes } from '../lib/format'
+import { formatBytes, formatDateTime } from '../lib/format'
 import {
   densities,
   densityLabels,
@@ -39,6 +41,7 @@ import {
   useSightingThreshold,
   type SightingThreshold,
 } from '../lib/sighting-preferences'
+import type { AirportImportSummary } from '@flightmap/shared'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
@@ -73,6 +76,10 @@ function buildSettings(data: FormData): AppSettings {
     historyRetentionDays: requiredNumber(data, 'historyRetentionDays'),
     sessionGapSeconds: requiredNumber(data, 'sessionGapSeconds'),
     currentAircraftTtlSeconds: requiredNumber(data, 'currentAircraftTtlSeconds'),
+    airportDataUrl: String(data.get('airportDataUrl') ?? ''),
+    airportRunwayDataUrl: String(data.get('airportRunwayDataUrl') ?? ''),
+    airportRadiusNm: requiredNumber(data, 'airportRadiusNm'),
+    airportMinimumRunwayFt: requiredNumber(data, 'airportMinimumRunwayFt'),
     metadataUrl: String(data.get('metadataUrl') ?? ''),
     metadataCheckIntervalMs: Math.round(
       requiredNumber(data, 'metadataCheckIntervalHours') * 3_600_000,
@@ -248,6 +255,129 @@ function NewSightings() {
   )
 }
 
+
+interface AirportImportState {
+  running: boolean
+  result: AirportImportSummary | null
+  failure: string | null
+}
+
+/** "1 airport", "137 airports" — the count is data, so it should read like it. */
+function plural(count: number, noun: string): string {
+  return `${count.toLocaleString('en-GB')} ${noun}${count === 1 ? '' : 's'}`
+}
+
+/**
+ * The airport dataset, built here rather than on a command line.
+ *
+ * The download is a separate action from saving the form: it can take a few
+ * seconds, it can fail for reasons that have nothing to do with the settings,
+ * and its result is worth reporting on its own. The source and shape of the
+ * dataset are ordinary settings saved with everything else — but pressing
+ * Download uses what is in the form, so a changed radius can be tried without
+ * saving first.
+ */
+function AirportData({
+  settings,
+  state,
+  onDownload,
+}: {
+  settings: AppSettings
+  /*
+   * Owned by the page rather than by this component. Re-reading the settings
+   * after a download changes `updatedAt`, which is the form's key, so the whole
+   * form — this card included — is deliberately remounted to pick up the new
+   * values. State held here would not survive that; the outcome of the download
+   * has to outlive the remount it causes.
+   */
+  state: AirportImportState
+  onDownload: () => void
+}) {
+  const { running, result, failure } = state
+  const airports = settings.mapAirports ?? []
+  const configured = airports.length
+  const runways = airports.reduce((total, airport) => total + airport.runways.length, 0)
+
+  return (
+    <>
+      <div className="settings-dataset-state" aria-live="polite">
+        <Plane size={20} aria-hidden="true" />
+        <span>
+          <small>Currently on the map</small>
+          <strong>
+            {configured ? `${plural(configured, 'airport')} · ${plural(runways, 'runway')}` : 'No airport data yet'}
+          </strong>
+          <small>
+            {settings.mapAirportsUpdatedAt
+              ? `Last downloaded ${formatDateTime(settings.mapAirportsUpdatedAt)}`
+              : 'The map layer stays hidden until this is downloaded.'}
+          </small>
+        </span>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onDownload}
+          disabled={running}
+        >
+          <DownloadCloud size={15} />
+          {running ? 'Downloading…' : configured ? 'Download again' : 'Download now'}
+        </button>
+      </div>
+      {result ? (
+        <p className="settings-dataset-result" role="status">
+          Downloaded {plural(result.airports, 'airport')} and {plural(result.runways, 'runway')}{' '}
+          within {result.radiusNm} nm — {formatBytes(result.payloadBytes)}. The map is using them
+          now.
+        </p>
+      ) : null}
+      {failure ? (
+        <p className="settings-dataset-error" role="alert">
+          {failure}
+        </p>
+      ) : null}
+      <div className="settings-field-grid">
+        <Field label="Radius" hint="Nautical miles from the receiver">
+          <input
+            name="airportRadiusNm"
+            type="number"
+            min={1}
+            max={1_000}
+            step="any"
+            defaultValue={settings.airportRadiusNm}
+            required
+          />
+        </Field>
+        <Field label="Smallest runway to include" hint="Feet; 3281 ft is 1,000 m">
+          <input
+            name="airportMinimumRunwayFt"
+            type="number"
+            min={0}
+            max={20_000}
+            defaultValue={settings.airportMinimumRunwayFt}
+            required
+          />
+        </Field>
+      </div>
+      <Field label="Airports file" hint="OurAirports airports.csv">
+        <input name="airportDataUrl" type="url" defaultValue={settings.airportDataUrl} required />
+      </Field>
+      <Field label="Runways file" hint="OurAirports runways.csv">
+        <input
+          name="airportRunwayDataUrl"
+          type="url"
+          defaultValue={settings.airportRunwayDataUrl}
+          required
+        />
+      </Field>
+      <p className="settings-units-note">
+        Large and medium airports are always included; a smaller airfield needs a runway at least
+        as long as the figure above, which keeps grass strips off the map. Downloading needs
+        internet access on the server and is dedicated to the public domain by OurAirports.
+      </p>
+    </>
+  )
+}
+
 function SettingsCard({
   icon,
   eyebrow,
@@ -285,6 +415,29 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const [airportImport, setAirportImport] = useState<AirportImportState>({
+    running: false,
+    result: null,
+    failure: null,
+  })
+
+  async function downloadAirports() {
+    setAirportImport({ running: true, result: null, failure: null })
+    try {
+      const result = await api.refreshAirports()
+      setAirportImport({ running: false, result, failure: null })
+      // The server has already applied the new dataset to its own settings, so
+      // re-reading them is what keeps this page honest about what is stored.
+      setRetryKey((key) => key + 1)
+    } catch (reason) {
+      setAirportImport({
+        running: false,
+        result: null,
+        failure:
+          reason instanceof Error ? reason.message : 'The airport data could not be downloaded',
+      })
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -523,6 +676,19 @@ export function SettingsPage() {
                 />
               </Field>
             </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Plane size={20} />}
+            eyebrow="MAP DATA"
+            title="Airports"
+            description="Airfields and runway centrelines drawn near the receiver."
+          >
+            <AirportData
+              settings={settings}
+              state={airportImport}
+              onDownload={() => void downloadAirports()}
+            />
           </SettingsCard>
 
           <SettingsCard

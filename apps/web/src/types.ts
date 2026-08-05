@@ -1,4 +1,4 @@
-import type { MapWaypoint } from '@flightmap/shared'
+import type { Airport, MapWaypoint } from '@flightmap/shared'
 export type ReceiverHealth = 'online' | 'degraded' | 'offline' | 'connecting'
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 export type Altitude = number | 'ground' | null
@@ -247,6 +247,17 @@ export interface AppSettings {
   rangeRingsNm: number[]
   /** Configured on the server; the Settings form does not edit these. */
   mapWaypoints?: MapWaypoint[]
+  /**
+   * Built by the airport download in Settings rather than typed, so the form
+   * reads it but never submits it. Optional because a server older than the
+   * download will not send it.
+   */
+  mapAirports?: Airport[]
+  mapAirportsUpdatedAt?: string | null
+  airportDataUrl: string
+  airportRunwayDataUrl: string
+  airportRadiusNm: number
+  airportMinimumRunwayFt: number
   historyRetentionDays: number
   sessionGapSeconds: number
   currentAircraftTtlSeconds: number
