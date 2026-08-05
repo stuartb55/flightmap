@@ -47,7 +47,7 @@ import { useUnitPreferences } from '../lib/unit-preferences'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
 import { shareUrl, viewportFromSearch } from '../lib/map-snapshot'
-import { defaultReceiver } from '../config'
+import { defaultReceiver, displayTimeZone } from '../config'
 import { defaultSessionSort, parseSessionSort, sessionSortOptions } from '../lib/session-sort'
 import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 import type {
@@ -72,7 +72,22 @@ function defaultFilters(query = ''): HistoryFilters {
     from: formatDateTimeInput(new Date(now.getTime() - 6 * 60 * 60_000)),
     to: formatDateTimeInput(now),
     alert: '',
+    weekday: null,
+    hour: null,
   }
+}
+
+const weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+/** A whole number inside an inclusive range, or null for anything else. */
+function boundedInteger(value: string | null, maximum: number): number | null {
+  if (value == null || value.trim() === '') return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : null
+}
+
+export function patternWindowLabel(weekday: number, hour: number): string {
+  return `${weekdayNames[weekday] ?? 'Unknown'} ${String(hour).padStart(2, '0')}:00–${String((hour + 1) % 24).padStart(2, '0')}:00`
 }
 
 function filtersFromSearch(search: string): HistoryFilters {
@@ -85,6 +100,8 @@ function filtersFromSearch(search: string): HistoryFilters {
     return Number.isNaN(parsed.getTime()) ? fallback : formatDateTimeInput(parsed)
   }
   const alert = params.get('alert')
+  const weekday = boundedInteger(params.get('weekday'), 6)
+  const hour = boundedInteger(params.get('hour'), 23)
   return {
     query: params.get('q') ?? defaults.query,
     icao: params.get('icao') ?? defaults.icao,
@@ -97,6 +114,10 @@ function filtersFromSearch(search: string): HistoryFilters {
     alert: ['emergency_squawk', 'emergency_state', 'watchlist'].includes(alert ?? '')
       ? (alert as HistoryFilters['alert'])
       : '',
+    // Half a window filters nothing the server will accept, so a URL carrying
+    // only one of the pair falls back to no window at all.
+    weekday: hour == null ? null : weekday,
+    hour: weekday == null ? null : hour,
   }
 }
 
@@ -111,6 +132,10 @@ function filtersSearch(filters: HistoryFilters): string {
   if (filters.from) params.set('from', filters.from)
   if (filters.to) params.set('to', filters.to)
   if (filters.alert) params.set('alert', filters.alert)
+  if (filters.weekday != null && filters.hour != null) {
+    params.set('weekday', String(filters.weekday))
+    params.set('hour', String(filters.hour))
+  }
   const query = params.toString()
   return query ? `?${query}` : ''
 }
@@ -468,6 +493,8 @@ export function HistoryPage() {
       from: formatDateTimeInput(new Date(configuration.filters.from)),
       to: formatDateTimeInput(new Date(configuration.filters.to)),
       alert: configuration.filters.alert,
+      weekday: configuration.filters.weekday,
+      hour: configuration.filters.hour,
     }
     setMapLayers(configuration.mapLayers)
     navigate(
@@ -887,6 +914,34 @@ export function HistoryPage() {
           </button>
         </form>
 
+        {appliedFilters.weekday != null && appliedFilters.hour != null ? (
+          /*
+           * The Insights pattern grid counts every session heard during a
+           * window; this list holds the ones that started in it. Saying which
+           * is which here is the difference between a narrower answer and an
+           * apparently wrong one.
+           */
+          <div className="pattern-window-chip" role="status">
+            <CalendarClock size={14} aria-hidden="true" />
+            <span>
+              <strong>{patternWindowLabel(appliedFilters.weekday, appliedFilters.hour)}</strong>
+              <small>Sessions that started in this hour, in {displayTimeZone()}.</small>
+            </span>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                const next = { ...filters, weekday: null, hour: null }
+                setFilters(next)
+                setAppliedFilters(next)
+                navigate(historyUrl(next, sort, [], null, resolution, profileAxis))
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
         <div className="results-heading">
           <div>
             <h2>Track sessions</h2>
@@ -1024,6 +1079,8 @@ export function HistoryPage() {
               from: dateTimeInputToIso(appliedFilters.from),
               to: dateTimeInputToIso(appliedFilters.to),
               alert: appliedFilters.alert,
+              weekday: appliedFilters.weekday,
+              hour: appliedFilters.hour,
             },
             sort,
             selectedSessionIds: selectedTracks.map((track) => track.session.id),

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InsightCoverageResponse, InsightOverview } from '@flightmap/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { InsightsPage, insightRangeForPreset } from './InsightsPage'
+import { InsightsPage, insightRangeForPreset, patternCellHref } from './InsightsPage'
 import { Router } from '../lib/router'
 import { api } from '../lib/api'
 import { resetSavedViews } from '../lib/saved-views'
@@ -349,6 +349,69 @@ describe('InsightsPage', () => {
     expect(panel).not.toHaveTextContent('0 nm')
   })
 
+  it('drills a pattern cell into History with its weekday-hour window', async () => {
+    vi.mocked(api.insightPatterns).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      timeZone: 'Europe/London',
+      cells: [
+        { weekday: 1, hour: 14, uniqueAircraft: 6, sessions: 4, reports: 220, previousReports: 180, changePercent: 22.2 },
+      ],
+      busiest: { weekday: 1, hour: 14, uniqueAircraft: 6, sessions: 4, reports: 220, previousReports: 180, changePercent: 22.2 },
+      availability,
+    })
+    renderPage()
+    const grid = await screen.findByRole('group', {
+      name: /Aircraft by local weekday and hour in Europe\/London/,
+    })
+    const cell = within(grid).getByRole('button', { name: /^Tue 14:00: 6 aircraft/ })
+    // The window is a narrower answer than the cell, so the cell says so.
+    expect(cell).toHaveAccessibleName(/Show sessions that started in this hour/)
+    fireEvent.click(cell)
+    expect(window.location.pathname).toBe('/history')
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('weekday')).toBe('1')
+    expect(params.get('hour')).toBe('14')
+    // The window only means the same thing over the range the grid was drawn
+    // for, so the drill-down carries that range rather than History's default.
+    const asked = vi.mocked(api.insightPatterns).mock.lastCall?.[0]
+    expect(params.get('from')).toBe(asked?.from)
+    expect(params.get('to')).toBe(asked?.to)
+  })
+
+  it('keeps one tab stop for the whole pattern grid and moves within it by arrow key', async () => {
+    vi.mocked(api.insightPatterns).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      timeZone: 'Europe/London',
+      cells: [
+        { weekday: 0, hour: 0, uniqueAircraft: 1, sessions: 1, reports: 10, previousReports: null, changePercent: null },
+      ],
+      busiest: null,
+      availability,
+    })
+    renderPage()
+    const grid = await screen.findByRole('group', {
+      name: /Aircraft by local weekday and hour/,
+    })
+    const cells = within(grid).getAllByRole('button')
+    expect(cells).toHaveLength(7 * 24)
+    // 168 tab stops would bury every control after the grid.
+    expect(cells.filter((cell) => cell.getAttribute('tabindex') === '0')).toHaveLength(1)
+
+    const first = within(grid).getByRole('button', { name: /^Mon 00:00/ })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(document.activeElement).toHaveAccessibleName(/^Mon 01:00/)
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 01:00/)
+    fireEvent.keyDown(document.activeElement!, { key: 'End' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 23:00/)
+    // The edges hold rather than wrapping onto another day.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    expect(document.activeElement).toHaveAccessibleName(/^Tue 23:00/)
+  })
+
   it('keeps the rest of Insights when records are unavailable', async () => {
     vi.mocked(api.receiverRecords).mockRejectedValue(new Error('Records unavailable'))
     renderPage()
@@ -366,5 +429,25 @@ describe('insight presets', () => {
     })
     expect(insightRangeForPreset('7d', now).bucket).toBe('day')
     expect(insightRangeForPreset('30d', now).bucket).toBe('day')
+  })
+
+  it('narrows a pattern drill-down to the 32 days a session search allows', () => {
+    const within32 = patternCellHref(
+      { from: '2026-07-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' },
+      1,
+      14,
+    )
+    expect(new URLSearchParams(within32.split('?')[1]).get('from')).toBe('2026-07-02T00:00:00.000Z')
+
+    // A year-long insight range would be refused outright by the session
+    // search, so the drill-down asks for the most recent window it can have.
+    const wide = patternCellHref(
+      { from: '2025-08-01T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' },
+      1,
+      14,
+    )
+    const params = new URLSearchParams(wide.split('?')[1])
+    expect(params.get('from')).toBe('2026-06-30T00:00:00.000Z')
+    expect(params.get('to')).toBe('2026-08-01T00:00:00.000Z')
   })
 })

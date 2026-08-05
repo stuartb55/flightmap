@@ -47,6 +47,33 @@ describe("shared contracts", () => {
     expect(() => sessionQuerySchema.parse({ alert: "first_seen" })).toThrow();
   });
 
+  it("takes a weekday-hour window only as a complete pair in a real zone", () => {
+    expect(
+      sessionQuerySchema.parse({
+        weekday: "2",
+        hour: "0",
+        timeZone: "Europe/London"
+      })
+    ).toMatchObject({ weekday: 2, hour: 0, timeZone: "Europe/London" });
+
+    // Half a window would filter on a weekday across every hour, or an hour
+    // across every day — neither is a cell the pattern grid can produce.
+    expect(() => sessionQuerySchema.parse({ weekday: "2" })).toThrow();
+    expect(() => sessionQuerySchema.parse({ hour: "9" })).toThrow();
+    expect(() => sessionQuerySchema.parse({ weekday: "7", hour: "9" })).toThrow();
+    expect(() => sessionQuerySchema.parse({ weekday: "0", hour: "24" })).toThrow();
+    // An unrecognised zone raises inside PostgreSQL rather than returning
+    // nothing, so it is refused here as bad input.
+    expect(() =>
+      sessionQuerySchema.parse({ weekday: "0", hour: "9", timeZone: "Mars/Olympus" })
+    ).toThrow();
+
+    // An absent window is the ordinary case and stays absent.
+    const unfiltered = sessionQuerySchema.parse({});
+    expect(unfiltered.weekday).toBeUndefined();
+    expect(unfiltered.hour).toBeUndefined();
+  });
+
   it("bounds track reads and parses incremental query options", () => {
     expect(
       trackQuerySchema.parse({
@@ -266,7 +293,7 @@ describe("shared contracts", () => {
     ).toThrow();
   });
 
-  it("defaults the history profile axis so views saved before it still load", () => {
+  it("defaults the history profile axis and pattern window so views saved before them still load", () => {
     const legacy = {
       name: "Two approaches",
       configuration: {
@@ -297,12 +324,18 @@ describe("shared contracts", () => {
         viewport: null
       }
     };
-    expect(savedViewInputSchema.parse(legacy).configuration).toMatchObject({
-      profileAxis: "absolute"
-    });
+    const restored = savedViewInputSchema.parse(legacy).configuration;
+    expect(restored).toMatchObject({ profileAxis: "absolute" });
+    // A view saved before the pattern drill-down existed carries no window,
+    // which is exactly what "no weekday-hour filter" means.
+    expect(restored).toMatchObject({ filters: { weekday: null, hour: null } });
     const aligned = {
       ...legacy,
-      configuration: { ...legacy.configuration, profileAxis: "aligned" }
+      configuration: {
+        ...legacy.configuration,
+        filters: { ...legacy.configuration.filters, weekday: 2, hour: 14 },
+        profileAxis: "aligned"
+      }
     };
     expect(savedViewInputSchema.parse(aligned)).toEqual(aligned);
     expect(() =>

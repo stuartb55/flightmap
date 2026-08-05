@@ -380,6 +380,26 @@ function RecordsPanel({
   )
 }
 
+/**
+ * The History link for a pattern-grid cell.
+ *
+ * Session searches are capped at 32 days, while an insight range runs to 366,
+ * so a wider range drills into its most recent 32 days rather than failing.
+ * The dates travel in the URL and are shown by History's own range fields, so
+ * the narrowing is visible where it applies.
+ */
+export function patternCellHref(range: { from: string; to: string }, weekday: number, hour: number) {
+  const to = Date.parse(range.to)
+  const from = Math.max(Date.parse(range.from), to - 32 * 86_400_000)
+  const params = new URLSearchParams({
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    weekday: String(weekday),
+    hour: String(hour),
+  })
+  return `/history?${params.toString()}`
+}
+
 function exportHref(path: string, values: Record<string, string | boolean>) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(values)) params.set(key, String(value))
@@ -712,7 +732,12 @@ export function InsightsPage() {
                   <LeaderList title="Operators" leaders={overview.leaders.operators} kind="operator" />
                 </div>
               </section>
-              {patterns?.cells.length ? <ActivityPattern patterns={patterns} /> : null}
+              {patterns?.cells.length ? (
+                <ActivityPattern
+                  patterns={patterns}
+                  onSelectCell={(weekday, hour) => navigate(patternCellHref(range, weekday, hour))}
+                />
+              ) : null}
             </>
           )}
         </>

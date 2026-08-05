@@ -9,7 +9,8 @@ import {
   describeDatabase,
   repository,
   resetDatabase,
-  snapshot
+  snapshot,
+  testDay
 } from "./harness.js";
 
 describeDatabase("ingestion against PostgreSQL", () => {
@@ -285,6 +286,79 @@ describeDatabase("ingestion against PostgreSQL", () => {
         whole.items.map((item) => item.id)
       );
     }
+  });
+
+  it("filters sessions to a weekday-hour window in the zone it is asked for", async () => {
+    /*
+     * The Insights pattern grid names a weekday and an hour in the viewer's
+     * zone, so the drill-down has to return exactly the sessions that started
+     * inside that window — no more, and no fewer once the zone shifts it.
+     */
+    const fleet = [
+      { hex: "400001", minute: 9 * 60 + 15 },
+      { hex: "400002", minute: 9 * 60 + 50 },
+      { hex: "400003", minute: 13 * 60 + 20 }
+    ];
+    for (const aircraft of fleet) {
+      await flights.ingestSnapshot(
+        snapshot(atMinutes(aircraft.minute), [{ hex: aircraft.hex }])
+      );
+    }
+    // testDay is a UTC midnight, so its ISO weekday is the one every session
+    // on that day falls on in UTC.
+    const weekday = ((testDay.getUTCDay() + 6) % 7);
+    const window = async (hour: number, timeZone: string) =>
+      flights.sessions({
+        from: dayBoundary(0),
+        to: dayBoundary(1),
+        sort: "started_asc",
+        limit: 20,
+        weekday,
+        hour,
+        timeZone
+      });
+
+    expect((await window(9, "UTC")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002"
+    ]);
+    expect((await window(13, "UTC")).items.map((item) => item.icao)).toEqual([
+      "400003"
+    ]);
+    expect((await window(11, "UTC")).items).toEqual([]);
+
+    // Etc/GMT-3 is UTC+3 and never observes summer time, so 09:15 UTC is
+    // always 12:15 there and the window moves with the zone, not the clock.
+    expect((await window(12, "Etc/GMT-3")).items.map((item) => item.icao)).toEqual([
+      "400001",
+      "400002"
+    ]);
+    expect((await window(9, "Etc/GMT-3")).items).toEqual([]);
+
+    // Without the window the whole day comes back, so the filter is doing the
+    // narrowing rather than the range.
+    const unfiltered = await flights.sessions({
+      from: dayBoundary(0),
+      to: dayBoundary(1),
+      sort: "started_asc",
+      limit: 20
+    });
+    expect(unfiltered.items).toHaveLength(3);
+  });
+
+  it("finds a weekday-hour window through the started_at index", async () => {
+    const weekday = (testDay.getUTCDay() + 6) % 7;
+    const plan = await database.query<{ "QUERY PLAN": string }>(
+      `EXPLAIN SELECT s.id FROM track_sessions s
+       WHERE s.started_at >= $1 AND s.started_at <= $2
+         AND extract(isodow FROM s.started_at AT TIME ZONE 'UTC')::int - 1 = $3
+         AND extract(hour FROM s.started_at AT TIME ZONE 'UTC')::int = 9`,
+      [dayBoundary(0), dayBoundary(1), weekday]
+    );
+    const text = plan.rows.map((row) => row["QUERY PLAN"]).join("\n");
+    // The window is a residual filter on rows the range predicate has already
+    // found; it must not turn the range scan into a sequential one.
+    expect(text).not.toMatch(/Seq Scan/);
   });
 
   it("ignores a duplicate snapshot without double counting", async () => {

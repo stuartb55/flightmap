@@ -42,6 +42,8 @@ const defaultView: SavedView = {
       from: '2026-07-25T00:00:00.000Z',
       to: '2026-08-01T00:00:00.000Z',
       alert: '',
+      weekday: null,
+      hour: null,
     },
     sort: 'closest_asc',
     selectedSessionIds: [],

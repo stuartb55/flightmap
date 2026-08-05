@@ -501,7 +501,14 @@ export const historySavedViewConfigurationSchema = savedViewBaseSchema
         operator: z.string().max(128).default(""),
         from: isoDateTimeSchema,
         to: isoDateTimeSchema,
-        alert: z.enum(["", "emergency_squawk", "emergency_state", "watchlist"])
+        alert: z.enum(["", "emergency_squawk", "emergency_state", "watchlist"]),
+        /*
+         * The weekday-hour window drilled into from the Insights pattern grid.
+         * Nullable and defaulted so a view saved before the drill-down existed
+         * still parses.
+         */
+        weekday: z.number().int().min(0).max(6).nullable().default(null),
+        hour: z.number().int().min(0).max(23).nullable().default(null)
       })
       .strict(),
     sort: sessionSortSchema,
@@ -829,6 +836,25 @@ const optionalDateTime = z.preprocess(
   isoDateTimeSchema.optional()
 );
 
+/**
+ * An IANA zone the database can be asked to convert into. Unrecognised names
+ * reach PostgreSQL as `AT TIME ZONE 'nonsense'`, which raises rather than
+ * returning nothing, so they are rejected here as bad input instead.
+ */
+export const timeZoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .refine((zone) => {
+    try {
+      new Intl.DateTimeFormat("en-GB", { timeZone: zone });
+      return true;
+    } catch {
+      return false;
+    }
+  }, "must be an IANA time zone");
+
 export const insightQuerySchema = z
   .object({
     from: isoDateTimeSchema,
@@ -867,7 +893,7 @@ export const insightPatternsQuerySchema = z
   .object({
     from: isoDateTimeSchema,
     to: isoDateTimeSchema,
-    timeZone: z.string().trim().min(1).max(64),
+    timeZone: timeZoneSchema,
     compare: z
       .preprocess(emptyToUndefined, z.enum(["true", "false"]).optional())
       .transform((value) => value === "true")
@@ -952,6 +978,21 @@ export const sessionQuerySchema = z
         .enum(["any", "active", "emergency", ...alertRuleSchema.options])
         .optional()
     ),
+    /*
+     * The weekday-hour window an Insights pattern cell drills into: Monday is
+     * 0, matching `extract(isodow) - 1`, and both parts are named in the
+     * viewer's zone rather than UTC because that is the zone the grid was
+     * drawn in. They are meaningless apart, so the pair is required together.
+     */
+    weekday: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).max(6).optional()
+    ),
+    hour: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).max(23).optional()
+    ),
+    timeZone: z.preprocess(emptyToUndefined, timeZoneSchema.optional()),
     cursor: z.preprocess(emptyToUndefined, z.string().max(512).optional()),
     limit: z.coerce.number().int().min(1).max(200).default(50)
   })
@@ -961,6 +1002,13 @@ export const sessionQuerySchema = z
         code: z.ZodIssueCode.custom,
         path: ["from"],
         message: "from must be before to"
+      });
+    }
+    if ((query.weekday === undefined) !== (query.hour === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [query.weekday === undefined ? "weekday" : "hour"],
+        message: "weekday and hour must be given together"
       });
     }
   });
