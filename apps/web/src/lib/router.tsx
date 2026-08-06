@@ -17,6 +17,21 @@ type LocationState = {
 
 type RouterContextValue = LocationState & {
   navigate: (to: string, replace?: boolean) => void
+  /**
+   * Updates the address bar without telling the router.
+   *
+   * For a page that describes its own state in the URL continuously — History
+   * writes its filters, selection and replay position as they change — where
+   * publishing the change would re-render the page that caused it and, through
+   * whatever reads the location, re-run the search that produced the state
+   * being written.
+   *
+   * The consequence is that `search` here is then behind the address bar until
+   * the next real navigation. That is the point, but it has to be deliberate
+   * and named, because it used to happen through a bare `replaceState` call in
+   * a page and everything reading `useLocation()` was quietly wrong.
+   */
+  replaceSilently: (to: string) => void
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null)
@@ -49,9 +64,19 @@ export function Router({ children }: { children: ReactNode }) {
     setLocation(readLocation())
   }, [])
 
+  const replaceSilently = useCallback((to: string) => {
+    const target = new URL(to, window.location.href)
+    if (target.origin !== window.location.origin) return
+    window.history.replaceState(
+      null,
+      '',
+      `${target.pathname}${target.search}${target.hash}`,
+    )
+  }, [])
+
   const value = useMemo(
-    () => ({ ...location, navigate }),
-    [location, navigate],
+    () => ({ ...location, navigate, replaceSilently }),
+    [location, navigate, replaceSilently],
   )
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }

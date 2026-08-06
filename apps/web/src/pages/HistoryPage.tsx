@@ -272,7 +272,7 @@ function SummaryCard({ summary }: { summary: HistoricalSummary }) {
 
 export function HistoryPage() {
   useUnitPreferences()
-  const { search: routeSearch, navigate } = useLocation()
+  const { search: routeSearch, navigate, replaceSilently } = useLocation()
   const [filters, setFilters] = useState<HistoryFilters>(() =>
     filtersFromSearch(routeSearch),
   )
@@ -757,11 +757,16 @@ export function HistoryPage() {
 
   const replayTimeRef = useRef(replayTime)
   replayTimeRef.current = replayTime
+  /*
+   * Silent on purpose: publishing this would re-render the page that caused it
+   * and re-run the search that produced the state being written. The cost is
+   * that the router's `search` sits behind the address bar until the next real
+   * navigation, which is why it goes through a named method rather than a bare
+   * `replaceState` nothing else can see.
+   */
   const writeUrl = useCallback(() => {
     if (restoringUrlRef.current) return
-    window.history.replaceState(
-      null,
-      '',
+    replaceSilently(
       historyUrl(
         appliedFilters,
         sort,
@@ -771,7 +776,7 @@ export function HistoryPage() {
         profileAxis,
       ),
     )
-  }, [appliedFilters, profileAxis, resolution, selectedTracks, sort])
+  }, [appliedFilters, profileAxis, replaceSilently, resolution, selectedTracks, sort])
   const writeUrlRef = useRef(writeUrl)
   writeUrlRef.current = writeUrl
 

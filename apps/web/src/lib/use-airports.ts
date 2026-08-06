@@ -12,7 +12,10 @@ import { api } from './api'
  * draw. A failed request is the same silence: an airport layer is not worth an
  * error banner over live traffic.
  */
-const cache: { airports: readonly Airport[] | null } = { airports: null }
+let cache: readonly Airport[] | null = null
+
+/** Shared so two consumers mounting together make one request, not two. */
+let inFlight: Promise<readonly Airport[]> | null = null
 
 /**
  * Set by `invalidateAirports`, and the reason it exists: three caches sit
@@ -24,13 +27,38 @@ const cache: { airports: readonly Airport[] | null } = { airports: null }
 let refetchFromNetwork = false
 
 /**
- * Discards every cached copy of the dataset after an operator rebuilds it.
+ * Consumers currently mounted. Without these, discarding the cache reached only
+ * the *next* mount: the effect below has no dependency that a module-level
+ * variable can change, so a map already on screen kept the empty list it read
+ * at startup and went on saying there was no airport data.
+ */
+const listeners = new Set<() => void>()
+
+function read(): Promise<readonly Airport[]> {
+  const fresh = refetchFromNetwork
+  refetchFromNetwork = false
+  inFlight ??= api
+    .airports(undefined, { fresh })
+    .then((items) => {
+      cache = items
+      return items
+    })
+    .finally(() => {
+      inFlight = null
+    })
+  return inFlight
+}
+
+/**
+ * Discards every cached copy of the dataset after an operator rebuilds it, and
+ * tells anything currently reading to read again.
  *
  * Without this the map keeps the empty list it read at startup and still says
  * there is no airport data, on a receiver that has just downloaded some.
  */
 export async function invalidateAirports(): Promise<void> {
-  cache.airports = null
+  cache = null
+  inFlight = null
   refetchFromNetwork = true
   // The service worker answers this endpoint from its own cache first, so its
   // copy has to go as well; workbox recreates the cache on the next request.
@@ -39,25 +67,38 @@ export async function invalidateAirports(): Promise<void> {
       // A browser that refuses the delete still refetches past it below.
     })
   }
+  for (const listener of listeners) listener()
 }
 
 export function useAirports(): readonly Airport[] | null {
-  const [airports, setAirports] = useState<readonly Airport[] | null>(cache.airports)
+  const [airports, setAirports] = useState<readonly Airport[] | null>(cache)
+  const [generation, setGeneration] = useState(0)
+
   useEffect(() => {
-    if (cache.airports) return
-    const controller = new AbortController()
-    const fresh = refetchFromNetwork
-    refetchFromNetwork = false
-    api
-      .airports(controller.signal, { fresh })
+    const reread = () => setGeneration((value) => value + 1)
+    listeners.add(reread)
+    return () => {
+      listeners.delete(reread)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (cache) {
+      setAirports(cache)
+      return
+    }
+    let cancelled = false
+    read()
       .then((items) => {
-        cache.airports = items
-        if (!controller.signal.aborted) setAirports(items)
+        if (!cancelled) setAirports(items)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setAirports([])
+        if (!cancelled) setAirports([])
       })
-    return () => controller.abort()
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [generation])
+
   return airports
 }

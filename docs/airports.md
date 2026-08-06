@@ -77,6 +77,32 @@ those are limits rather than choices — and a file too small to be an OurAirpor
 export is rejected. Every failure leaves the existing dataset alone: a map still
 showing yesterday's airports is a better answer than one that has lost them.
 
+Parsing yields the event loop as it goes rather than running to completion, so
+an import does not stop the receiver being polled or live clients being served
+while it runs. The dataset it produces is identical either way.
+
+#### What Download can reach
+
+The server fetches whichever URL the two file fields name, and — like every
+endpoint here — the request is not authenticated. Anyone who can reach Flightmap
+on the LAN can therefore make the server issue a `GET` to an address of their
+choosing, including one on the internal network that they could not reach
+themselves, and learn a little about the result from the message that comes back
+(the status code, or that the body was too small to be an export).
+
+This is the same exposure `metadataUrl` has always had, and it is in scope for
+the deployment model in [`operations.md`](operations.md): a trusted LAN, with
+remote access behind a reverse proxy that authenticates. It is written down here
+because the airport import is the first one reachable from a *button* rather
+than a command line, which makes it easy to forget.
+
+What bounds it: the response is read as a stream against a fixed 64 MB ceiling
+rather than buffered whole, the request times out after 60 seconds, the body is
+never rendered or stored unless it parses as an OurAirports export, and the two
+URLs are only settable by someone who can already reach the Settings page. If
+your network cannot carry that assumption, keep the receiver's egress restricted
+and use the CLI path below instead.
+
 ### Without internet access on the server
 
 A receiver with no route to the internet can still have airports, by carrying

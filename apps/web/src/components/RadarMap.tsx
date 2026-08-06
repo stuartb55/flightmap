@@ -1437,7 +1437,31 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
    */
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map || !airports?.length || map.getSource(AIRPORT_SOURCE)) return
+    if (!mapReady || !map) return
+    if (map.getSource(AIRPORT_SOURCE)) {
+      /*
+       * The layers exist, so this is a dataset that has changed under them — an
+       * operator rebuilding it on the Settings page. Re-supplying the source is
+       * all that is needed; the layers and their paint are unchanged.
+       *
+       * A dataset that has become empty takes its layers with it rather than
+       * being drawn as nothing, because the OurAirports credit is declared on
+       * the source and would otherwise outlive the data it credits.
+       */
+      if (airports?.length) {
+        setSourceData(map, RUNWAY_SOURCE, runwayData(airports))
+        setSourceData(map, AIRPORT_SOURCE, airportData(airports))
+        return
+      }
+      for (const id of ['airport-labels', 'airport-markers', 'airport-runways']) {
+        if (map.getLayer(id)) map.removeLayer(id)
+      }
+      for (const id of [AIRPORT_SOURCE, RUNWAY_SOURCE]) {
+        if (map.getSource(id)) map.removeSource(id)
+      }
+      return
+    }
+    if (!airports?.length) return
     const labels = mapLabelColours[theme]
     // Below the traffic, so an aircraft is never hidden behind ground context.
     const beforeId = ['range-ring-fill', 'route-waypoint-markers', 'aircraft-new-halo'].find(

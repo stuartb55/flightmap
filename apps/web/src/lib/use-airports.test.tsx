@@ -58,7 +58,38 @@ describe('the airport dataset cache', () => {
     await waitFor(() => expect(second.result.current).toHaveLength(2))
     // `fresh` is what takes the read past the service worker and the HTTP
     // cache; without it the reread is answered with the empty list again.
-    expect(fetchAirports).toHaveBeenLastCalledWith(expect.anything(), { fresh: true })
+    expect(fetchAirports).toHaveBeenLastCalledWith(undefined, { fresh: true })
+  })
+
+  /*
+   * The reread used to reach only the *next* mount, because the fetching effect
+   * has no dependency a module-level variable can change. A map already on
+   * screen kept the empty list it read at startup, and only worked at all
+   * because navigating from Settings to Live happened to remount it.
+   */
+  it('rereads into a consumer that is already mounted', async () => {
+    const fetchAirports = vi.spyOn(api, 'airports').mockResolvedValue([])
+    const { result } = renderHook(() => useAirports())
+    await waitFor(() => expect(result.current).toEqual([]))
+
+    fetchAirports.mockResolvedValue([airport('EGCC')])
+    await invalidateAirports()
+
+    await waitFor(() => expect(result.current).toHaveLength(1))
+    expect(fetchAirports).toHaveBeenCalledTimes(2)
+  })
+
+  it('makes one request when two consumers mount together', async () => {
+    const fetchAirports = vi
+      .spyOn(api, 'airports')
+      .mockResolvedValue([airport('EGCC')])
+
+    const first = renderHook(() => useAirports())
+    const second = renderHook(() => useAirports())
+
+    await waitFor(() => expect(first.result.current).toHaveLength(1))
+    await waitFor(() => expect(second.result.current).toHaveLength(1))
+    expect(fetchAirports).toHaveBeenCalledTimes(1)
   })
 
   it('drops the service worker copy, which is served ahead of the network', async () => {
@@ -79,7 +110,7 @@ describe('the airport dataset cache', () => {
     const { result } = renderHook(() => useAirports())
 
     await waitFor(() => expect(result.current).toHaveLength(1))
-    expect(fetchAirports).toHaveBeenLastCalledWith(expect.anything(), { fresh: true })
+    expect(fetchAirports).toHaveBeenLastCalledWith(undefined, { fresh: true })
     vi.unstubAllGlobals()
   })
 })

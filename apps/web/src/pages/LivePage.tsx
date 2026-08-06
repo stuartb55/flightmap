@@ -35,7 +35,7 @@ import {
   type AircraftSort,
   type SelectionMove,
 } from '../lib/aircraft-filter'
-import { shareUrl, viewportFromSearch } from '../lib/map-snapshot'
+import { shareUrl, viewportFromParams } from '../lib/map-snapshot'
 import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
 import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-bands'
 import { aircraftLabel, formatAltitude, formatDateTime } from '../lib/format'
@@ -92,10 +92,12 @@ export function LivePage() {
    * is asking to see the sender's view, not their own — and the viewport it
    * carries is handed to the map at construction so there is no jump.
    */
+  // Both read the router rather than `window.location`, and both are lazy
+  // initialisers: a link is what the page opened with, not something it tracks.
   const [filters, setFilters] = useState<AircraftFilterState>(
-    () => filtersFromParams(new URLSearchParams(window.location.search)) ?? storedFilters(),
+    () => filtersFromParams(searchParams) ?? storedFilters(),
   )
-  const sharedViewport = useMemo(() => viewportFromSearch(window.location.search), [])
+  const [sharedViewport] = useState(() => viewportFromParams(searchParams))
   const [sort, setSort] = useState<AircraftSort>({ key: 'distance', direction: 'asc' })
   const [columns, setColumns] = useAircraftColumns()
   const [listCollapsed, setListCollapsed] = useState(false)

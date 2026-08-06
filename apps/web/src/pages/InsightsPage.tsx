@@ -192,7 +192,12 @@ function ActivityChart({
                     aria-label={barLabel}
                     onClick={() => onSelect(point)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      // A rect is not a button, so Space is a page scroll until
+                      // it is claimed — and the drill-down below scrolls too,
+                      // which left the reader somewhere neither intended.
+                      event.preventDefault()
+                      onSelect(point)
                     }}
                   >
                     <title>{barLabel}</title>
@@ -217,7 +222,9 @@ function ActivityChart({
                           'aria-label': `${seriesLabel(point, overview.bucket)}: ${point.positionedReports.toLocaleString('en-GB')} positioned reports`,
                           onClick: () => onSelect(point),
                           onKeyDown: (event: KeyboardEvent<SVGElement>) => {
-                            if (event.key === 'Enter' || event.key === ' ') onSelect(point)
+                            if (event.key !== 'Enter' && event.key !== ' ') return
+                            event.preventDefault()
+                            onSelect(point)
                           },
                         })}
                   >

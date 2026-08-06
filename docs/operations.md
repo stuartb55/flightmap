@@ -170,6 +170,16 @@ suites that drive the API hard from one address — the CI end-to-end and load
 jobs share a bucket and do exactly that — and remember that a higher limit is a
 weaker safeguard.
 
+Three settings name a URL the **server** then fetches: `metadataUrl`, and the
+two airport files behind Settings → Airports → Download. Because nothing here is
+authenticated, anyone who can reach Flightmap can point those at an address of
+their choosing — including an internal one they could not reach directly — and
+read something back from the resulting message. Each download is bounded by a
+fixed size ceiling and timeout, is streamed rather than buffered, and is
+discarded unless it parses as the export it claims to be; see
+[`airports.md`](airports.md) for the detail. This is in scope for the trusted-LAN
+model above, and is a reason not to weaken it.
+
 The Content-Security-Policy allows the origin of the configured map style URL
 and nothing else remote. A style that loads its tiles, sprites or glyphs from a
 different origin needs that origin adding to `contentSecurityPolicy` in

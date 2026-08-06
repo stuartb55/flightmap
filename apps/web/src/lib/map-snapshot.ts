@@ -69,7 +69,12 @@ export function shareUrl(viewport: MapViewport | null, location: Location = wind
 }
 
 export function viewportFromSearch(search: string): MapViewport | null {
-  return viewportFromParam(new URLSearchParams(search).get(VIEWPORT_PARAM))
+  return viewportFromParams(new URLSearchParams(search))
+}
+
+/** For callers that already hold the router's parsed parameters. */
+export function viewportFromParams(params: URLSearchParams): MapViewport | null {
+  return viewportFromParam(params.get(VIEWPORT_PARAM))
 }
 
 /**
