@@ -8,8 +8,25 @@ import { api } from '../lib/api'
 import { resetSavedViews } from '../lib/saved-views'
 import { defaultMapLayers } from '../lib/map-preferences'
 
+// The button stands in for clicking a cell on the map, which is the only way
+// into the drill-down panel.
 vi.mock('../components/CoverageMap', () => ({
-  CoverageMap: ({ cells }: { cells: unknown[] }) => <div data-testid="coverage-map">{cells.length} cells</div>,
+  CoverageMap: ({
+    cells,
+    onSelectCell,
+  }: {
+    cells: { latitude: number; longitude: number }[]
+    onSelectCell?: (cell: unknown) => void
+  }) => (
+    <div data-testid="coverage-map">
+      {cells.length} cells
+      {cells[0] ? (
+        <button type="button" onClick={() => onSelectCell?.(cells[0])}>
+          Select first cell
+        </button>
+      ) : null}
+    </div>
+  ),
 }))
 
 vi.mock('../lib/api', () => ({
@@ -156,6 +173,7 @@ describe('InsightsPage', () => {
       to: coverage.to,
       cell: coverage.cells[0]!,
       aircraft: [{ icao: 'abc123', registration: 'G-CVRG', typeCode: 'A320', operator: 'Test Air' }],
+      truncated: false,
     })
     vi.mocked(api.receiverRecords).mockResolvedValue(records)
   })
@@ -169,6 +187,39 @@ describe('InsightsPage', () => {
     expect(screen.getByText('G-TEST')).toBeInTheDocument()
     expect(screen.getByTestId('coverage-map')).toHaveTextContent('1 cells')
     expect(screen.getByText('View busiest coverage cells')).toBeInTheDocument()
+  })
+
+  it('names the airframes in a selected coverage cell', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByText('Select first cell'))
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'Selected coverage cell details',
+    })
+    expect(within(panel).getByText('G-CVRG')).toBeInTheDocument()
+    expect(within(panel).queryByText(/Showing/)).not.toBeInTheDocument()
+  })
+
+  /*
+   * The cell's unique-aircraft count is the whole cell and the list beside it
+   * is a bounded sample, so over a long range the two legitimately disagree.
+   * Left unsaid that reads as a bug in the count.
+   */
+  it('says so when a cell holds more airframes than it lists', async () => {
+    vi.mocked(api.coverageCellDetail).mockResolvedValue({
+      from: coverage.from,
+      to: coverage.to,
+      cell: { ...coverage.cells[0]!, uniqueAircraft: 4_812 },
+      aircraft: [{ icao: 'abc123', registration: 'G-CVRG', typeCode: 'A320', operator: 'Test Air' }],
+      truncated: true,
+    })
+    renderPage()
+    fireEvent.click(await screen.findByText('Select first cell'))
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'Selected coverage cell details',
+    })
+    expect(within(panel).getByText(/Showing 1 of 4,812 aircraft/)).toBeInTheDocument()
   })
 
   it('shows empty, partial, and active backfill states independently', async () => {

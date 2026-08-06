@@ -946,6 +946,12 @@ export const coverageCellDetailResponseSchema = z.object({
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
   cell: coverageCellSchema,
+  /**
+   * A bounded sample of the cell's membership, not all of it. `cell
+   * .uniqueAircraft` is the true count; `truncated` says when this list is
+   * shorter than that, so the UI can say "showing the first n" rather than
+   * appearing to contradict the figure beside it.
+   */
   aircraft: z.array(
     z.object({
       icao: icaoSchema,
@@ -953,7 +959,8 @@ export const coverageCellDetailResponseSchema = z.object({
       typeCode: z.string().nullable(),
       operator: z.string().nullable()
     })
-  )
+  ),
+  truncated: z.boolean()
 });
 
 /*

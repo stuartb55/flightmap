@@ -832,35 +832,53 @@ export class InsightsRepository extends RepositoryBase {
     };
   }
 
+  /**
+   * One cell's detail.
+   *
+   * The named airframes are capped and the count is not. A 366-day window can
+   * sit anywhere in history and a busy cell accumulates airframes for every
+   * day of it, so returning the whole membership — and then a metadata row for
+   * each — is a response with no ceiling. `uniqueAircraft` is counted in SQL
+   * so the figure stays honest while the list is bounded, and `truncated` says
+   * when the two disagree.
+   */
   async coverageCellDetail(
     query: CoverageCellDetailQuery
   ): Promise<CoverageCellDetailResponse> {
     const from = new Date(query.from);
     const to = new Date(query.to);
     const grid = coverageGridCell(query.latitude, query.longitude);
+    const limit = 200;
     const result = await this.database.query<{
       reports: number | string;
       maximum_altitude_ft: number | string | null;
+      unique_aircraft: number | string;
       aircraft_icaos: string[];
     }>(
-      `SELECT coalesce(sum(reports), 0) AS reports,
-              max(maximum_altitude_ft) AS maximum_altitude_ft,
-              ARRAY(SELECT DISTINCT nested.icao
-                    FROM daily_coverage_cell_aircraft nested
-                    WHERE nested.coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
-                      AND nested.coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)
-                      AND nested.latitude_index = $3
-                      AND nested.longitude_index = $4
-                    ORDER BY nested.icao) AS aircraft_icaos
-       FROM daily_coverage_cells
-       WHERE coverage_date >= ($1::timestamptz AT TIME ZONE 'UTC')::date
-         AND coverage_date < (($2::timestamptz AT TIME ZONE 'UTC')::date + 1)
-         AND latitude_index = $3 AND longitude_index = $4`,
-      [from, to, grid.latitudeIndex, grid.longitudeIndex]
+      `WITH bounds AS (
+         SELECT ($1::timestamptz AT TIME ZONE 'UTC')::date AS from_date,
+                (($2::timestamptz AT TIME ZONE 'UTC')::date + 1) AS to_date
+       ),
+       members AS (
+         SELECT DISTINCT a.icao
+         FROM daily_coverage_cell_aircraft a, bounds b
+         WHERE a.coverage_date >= b.from_date AND a.coverage_date < b.to_date
+           AND a.latitude_index = $3 AND a.longitude_index = $4
+       )
+       SELECT coalesce(sum(c.reports), 0) AS reports,
+              max(c.maximum_altitude_ft) AS maximum_altitude_ft,
+              (SELECT count(*) FROM members) AS unique_aircraft,
+              ARRAY(SELECT icao FROM members ORDER BY icao LIMIT $5)
+                AS aircraft_icaos
+       FROM daily_coverage_cells c, bounds b
+       WHERE c.coverage_date >= b.from_date AND c.coverage_date < b.to_date
+         AND c.latitude_index = $3 AND c.longitude_index = $4`,
+      [from, to, grid.latitudeIndex, grid.longitudeIndex, limit]
     );
     const row = result.rows[0] ?? {
       reports: 0,
       maximum_altitude_ft: null,
+      unique_aircraft: 0,
       aircraft_icaos: []
     };
     const metadata = row.aircraft_icaos.length === 0
@@ -884,7 +902,7 @@ export class InsightsRepository extends RepositoryBase {
         north: grid.north,
         east: grid.east,
         reports: number(row.reports),
-        uniqueAircraft: row.aircraft_icaos.length,
+        uniqueAircraft: number(row.unique_aircraft),
         maximumAltitudeFt: nullableNumber(row.maximum_altitude_ft)
       },
       aircraft: metadata.rows.map((item) => ({
@@ -892,7 +910,8 @@ export class InsightsRepository extends RepositoryBase {
         registration: item.registration,
         typeCode: item.type_code,
         operator: item.operator
-      }))
+      })),
+      truncated: number(row.unique_aircraft) > row.aircraft_icaos.length
     };
   }
 

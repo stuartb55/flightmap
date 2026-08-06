@@ -78,7 +78,7 @@ export async function registerWebSocketRoute(
         else openByIp.delete(ip);
       };
 
-      const unsubscribe = hub.subscribe((_message, encoded) => {
+      const unsubscribe = hub.subscribe((message, encoded) => {
         if (socket.readyState === socket.OPEN) {
           if (socket.bufferedAmount > 1024 * 1024) {
             socket.close(1013, "Client is too slow; resnapshot");
@@ -88,11 +88,36 @@ export async function registerWebSocketRoute(
             socket.send(encoded);
           } catch {
             socket.terminate();
+            return;
+          }
+          /*
+           * The hub declines to subscribe a client whose `since` it cannot
+           * serve, so nothing further will ever arrive on this socket. Left
+           * open it would hold a connection slot — and one of this address's
+           * eight — while silent. The client resnapshots and redials.
+           */
+          if (message.type === "resync_required") {
+            socket.close(1000, "Resynchronise and reconnect");
           }
         }
       }, since);
+      /*
+       * Ping, and require an answer. Without the liveness half, a peer that
+       * vanished without a TCP close — asleep, off the network — keeps its
+       * slot until the kernel eventually gives up on the socket.
+       */
+      let awaitingPong = false;
+      socket.on("pong", () => {
+        awaitingPong = false;
+      });
       const keepalive = setInterval(() => {
-        if (socket.readyState === socket.OPEN) socket.ping();
+        if (socket.readyState !== socket.OPEN) return;
+        if (awaitingPong) {
+          socket.terminate();
+          return;
+        }
+        awaitingPong = true;
+        socket.ping();
       }, 30_000);
       keepalive.unref();
       const teardown = (): void => {
