@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import type {
   AircraftActivityResponse,
+  AirportImportRequest,
   AirportImportSummary,
   AirportsResponse,
   CoverageCellDetailResponse,
@@ -450,14 +451,17 @@ export const api = {
   },
 
   /**
-   * Rebuilds the airport dataset from the configured sources. Slow by nature —
-   * it downloads two files — so the caller shows progress rather than assuming
-   * this returns promptly.
+   * Rebuilds the airport dataset. Slow by nature — it downloads two files — so
+   * the caller shows progress rather than assuming this returns promptly.
+   *
+   * `overrides` are the values in the Settings form, sent so that a radius can
+   * be tried before it is saved. Each falls back to the stored setting, and
+   * none of them is persisted by the download.
    */
-  refreshAirports() {
+  refreshAirports(overrides: AirportImportRequest = {}) {
     return request<AirportImportSummary>(
       '/airports/refresh',
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(overrides) },
       airportImportSummarySchema,
     )
   },

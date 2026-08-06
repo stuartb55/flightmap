@@ -213,18 +213,21 @@ describe('the airport dataset card', () => {
     expect(screen.getByRole('button', { name: /Download now/ })).toBeEnabled()
   })
 
-  it('reports what a download produced and re-reads the stored settings', async () => {
-    apiMock.refreshAirports.mockResolvedValue({
-      airports: 137,
-      runways: 175,
-      byRank: { large: 23, medium: 74, small: 40 },
-      payloadBytes: 41_940,
-      gzippedBytes: 9_278,
-      centre: { latitude: 53.61, longitude: -2.31 },
-      radiusNm: 250,
-      minimumRunwayFt: 3_281,
-      updatedAt: '2026-08-05T12:00:00.000Z',
-    })
+  const summary = (overrides: Record<string, unknown> = {}) => ({
+    airports: 137,
+    runways: 175,
+    byRank: { large: 23, medium: 74, small: 40 },
+    payloadBytes: 41_940,
+    gzippedBytes: 9_278,
+    centre: { latitude: 53.61, longitude: -2.31 },
+    radiusNm: 250,
+    minimumRunwayFt: 3_281,
+    updatedAt: '2026-08-05T12:00:00.000Z',
+    ...overrides,
+  })
+
+  it('reports what a download produced, from the summary rather than a re-read', async () => {
+    apiMock.refreshAirports.mockResolvedValue(summary())
     render(<SettingsPage />)
 
     await userEvent.click(await screen.findByRole('button', { name: /Download now/ }))
@@ -232,9 +235,52 @@ describe('the airport dataset card', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       /Downloaded 137 airports and 175 runways within 250 nm/,
     )
-    // The server applied it to its own settings, so the page re-reads them
-    // rather than trusting its own copy.
-    await waitFor(() => expect(apiMock.settings).toHaveBeenCalledTimes(2))
+    // What is on the map now comes from the server's report of what it just
+    // wrote. Re-reading settings to find out would change `updatedAt`, which is
+    // the form's key, and remounting the form would lose any unsaved edits.
+    expect(await screen.findByText('137 airports · 175 runways')).toBeInTheDocument()
+    expect(screen.getByText(/Last downloaded/)).toBeInTheDocument()
+    expect(apiMock.settings).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * The card says a changed radius can be tried without saving first, so it has
+   * to be true: the download sends what is in the form, and the form survives.
+   */
+  it('downloads with what is in the form, not what was last saved', async () => {
+    apiMock.refreshAirports.mockResolvedValue(summary({ radiusNm: 40 }))
+    render(<SettingsPage />)
+
+    const radius = await screen.findByLabelText(/Radius/)
+    await userEvent.clear(radius)
+    await userEvent.type(radius, '40')
+    await userEvent.click(screen.getByRole('button', { name: /Download now/ }))
+
+    await waitFor(() =>
+      expect(apiMock.refreshAirports).toHaveBeenCalledWith(
+        expect.objectContaining({
+          airportRadiusNm: 40,
+          airportMinimumRunwayFt: 3_281,
+          airportDataUrl: defaultSettings.airportDataUrl,
+          airportRunwayDataUrl: defaultSettings.airportRunwayDataUrl,
+        }),
+      ),
+    )
+  })
+
+  it('keeps unsaved edits across a download', async () => {
+    apiMock.refreshAirports.mockResolvedValue(summary())
+    render(<SettingsPage />)
+
+    const receiverName = await screen.findByLabelText('Receiver name')
+    await userEvent.clear(receiverName)
+    await userEvent.type(receiverName, 'Shed roof')
+    await userEvent.click(screen.getByRole('button', { name: /Download now/ }))
+    await screen.findByRole('status')
+
+    // The form is uncontrolled, so a remount would silently reset this to the
+    // stored value and the operator's next save would write the old name back.
+    expect(screen.getByLabelText('Receiver name')).toHaveValue('Shed roof')
   })
 
   it('shows what is already configured, and when it was fetched', async () => {

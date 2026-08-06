@@ -1,4 +1,5 @@
 import {
+  airportImportRequestSchema,
   alertQuerySchema,
   aircraftActivityQuerySchema,
   coverageCellDetailQuerySchema,
@@ -111,9 +112,13 @@ export async function registerApiRoutes(
    * in this process rather than only in the database — which is what lets the
    * running application serve the new dataset without a restart.
    */
-  app.post("/api/v1/airports/refresh", async (_request, reply) => {
+  app.post("/api/v1/airports/refresh", async (request, reply) => {
+    // The body carries whatever the Settings form currently shows, so a radius
+    // can be tried without saving it first. Validated against the same bounds
+    // the settings themselves use, so this is not a way past them.
+    const overrides = airportImportRequestSchema.parse(request.body ?? {});
     try {
-      return await airportImport.refresh();
+      return await airportImport.refresh(overrides);
     } catch (error) {
       if (!(error instanceof AirportImportError)) throw error;
       // The centre being unknown is a precondition the operator can fix; a

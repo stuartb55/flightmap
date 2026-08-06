@@ -747,6 +747,65 @@ describe("rebuilding the airport dataset", () => {
     await server.close();
   });
 
+  it("passes the form's values through to the import", async () => {
+    const dependencies_ = dependencies();
+    const refresh = vi.fn().mockResolvedValue({ airports: 1, runways: 0 });
+    dependencies_.airportImport.refresh = refresh;
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: dependencies_ as never,
+      logger: false
+    });
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin,
+      payload: { airportRadiusNm: 40 }
+    });
+
+    expect(refresh).toHaveBeenCalledWith({ airportRadiusNm: 40 });
+    await server.close();
+  });
+
+  /*
+   * Downloading must not be a way past the bounds the settings form enforces,
+   * so the body is validated against the same ones.
+   */
+  it("refuses a radius the settings form would refuse", async () => {
+    const server = await app();
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin,
+      payload: { airportRadiusNm: 5_000 }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+    await server.close();
+  });
+
+  it("still uses the stored settings for an empty request", async () => {
+    const dependencies_ = dependencies();
+    const refresh = vi.fn().mockResolvedValue({ airports: 1, runways: 0 });
+    dependencies_.airportImport.refresh = refresh;
+    const server = await buildApp({
+      config: loadConfig({ NODE_ENV: "test", SERVE_WEB: "false" }),
+      dependencies: dependencies_ as never,
+      logger: false
+    });
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/airports/refresh",
+      headers: sameOrigin
+    });
+
+    expect(refresh).toHaveBeenCalledWith({});
+    await server.close();
+  });
+
   it("turns an import failure into a readable message rather than a 500", async () => {
     const dependencies_ = dependencies();
     dependencies_.airportImport.refresh = vi.fn().mockRejectedValue(

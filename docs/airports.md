@@ -59,6 +59,14 @@ configurable there, and saved with the rest of the settings:
 | Airports file | OurAirports `airports.csv` | Where the airport list comes from |
 | Runways file | OurAirports `runways.csv` | Where the centrelines come from |
 
+**Download uses what is on screen, saved or not.** Pressing it sends the four
+values as the form currently shows them, so a radius can be tried before it is
+committed to — the same thing `--dry-run` gives the CLI. They apply to that
+download only: nothing is written back to the settings, so a radius tried and
+not liked is undone by reloading the page. Save the form to keep one. The values
+are validated against the same bounds the form enforces, so a download is not a
+way past them.
+
 The centre of the radius is the receiver position: the Settings override if one
 is set, otherwise the position the receiver advertises in `receiver.json`. If
 neither is known the download stops and says so rather than guessing.

@@ -490,6 +490,30 @@ export const airportsResponseSchema = z.object({
   items: z.array(airportSchema)
 });
 
+/**
+ * What a Settings-driven airport download may be told to use instead of the
+ * saved settings.
+ *
+ * The point of the card is that a radius can be tried before it is committed
+ * to, so Download sends what is in the form rather than what was last saved.
+ * Every field is optional and each one falls back to the stored setting, so an
+ * empty body is still the "use what is saved" request it was before.
+ *
+ * The bounds mirror `settingsShape` in the server's `settings.ts`. They are
+ * repeated rather than shared because that module owns persistence and this one
+ * owns the wire; a download must not be able to write a radius the settings
+ * form would reject.
+ */
+export const airportImportRequestSchema = z
+  .object({
+    airportDataUrl: z.string().url().max(2_000),
+    airportRunwayDataUrl: z.string().url().max(2_000),
+    airportRadiusNm: z.number().positive().max(1_000),
+    airportMinimumRunwayFt: z.number().int().min(0).max(20_000)
+  })
+  .partial()
+  .strict();
+
 /** What a Settings-driven airport download reports back. */
 export const airportImportSummarySchema = z.object({
   airports: z.number().int().nonnegative(),
@@ -1250,6 +1274,7 @@ export type Airport = z.infer<typeof airportSchema>;
 export type AirportRunway = z.infer<typeof airportRunwaySchema>;
 export type AirportsResponse = z.infer<typeof airportsResponseSchema>;
 export type AirportImportSummary = z.infer<typeof airportImportSummarySchema>;
+export type AirportImportRequest = z.infer<typeof airportImportRequestSchema>;
 export type InsightOverview = z.infer<typeof insightOverviewSchema>;
 export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<

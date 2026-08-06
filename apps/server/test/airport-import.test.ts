@@ -137,6 +137,74 @@ describe("the airport import", () => {
   });
 
   /*
+   * The Settings card exists so that a radius can be tried before it is
+   * committed to, which only works if Download uses the form rather than the
+   * last thing saved.
+   */
+  it("prefers the request's values over the stored settings", async () => {
+    const fetchImplementation = vi.fn(async (url: string | URL | Request) =>
+      String(url).includes("runways") ? ok(runwaysCsv()) : ok(airportsCsv())
+    ) as unknown as typeof fetch;
+    const { airports } = service(fetchImplementation, {
+      settings: {
+        airportDataUrl: "https://saved.example/airports.csv",
+        airportRunwayDataUrl: "https://saved.example/runways.csv",
+        airportRadiusNm: 250,
+        airportMinimumRunwayFt: 3_281
+      }
+    });
+
+    const summary = await airports.refresh({
+      airportDataUrl: "https://typed.example/airports.csv",
+      airportRunwayDataUrl: "https://typed.example/runways.csv",
+      airportRadiusNm: 12,
+      airportMinimumRunwayFt: 900
+    });
+
+    expect(summary.radiusNm).toBe(12);
+    expect(summary.minimumRunwayFt).toBe(900);
+    const requested = (fetchImplementation as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => String(call[0])
+    );
+    expect(requested).toContain("https://typed.example/airports.csv");
+    expect(requested).toContain("https://typed.example/runways.csv");
+  });
+
+  it("falls back to a stored value for each field the request omits", async () => {
+    const fetchImplementation = vi.fn(async (url: string | URL | Request) =>
+      String(url).includes("runways") ? ok(runwaysCsv()) : ok(airportsCsv())
+    ) as unknown as typeof fetch;
+    const { airports } = service(fetchImplementation, {
+      settings: { airportRadiusNm: 250, airportMinimumRunwayFt: 3_281 }
+    });
+
+    // A radius typed but a threshold left alone: only the typed one moves.
+    const summary = await airports.refresh({ airportRadiusNm: 40 });
+
+    expect(summary.radiusNm).toBe(40);
+    expect(summary.minimumRunwayFt).toBe(3_281);
+  });
+
+  it("does not save the values it was asked to download with", async () => {
+    const fetchImplementation = vi.fn(async (url: string | URL | Request) =>
+      String(url).includes("runways") ? ok(runwaysCsv()) : ok(airportsCsv())
+    ) as unknown as typeof fetch;
+    const { airports, settings } = service(fetchImplementation, {
+      settings: { airportRadiusNm: 250 }
+    });
+
+    await airports.refresh({ airportRadiusNm: 40 });
+
+    // Downloading is not a way to save settings by the back door: only the
+    // dataset and the date it was built are written.
+    expect(settings.update).toHaveBeenCalledWith({
+      mapAirports: expect.any(Array),
+      mapAirportsUpdatedAt: expect.any(String)
+    });
+    expect(settings.current.airportRadiusNm).toBe(250);
+  });
+
+  /*
    * Every failure below leaves the existing dataset alone. A map that keeps
    * showing yesterday's airports is a far better answer to a failed download
    * than a map that has lost them.
