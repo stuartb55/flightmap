@@ -753,6 +753,14 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const shareRef = useRef(share)
   shareRef.current = share
   const initialViewportRef = useRef(initialViewport)
+  /*
+   * Where the camera was when the map was last torn down. A style change —
+   * which a theme change is — replaces every layer, so the map is rebuilt
+   * rather than patched; without this the replacement would be constructed from
+   * `initialViewportRef` and the reader would lose wherever they had panned to.
+   * Null on the first mount, which is what leaves a shared link in charge.
+   */
+  const lastViewportRef = useRef<MapViewport | null>(null)
   // Only set when the view was restored from a link: see the recentre effect.
   const restoredSelectionRef = useRef(initialViewport ? selectedIcao ?? null : null)
   const [shareStatus, setShareStatus] = useState<string | null>(null)
@@ -936,7 +944,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     const labels = mapLabelColours[theme]
     let map: MapLibreMap
     try {
-      const restored = initialViewportRef.current
+      // A rebuild resumes where the previous map left off; only a first mount
+      // falls back to the link's viewport, and only then to the receiver.
+      const restored = lastViewportRef.current ?? initialViewportRef.current
       map = new maplibregl.Map({
         container: containerRef.current,
         style: mapStyleUrl,
@@ -1350,6 +1360,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     })
 
     return () => {
+      // Read before `remove`, which leaves the map unable to report its camera.
+      lastViewportRef.current = getViewport() ?? lastViewportRef.current
       map.remove()
       mapRef.current = null
       popupRef.current = null

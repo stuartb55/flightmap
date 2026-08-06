@@ -22,7 +22,7 @@ import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
 import { ColumnChooser } from '../components/ColumnChooser'
-import { isFormTarget } from '../components/KeyboardShortcuts'
+import { isFormTarget, isPlainKey } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
 import { api } from '../lib/api'
 import {
@@ -282,10 +282,16 @@ export function LivePage() {
     ]
   }, [mapDisplay.trailMinutes, selected, selectedTrack])
 
+  /*
+   * Selection is not navigation: it replaces the current entry rather than
+   * pushing one, so Back leaves the page instead of walking twenty aircraft
+   * backwards, and it patches the query string rather than replacing it, so a
+   * shared link keeps its viewport and the sender's filters.
+   */
   // Stable so the memoised aircraft rows are not invalidated every render.
   const selectAircraft = useCallback(
     (icao: string) => {
-      setSearchParams({ aircraft: icao })
+      setSearchParams({ aircraft: icao }, true)
       setMobilePanel(null)
     },
     [setSearchParams],
@@ -293,7 +299,7 @@ export function LivePage() {
 
   // Stable so the keyboard listener below is not rebuilt on every render.
   const closeDetails = useCallback(() => {
-    setSearchParams({})
+    setSearchParams({ aircraft: null }, true)
   }, [setSearchParams])
 
   const dismissBanner = async () => {
@@ -411,7 +417,9 @@ export function LivePage() {
   // rather than being torn down and rebuilt on each 1 Hz snapshot render.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (isFormTarget(event.target)) return
+      // Every branch below is a single key, so a chord built on the same letter
+      // belongs to the browser: ⌘A selects all, ⌘↑/⌘↓ walk the page.
+      if (!isPlainKey(event) || isFormTarget(event.target)) return
       if (event.key === '/') {
         event.preventDefault()
         setListCollapsed(false)

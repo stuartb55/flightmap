@@ -21,6 +21,25 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
   )
 }
 
+/**
+ * Whether a single-key shortcut may claim this press.
+ *
+ * A shortcut that reads `event.key` alone also matches every chord built on the
+ * same letter, and calling `preventDefault` on those cancels something the
+ * reader asked the browser for rather than us: ⌘A stops selecting all, ⌘C stops
+ * copying, ⌘↓ stops jumping to the end of the page. `isFormTarget` does not
+ * cover it — text selected in a table cell targets the cell, not a field.
+ *
+ * Shift is deliberately not disqualifying. `?` is Shift and `/` on most
+ * layouts, so treating it as a modifier would make the shortcut guide
+ * unreachable from the key that documents it.
+ */
+export function isPlainKey(
+  event: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey'>,
+): boolean {
+  return !event.metaKey && !event.ctrlKey && !event.altKey
+}
+
 const shortcuts = [
   ['⌘K / Ctrl K', 'Open the command palette'],
   ['/', 'Focus search'],
@@ -38,7 +57,7 @@ export function KeyboardShortcuts() {
   const closeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === '?' && !isFormTarget(event.target)) {
+      if (event.key === '?' && isPlainKey(event) && !isFormTarget(event.target)) {
         event.preventDefault()
         setOpen(true)
       } else if (event.key === 'Escape' && open) {

@@ -28,7 +28,7 @@ import {
 import { SessionTimeline } from '../components/SessionTimeline'
 import type { RadarMapHandle } from '../components/RadarMap'
 import { SavedViewsControl } from '../components/SavedViewsControl'
-import { isFormTarget } from '../components/KeyboardShortcuts'
+import { isFormTarget, isPlainKey } from '../components/KeyboardShortcuts'
 import { api } from '../lib/api'
 import { Link, useLocation } from '../lib/router'
 import { useCoverageCells, useMapLayers } from '../lib/map-preferences'
@@ -767,16 +767,26 @@ export function HistoryPage() {
     return () => window.clearTimeout(timer)
   }, [playing, replayTime])
 
-  const clearTracks = () => {
+  // Stable so the keyboard listener below is not rebuilt on every render.
+  const clearTracks = useCallback(() => {
     setTracks({})
     setFocusedTrackId(null)
     setReplayTime(null)
     setPlaying(false)
-  }
+  }, [])
 
+  /*
+   * Every dependency is listed so the listener is installed once per change.
+   * Without a dependency array this was torn down and rebuilt on every render,
+   * which during replay is sixty times a second: `setReplayTime` runs once per
+   * animation frame.
+   */
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (isFormTarget(event.target)) return
+      // Single keys only, so a chord built on the same letter belongs to the
+      // browser. ⌘C in particular used to clear every loaded track instead of
+      // copying the selection.
+      if (!isPlainKey(event) || isFormTarget(event.target)) return
       if (event.key === '/') {
         event.preventDefault()
         historySearchRef.current?.focus()
@@ -793,7 +803,7 @@ export function HistoryPage() {
     }
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
-  })
+  }, [clearTracks, replayBounds, selectedTracks.length])
 
   useAppCommands((command) => {
     if (command.type !== 'apply-saved-view' || command.configuration.surface !== 'history') {

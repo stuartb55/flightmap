@@ -111,9 +111,18 @@ export function NavLink({ className, end = false, to, ...props }: NavLinkProps) 
   )
 }
 
+/**
+ * A `URLSearchParams` replaces the query string outright; a record patches it,
+ * setting each named key and deleting the ones given as `null`.
+ *
+ * The patch form is the one callers usually want. A shared link carries more
+ * than the parameter being changed — the Live map's `view=` viewport and the
+ * sender's filters ride in the same query string — and replacing wholesale
+ * silently threw those away the first time the reader clicked an aircraft.
+ */
 type SearchParamsInput =
   | URLSearchParams
-  | Record<string, string>
+  | Record<string, string | null>
 
 export function useSearchParams(): [
   URLSearchParams,
@@ -123,16 +132,21 @@ export function useSearchParams(): [
   const params = useMemo(() => new URLSearchParams(search), [search])
   const setParams = useCallback(
     (next: SearchParamsInput, replace = false) => {
-      const nextParams = new URLSearchParams()
+      let nextParams: URLSearchParams
       if (next instanceof URLSearchParams) {
+        nextParams = new URLSearchParams()
         next.forEach((value, key) => nextParams.append(key, value))
       } else {
-        Object.entries(next).forEach(([key, value]) => nextParams.set(key, value))
+        nextParams = new URLSearchParams(search)
+        for (const [key, value] of Object.entries(next)) {
+          if (value === null) nextParams.delete(key)
+          else nextParams.set(key, value)
+        }
       }
       const query = nextParams.toString()
       navigate(`${pathname}${query ? `?${query}` : ''}`, replace)
     },
-    [navigate, pathname],
+    [navigate, pathname, search],
   )
   return [params, setParams]
 }
