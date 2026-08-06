@@ -20,9 +20,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run test:coverage
+      # `build` runs the same tsc over the same three workspaces that
+      # `typecheck` does, only with emit, so running both was a duplicate pass.
+      # Worth a couple of seconds rather than a lot — this job's time is npm ci
+      # and the suites — but it moves before the tests so a type error still
+      # reports as a type error rather than as a confusing test failure.
       - run: npm run build
+      - run: npm run test:coverage
       - run: npm audit --audit-level=high
 
   database:
@@ -60,7 +64,11 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: verify
+    # Deliberately not `needs: verify`. This is the longest job in the run, and
+    # gating it on a 1m20s lint-and-typecheck job put that time on the critical
+    # path for no information — a lint failure fails the run whether or not the
+    # browser suite also ran. Running them together is the difference between a
+    # ~5m and a ~3m answer.
     env:
       POSTGRES_PASSWORD: flightmap-ci-database-password
       DATABASE_URL: postgresql://flightmap:flightmap-ci-database-password@db:5432/flightmap
@@ -89,6 +97,10 @@ jobs:
       # render. A degraded Azure mirror once made that step take 10m38s of a
       # 12m47s job, against ~10s for the browser download alone.
       - run: npx playwright install chromium
+      # Left as an uncached build on purpose. It takes 38s of this job's 218s,
+      # and a GHA layer cache would trade most of that for downloading a cache
+      # of a 390 MB image — plausibly a wash, and a new way for the job to fail.
+      # The time here is npm run test:e2e, not this.
       - run: docker compose --profile testing up --build --detach
       - name: Wait for readiness
         run: |
