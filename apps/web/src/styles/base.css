@@ -361,26 +361,36 @@ button:disabled {
   margin: 2px 0 0;
 }
 
+/* One grid for the whole list, so the key column tracks the widest chip instead
+   of a fixed width the two-key rows outgrew and then overlapped. Rows hand their
+   pair straight to it rather than each sizing a column of its own. */
 .shortcut-dialog dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
   margin: 0;
   padding: 7px 14px;
 }
 
 .shortcut-dialog dl > div {
-  display: grid;
-  grid-template-columns: 74px 1fr;
-  align-items: center;
-  min-height: 45px;
-  border-bottom: 1px solid var(--line);
-}
-
-.shortcut-dialog dl > div:last-child {
-  border-bottom: 0;
+  display: contents;
 }
 
 .shortcut-dialog dt,
 .shortcut-dialog dd {
+  display: flex;
+  align-items: center;
+  min-height: 45px;
   margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.shortcut-dialog dt {
+  padding-right: 12px;
+}
+
+.shortcut-dialog dl > div:last-child dt,
+.shortcut-dialog dl > div:last-child dd {
+  border-bottom: 0;
 }
 
 .shortcut-dialog kbd {
@@ -390,6 +400,7 @@ button:disabled {
   min-height: 27px;
   width: max-content;
   padding: 0 7px;
+  white-space: nowrap;
   color: var(--accent-bright);
   border: 1px solid var(--line-bright);
   border-radius: 5px;

@@ -1198,6 +1198,15 @@
   }
 }
 
+/* A guide to keys is worth nothing without one, so the trigger stays out of the
+   cramped header on touch devices. Pairing a keyboard still reaches the dialog
+   with ?, and the dialog itself lays out at any width. */
+@media (hover: none) and (pointer: coarse) {
+  .shortcut-button {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
