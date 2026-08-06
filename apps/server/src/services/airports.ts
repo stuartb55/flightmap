@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 import type { Airport, AirportImportRequest } from "@flightmap/shared";
-import { csvRecords, selectAirports } from "../domain/airports.js";
+import { csvRecordsYielding, selectAirportsYielding } from "../domain/airports.js";
 import type { Config } from "../config.js";
 import type { AppSettingsService } from "../settings.js";
 
@@ -124,7 +124,14 @@ export class AirportImportService {
         this.download(current.airportRunwayDataUrl, "runways")
       ]);
 
-      const airportRows = csvRecords(airportsCsv);
+      /*
+       * The yielding parser, because this runs inside the process serving the
+       * map. Straight through, an OurAirports export is a few hundred
+       * milliseconds of uninterrupted work here — closer to a second on
+       * receiver-class hardware — and for all of it the collector poll, every
+       * WebSocket delta and `/health/ready` would be waiting behind it.
+       */
+      const airportRows = await csvRecordsYielding(airportsCsv);
       if (airportRows.length < MINIMUM_CSV_ROWS) {
         throw new AirportImportError(
           `The airports file held ${airportRows.length} rows, which is too few to be an OurAirports export. The dataset has been left as it was.`,
@@ -132,12 +139,16 @@ export class AirportImportService {
         );
       }
 
-      const items = selectAirports(airportRows, csvRecords(runwaysCsv), {
-        latitude,
-        longitude,
-        radiusNm: current.airportRadiusNm,
-        minimumRunwayFt: current.airportMinimumRunwayFt
-      });
+      const items = await selectAirportsYielding(
+        airportRows,
+        await csvRecordsYielding(runwaysCsv),
+        {
+          latitude,
+          longitude,
+          radiusNm: current.airportRadiusNm,
+          minimumRunwayFt: current.airportMinimumRunwayFt
+        }
+      );
 
       const updatedAt = new Date().toISOString();
       await this.settings.update({

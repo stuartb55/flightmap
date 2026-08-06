@@ -146,17 +146,34 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
   });
 
+  /*
+   * The policy depends only on the two style URLs, but the config object it
+   * reads them from is mutated in place when settings are saved — that is how a
+   * changed style takes effect without a restart. So it is recomputed when they
+   * change and not once per reply: this hook runs for health checks, static
+   * assets and the 1 Hz polls alike, and building it means parsing two URLs and
+   * joining ten directives every time.
+   */
+  let policy: { key: string; value: string } | null = null;
+  const currentPolicy = (): string => {
+    const key = `${options.config.mapStyleUrl}\n${options.config.mapStyleUrlLight}`;
+    if (policy?.key !== key) {
+      policy = {
+        key,
+        value: contentSecurityPolicy(
+          options.config.mapStyleUrl,
+          options.config.mapStyleUrlLight
+        )
+      };
+    }
+    return policy.value;
+  };
+
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-content-type-options", "nosniff");
     reply.header("x-frame-options", "DENY");
     reply.header("referrer-policy", "same-origin");
-    reply.header(
-      "content-security-policy",
-      contentSecurityPolicy(
-        options.config.mapStyleUrl,
-        options.config.mapStyleUrlLight
-      )
-    );
+    reply.header("content-security-policy", currentPolicy());
     reply.header(
       "permissions-policy",
       "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
@@ -234,27 +251,42 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const indexTemplate = existsSync(indexFile)
     ? readFileSync(indexFile, "utf8")
     : null;
-  const renderedIndex = () =>
-    indexTemplate?.replace(
-        "</head>",
-        `<meta name="flightmap-config" content="${encodeURIComponent(
-          JSON.stringify({
-            mapStyleUrl: options.config.mapStyleUrl,
-            mapStyleUrlLight: options.config.mapStyleUrlLight,
-            receiverName: options.config.receiverName,
-            receiverLatitude: options.config.receiverLatitude,
-            receiverLongitude: options.config.receiverLongitude,
-            displayTimeZone: options.config.displayTimeZone,
-            rangeRingsNm: options.config.rangeRingsNm,
-            // `mapAirports` is deliberately absent. This blob is URI-encoded
-            // into every page load and into the page cache, which is fine for
-            // eleven waypoints and wrong for a few thousand airport and runway
-            // records; those come from GET /api/v1/airports, fetched once and
-            // served from a runtime cache after that.
-            mapWaypoints: options.config.mapWaypoints
-          })
-        )}"></head>`
-      ) ?? null;
+  /*
+   * Rendered when the injected settings change rather than per request, for the
+   * same reason as the policy above: the config object is live, but the values
+   * only move when settings are saved, and this re-serialises the waypoint list
+   * and rewrites the document every time it runs.
+   */
+  let rendered: { key: string; value: string | null } | null = null;
+  const renderedIndex = (): string | null => {
+    const settings = {
+      mapStyleUrl: options.config.mapStyleUrl,
+      mapStyleUrlLight: options.config.mapStyleUrlLight,
+      receiverName: options.config.receiverName,
+      receiverLatitude: options.config.receiverLatitude,
+      receiverLongitude: options.config.receiverLongitude,
+      displayTimeZone: options.config.displayTimeZone,
+      rangeRingsNm: options.config.rangeRingsNm,
+      // `mapAirports` is deliberately absent. This blob is URI-encoded
+      // into every page load and into the page cache, which is fine for
+      // eleven waypoints and wrong for a few thousand airport and runway
+      // records; those come from GET /api/v1/airports, fetched once and
+      // served from a runtime cache after that.
+      mapWaypoints: options.config.mapWaypoints
+    };
+    const key = JSON.stringify(settings);
+    if (rendered?.key !== key) {
+      rendered = {
+        key,
+        value:
+          indexTemplate?.replace(
+            "</head>",
+            `<meta name="flightmap-config" content="${encodeURIComponent(key)}"></head>`
+          ) ?? null
+      };
+    }
+    return rendered.value;
+  };
   if (options.config.serveWeb && existsSync(indexFile)) {
     await app.register(fastifyStatic, {
       root: options.config.webDistDir,
