@@ -94,7 +94,7 @@ describe('history keyboard shortcuts', () => {
       </Router>,
     )
     await user.click(await screen.findByRole('button', { name: /EZY42KD/i }, { timeout: 5_000 }))
-    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto'))
+    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto', expect.any(AbortSignal)))
     expect(await screen.findByTestId('flight-profile')).toBeInTheDocument()
   }
 

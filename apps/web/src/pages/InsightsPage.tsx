@@ -57,6 +57,7 @@ import {
 import { useMapLayers } from '../lib/map-preferences'
 import { useInsightSeries } from '../lib/insight-preferences'
 import { useAppCommands } from '../lib/app-commands'
+import { useOnline } from '../lib/use-online'
 import { useDefaultSavedView } from '../lib/saved-views'
 import { Link, useLocation } from '../lib/router'
 import { displayTimeZone, useRuntimeConfig } from '../config'
@@ -573,6 +574,7 @@ export function InsightsPage() {
   const activityChartRef = useRef<SVGSVGElement>(null)
   const rangeChartRef = useRef<SVGSVGElement>(null)
   const units = useUnitPreferences()
+  const online = useOnline()
   const receiver = useRuntimeConfig().receiver
 
   /*
@@ -727,13 +729,38 @@ export function InsightsPage() {
     }, 0)
   }
 
+  /*
+   * One cell at a time. Without this, picking a cell and then changing the
+   * range lands the answer to the old question over the new one — and the
+   * loading flag belongs to whichever request finished last rather than to the
+   * one still running.
+   */
+  const coverageDetailRef = useRef<AbortController | null>(null)
+  useEffect(() => () => coverageDetailRef.current?.abort(), [])
+
   const selectCoverageCell = (cell: CoverageCell) => {
+    coverageDetailRef.current?.abort()
+    const controller = new AbortController()
+    coverageDetailRef.current = controller
     setCoverageDetailLoading(true)
     setSelectedCoverage(null)
-    void api.coverageCellDetail({ from: range.from, to: range.to, latitude: cell.latitude, longitude: cell.longitude })
-      .then(setSelectedCoverage)
-      .catch((reason) => setCoverageError(reason instanceof Error ? reason.message : 'Coverage cell details are unavailable.'))
-      .finally(() => setCoverageDetailLoading(false))
+    void api
+      .coverageCellDetail(
+        { from: range.from, to: range.to, latitude: cell.latitude, longitude: cell.longitude },
+        controller.signal,
+      )
+      .then((detail) => {
+        if (!controller.signal.aborted) setSelectedCoverage(detail)
+      })
+      .catch((reason) => {
+        if (controller.signal.aborted) return
+        setCoverageError(
+          reason instanceof Error ? reason.message : 'Coverage cell details are unavailable.',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCoverageDetailLoading(false)
+      })
   }
 
   useAppCommands((command) => {
@@ -821,7 +848,7 @@ export function InsightsPage() {
         <label className="compare-toggle"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /><span>Compare preceding period</span></label>
       </section>
 
-      {!navigator.onLine ? (
+      {!online ? (
         <div className="insight-notice error" role="alert">
           <RadioTower size={17} /> You are offline. Reconnect and retry to refresh insights.
         </div>

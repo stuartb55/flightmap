@@ -586,7 +586,32 @@ export function HistoryPage() {
     if (!wideAppliedRange) void searchSessions(appliedFilters, next)
   }
 
+  /*
+   * One controller per track in flight, so deselecting a track that is still
+   * loading cancels it. Without this the response still arrived and put the
+   * track back on the map after the reader had taken it off.
+   */
+  const trackRequestsRef = useRef(new Map<string, AbortController>())
+  useEffect(() => {
+    const requests = trackRequestsRef.current
+    return () => {
+      for (const controller of requests.values()) controller.abort()
+      requests.clear()
+    }
+  }, [])
+
   const loadTrack = async (session: SessionSummary) => {
+    const inFlight = trackRequestsRef.current.get(session.id)
+    if (inFlight) {
+      inFlight.abort()
+      trackRequestsRef.current.delete(session.id)
+      setTrackLoading((current) => {
+        const next = new Set(current)
+        next.delete(session.id)
+        return next
+      })
+      return
+    }
     if (tracks[session.id]) {
       setTracks((current) => {
         const next = { ...current }
@@ -603,23 +628,33 @@ export function HistoryPage() {
       setTrackError('You can compare up to eight tracks at once. Remove a selected track to add another.')
       return
     }
+    const controller = new AbortController()
+    trackRequestsRef.current.set(session.id, controller)
     setTrackLoading((current) => new Set(current).add(session.id))
     setTrackError(null)
     try {
-      const track = await api.track(session.id, resolution)
+      const track = await api.track(session.id, resolution, controller.signal)
+      if (controller.signal.aborted) return
       setTracks((current) => ({ ...current, [session.id]: track }))
       // The profile panel takes a third of a phone screen, so the narrow layout
       // leaves it closed and offers it per track in the selection tray.
       if (!narrowLayout()) setFocusedTrackId(session.id)
       setMobileView('map')
     } catch (requestError) {
+      // A cancelled request is the reader changing their mind, not a failure.
+      if (controller.signal.aborted) return
       setTrackError(requestError instanceof Error ? requestError.message : 'Track could not be loaded')
     } finally {
-      setTrackLoading((current) => {
-        const next = new Set(current)
-        next.delete(session.id)
-        return next
-      })
+      // Only if it is still ours: cancelling and re-selecting the same session
+      // registers a second controller, which this must not evict.
+      if (trackRequestsRef.current.get(session.id) === controller) {
+        trackRequestsRef.current.delete(session.id)
+        setTrackLoading((current) => {
+          const next = new Set(current)
+          next.delete(session.id)
+          return next
+        })
+      }
     }
   }
 

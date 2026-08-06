@@ -88,7 +88,7 @@ describe('history URL while a replay is playing', () => {
 
     const card = await screen.findByRole('button', { name: /EZY42KD/i }, { timeout: 5_000 })
     await user.click(card)
-    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto'))
+    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto', expect.any(AbortSignal)))
 
     await user.click(await screen.findByRole('button', { name: 'Play replay' }))
     // Playback is still running: the URL must not wait for it to finish.

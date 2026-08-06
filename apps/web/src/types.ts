@@ -1,4 +1,5 @@
-import type { Airport, MapWaypoint } from '@flightmap/shared'
+import type { z } from 'zod'
+import { appSettingsResponseSchema } from '@flightmap/shared'
 export type ReceiverHealth = 'online' | 'degraded' | 'offline' | 'connecting'
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 export type Altitude = number | 'ground' | null
@@ -232,51 +233,17 @@ export interface SystemStatus {
   uptimeSeconds: number | null
 }
 
-export interface AppSettings {
-  receiverBaseUrl: string
-  receiverName: string
-  receiverLatitude: number | null
-  receiverLongitude: number | null
-  pollIntervalMs: number
-  receiverTimeoutMs: number
-  receiverInfoIntervalMs: number
-  receiverStatsIntervalMs: number
-  displayTimeZone: string
-  mapStyleUrl: string
-  mapStyleUrlLight: string
-  rangeRingsNm: number[]
-  /** Configured on the server; the Settings form does not edit these. */
-  mapWaypoints?: MapWaypoint[]
-  /**
-   * Built by the airport download in Settings rather than typed, so the form
-   * reads it but never submits it. Optional because a server older than the
-   * download will not send it.
-   */
-  mapAirports?: Airport[]
-  mapAirportsUpdatedAt?: string | null
-  airportDataUrl: string
-  airportRunwayDataUrl: string
-  airportRadiusNm: number
-  airportMinimumRunwayFt: number
-  historyRetentionDays: number
-  sessionGapSeconds: number
-  currentAircraftTtlSeconds: number
-  metadataUrl: string
-  metadataCheckIntervalMs: number
-  metadataTimeoutMs: number
-  metadataMinRows: number
-  metadataMaxDownloadBytes: number
-  metadataMaxUncompressedBytes: number
-  databaseVolumeCapacityBytes: number | null
-  collectorEnabled: boolean
-  maintenanceEnabled: boolean
-  metadataUpdatesEnabled: boolean
-}
-
-export interface AppSettingsResponse {
-  settings: AppSettings
-  updatedAt: string | null
-}
+/**
+ * Inferred from the shared schema the client validates responses against,
+ * rather than declared again here: two hand-kept copies of the same shape is
+ * one too many, and the schema is the one the failure message depends on.
+ *
+ * `mapWaypoints` and `mapAirports` are server-managed — the form reads them but
+ * never submits them, and a server older than the airport download will not
+ * send them at all.
+ */
+export type AppSettingsResponse = z.infer<typeof appSettingsResponseSchema>
+export type AppSettings = AppSettingsResponse['settings']
 
 export interface HistoryFilters {
   query: string

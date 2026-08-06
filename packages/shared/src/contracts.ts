@@ -491,6 +491,59 @@ export const airportsResponseSchema = z.object({
 });
 
 /**
+ * The settings response, as far as a client needs to trust it.
+ *
+ * The server's `settingsShape` remains the authority on what a *valid* setting
+ * is — its ranges, its URL and time-zone checks, and the persistence rules that
+ * go with them. This is the narrower question the client has: is the body the
+ * shape this build knows how to render? Without it, a server one version out
+ * returns a settings object missing `rangeRingsNm` and the page dies on
+ * `.join(', ')` with a console stack, where every other endpoint would have
+ * said which of the two is out of date.
+ *
+ * Deliberately not `.strict()`: a newer server sending a key this build has
+ * never heard of is not a reason to refuse the whole page.
+ */
+export const appSettingsResponseSchema = z.object({
+  settings: z.object({
+    receiverBaseUrl: z.string(),
+    receiverName: z.string(),
+    receiverLatitude: z.number().nullable(),
+    receiverLongitude: z.number().nullable(),
+    pollIntervalMs: z.number(),
+    receiverTimeoutMs: z.number(),
+    receiverInfoIntervalMs: z.number(),
+    receiverStatsIntervalMs: z.number(),
+    displayTimeZone: z.string(),
+    mapStyleUrl: z.string(),
+    mapStyleUrlLight: z.string(),
+    rangeRingsNm: z.array(z.number()),
+    /** Server-managed: the Settings form reads these but never submits them. */
+    mapWaypoints: z.array(mapWaypointSchema).optional(),
+    mapAirports: z.array(airportSchema).optional(),
+    mapAirportsUpdatedAt: isoDateTimeSchema.nullable().optional(),
+    airportDataUrl: z.string(),
+    airportRunwayDataUrl: z.string(),
+    airportRadiusNm: z.number(),
+    airportMinimumRunwayFt: z.number(),
+    historyRetentionDays: z.number(),
+    sessionGapSeconds: z.number(),
+    currentAircraftTtlSeconds: z.number(),
+    metadataUrl: z.string(),
+    metadataCheckIntervalMs: z.number(),
+    metadataTimeoutMs: z.number(),
+    metadataMinRows: z.number(),
+    metadataMaxDownloadBytes: z.number(),
+    metadataMaxUncompressedBytes: z.number(),
+    databaseVolumeCapacityBytes: z.number().nullable(),
+    collectorEnabled: z.boolean(),
+    maintenanceEnabled: z.boolean(),
+    metadataUpdatesEnabled: z.boolean()
+  }),
+  updatedAt: isoDateTimeSchema.nullable()
+});
+
+/**
  * What a Settings-driven airport download may be told to use instead of the
  * saved settings.
  *

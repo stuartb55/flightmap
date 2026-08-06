@@ -111,7 +111,7 @@ describe('session ordering', () => {
     )
 
     await user.click(await screen.findByRole('button', { name: /EZY42KD/i }, { timeout: 5_000 }))
-    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto'))
+    await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto', expect.any(AbortSignal)))
     const summaryCalls = apiMock.summaries.mock.calls.length
 
     await user.selectOptions(screen.getByLabelText('Sort sessions'), 'altitude_desc')
