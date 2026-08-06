@@ -4,14 +4,17 @@ Review of the feature work delivered since the v1 build, covering the phase-3
 releases through `62f0018`. Item numbers continue from `plan.md`, which stops at
 30, so these are stable identifiers usable in branch names and PR titles.
 
-**Baseline.** `npm run typecheck`, `npm run lint` and `npm run test` are all
-clean on `main` — 531 tests across 71 files. Nothing below is a broken build;
-these are defects and improvements found by reading the delivered code.
+**Baseline when the review was written.** `npm run typecheck`, `npm run lint` and
+`npm run test` were all clean on `main` — 531 tests across 71 files. Nothing
+below was a broken build; these are defects and improvements found by reading the
+delivered code.
+
+**All sixteen are now delivered**, on `fix/peer-review-findings` in five commits
+grouped by area. The suite is at 560 tests and typecheck, lint and build are
+clean. Each item keeps its problem statement and acceptance criteria as the
+record of what was wrong and what was asserted about the fix.
 
 Effort key matches `plan.md`: **S** ≈ half a day, **M** ≈ 1–2 days.
-
-Tick the checkbox when the acceptance criteria pass and
-`npm run typecheck && npm run lint && npm run test` is clean.
 
 ---
 
@@ -19,7 +22,7 @@ Tick the checkbox when the acceptance criteria pass and
 
 ### 31. Single-key shortcuts fire while a modifier is held — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The global `keydown` handlers test `event.key` without looking at
 `metaKey`, `ctrlKey` or `altKey`, then call `preventDefault()`. Every browser
@@ -60,7 +63,7 @@ its `?` handler), `apps/web/src/pages/LivePage.tsx:413`,
 
 ### 32. A theme change resets the map camera — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The map effect depends on `theme` (`RadarMap.tsx:1362`) and a theme
 change is a full teardown: `map.remove()` and a fresh `new maplibregl.Map(...)`.
@@ -95,7 +98,7 @@ first mount has nothing captured and so still honours the shared link.
 
 ### 33. Selecting an aircraft pushes history and drops the query string — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `selectAircraft` calls `setSearchParams({ aircraft: icao })`
 (`LivePage.tsx:288`) and `closeDetails` calls `setSearchParams({})` (`:296`).
@@ -130,7 +133,7 @@ tests alongside.
 
 ### 34. Settings: Download does not use the form, and discards unsaved edits — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Two separate defects in the airport download flow.
 
@@ -176,7 +179,7 @@ this path.
 
 ### 35. The live alert list grows without bound — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `mergeAlerts` (`live-reducer.ts:119`) unions the incoming alerts
 into everything already held and never caps the result. Nothing evicts:
@@ -207,7 +210,7 @@ server remains the source of truth for anything older via `GET /api/v1/alerts`.
 
 ### 36. The History keydown listener is rebuilt on every render — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The effect at `HistoryPage.tsx:777` has no dependency array
 (`:796` closes with `})`), so the `document` listener is removed and re-added on
@@ -231,7 +234,7 @@ why. This is the same handler shape without the fix.
 
 ### 37. The airport import stalls the event loop — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `parseCsv` (`domain/airports.ts:30`) is a character-at-a-time loop
 building fields by string concatenation, `csvRecords` (`:68`) then allocates a
@@ -278,7 +281,7 @@ the alternative if the batching turns out to complicate the CLI path.
 
 ### 38. Insights overview full-scans the airframe tables on every request — **M**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The `designator_evidence` CTE in `leadersSql`
 (`insights-repository.ts`) scans all of `aircraft_summary`, left-joins
@@ -312,7 +315,7 @@ the cache proves awkward to invalidate.
 
 ### 39. Response-header work repeated per request — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The `onSend` hook calls `contentSecurityPolicy(...)` for every
 reply (`app.ts:154`), which constructs a `Set`, parses two URLs and joins ten
@@ -341,7 +344,7 @@ behaviour that mutation in place provides.
 
 ### 40. Settings responses bypass schema validation — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `api.settings()` (`api.ts:448`) and `api.updateSettings()` (`:484`)
 are the only two calls that pass no schema to `request()`, so the body is cast
@@ -371,7 +374,7 @@ assert it.
 
 ### 41. No client-side request timeout — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `request()` (`api.ts:95`) passes no `AbortSignal.timeout`. A server
 that accepts a connection and never answers leaves every call pending
@@ -396,7 +399,7 @@ takes tens of seconds; the server's own download timeout is 60 s
 
 ### 42. Un-abortable and non-reactive request state — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Three smaller instances of the same shape:
 
@@ -429,7 +432,7 @@ tests alongside.
 
 ### 43. Chart bars scroll the page when activated with Space — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** The activity chart's `<rect role="button" tabIndex={0}>` handlers
 (`InsightsPage.tsx:193` and `:218`) call `onSelect` on `Enter` or `' '` but never
@@ -449,7 +452,7 @@ does not scroll.
 
 ### 44. The airport dataset cannot refresh into a mounted map — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** Two independent guards each prevent a refresh from reaching a map
 that is already on screen:
@@ -480,7 +483,7 @@ update the source data when `airports` changes rather than returning early — t
 
 ### 45. Router location diverges from the address bar — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `HistoryPage.writeUrl` calls `window.history.replaceState` directly
 (`HistoryPage.tsx:727`). The Router only listens for `popstate`
@@ -502,7 +505,7 @@ than a side effect two pages happen to rely on.
 
 ### 46. Write down the airport-import fetch surface — **S**
 
-- [ ] Implement
+- [x] Implement
 
 **Problem.** `POST /api/v1/airports/refresh` makes the server fetch an arbitrary
 operator-supplied URL (`services/airports.ts:148`) with no restriction on host
