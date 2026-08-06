@@ -15,6 +15,7 @@ import {
   FixedWindowRateLimiter,
   RequestSecurity
 } from "./security.js";
+import { SettingsNotLoadedError } from "./settings.js";
 
 export type BuildAppOptions = {
   config: Config;
@@ -195,6 +196,17 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
     if (error instanceof RepositoryInputError) {
       return reply.code(400).send({
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      });
+    }
+    // Retryable rather than wrong: the same request succeeds once boot
+    // finishes, which is what /health/ready is already reporting.
+    if (error instanceof SettingsNotLoadedError) {
+      reply.header("retry-after", "5");
+      return reply.code(503).send({
         error: {
           code: error.code,
           message: error.message

@@ -51,6 +51,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state)
   const generationRef = useRef(0)
   const retryRef = useRef(0)
+  // Consecutive resyncs, cleared only by a delta that actually applies. The
+  // socket opens on every one of them, so `retryRef` cannot measure this.
+  const resyncRef = useRef(0)
 
   useEffect(() => {
     stateRef.current = state
@@ -125,6 +128,27 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    /**
+     * Take a fresh snapshot and redial, after the server has told us our
+     * sequence is unusable.
+     *
+     * Both halves need care. If the snapshot fails, `hasSnapshot` stays true —
+     * `offline` does not clear it — so redialling immediately sends the same
+     * stale `since` and earns the same answer, as fast as the network allows;
+     * a restarting server is exactly when the snapshot is also unavailable.
+     * And if the snapshot succeeds but the server still refuses the sequence,
+     * the socket opens each time, which resets the backoff counter, so
+     * counting resyncs is the only thing that ends the loop.
+     */
+    const resnapshotAndReconnect = async () => {
+      resyncRef.current += 1
+      if (!(await loadSnapshot()) || resyncRef.current > 3) {
+        scheduleReconnect()
+        return
+      }
+      if (!cancelled) void connect()
+    }
+
     const connect = async () => {
       if (
         cancelled ||
@@ -169,9 +193,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
         if (message.type === 'resync_required') {
           activeSocket.close(1000, 'Resynchronising')
-          void loadSnapshot().then(() => {
-            if (!cancelled) void connect()
-          })
+          void resnapshotAndReconnect()
           return
         }
         if (message.type === 'hello') {
@@ -184,9 +206,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         if (message.sequence <= stateRef.current.sequence) return
         if (isSequenceGap(stateRef.current.sequence, message.sequence)) {
           activeSocket.close(1000, 'Sequence gap')
-          void loadSnapshot().then(() => {
-            if (!cancelled) void connect()
-          })
+          void resnapshotAndReconnect()
           return
         }
 
@@ -199,6 +219,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           receiver: message.receiver,
           alerts: message.alerts,
         }
+        // The stream is healthy again, whatever it took to get here.
+        resyncRef.current = 0
         stateRef.current = liveReducer(stateRef.current, action)
         dispatch(action)
       })

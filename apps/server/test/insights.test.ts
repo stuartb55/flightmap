@@ -239,17 +239,21 @@ describe("insight rollup boundaries", () => {
 
     const statements = query.mock.calls.map(([sql]) => String(sql));
     expect(statements.some((sql) => sql.includes("aircraft_icaos"))).toBe(false);
-    for (const table of [
-      "daily_coverage_cell_aircraft",
-      "daily_range_histogram_aircraft"
-    ]) {
-      expect(
-        statements.some((sql) => sql.includes(`DELETE FROM ${table}`))
-      ).toBe(true);
-      expect(
-        statements.some((sql) => sql.includes(`INSERT INTO ${table}`))
-      ).toBe(true);
-    }
+    expect(
+      statements.some((sql) =>
+        sql.includes("DELETE FROM daily_coverage_cell_aircraft")
+      )
+    ).toBe(true);
+    expect(
+      statements.some((sql) =>
+        sql.includes("INSERT INTO daily_coverage_cell_aircraft")
+      )
+    ).toBe(true);
+    // The range profile reads counters only, so a rebuilt day writes no
+    // per-aircraft membership for it.
+    expect(
+      statements.some((sql) => sql.includes("daily_range_histogram_aircraft"))
+    ).toBe(false);
   });
 
   it("calculates absolute and percentage comparison changes", () => {

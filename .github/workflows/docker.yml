@@ -68,7 +68,9 @@ jobs:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
 
+      # Only needed to emulate arm64, which only a publishing build produces.
       - name: Set up QEMU
+        if: env.PUBLISH_IMAGE == 'true'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
         with:
           platforms: arm64
@@ -106,7 +108,16 @@ jobs:
         with:
           context: .
           file: infra/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # A pull request builds amd64 only. The arm64 half is emulated under
+          # QEMU and is the larger part of a 73s build plus 8s of QEMU setup.
+          # What it re-proves each time is that the per-target stage installs
+          # cleanly on arm64 — and all 99 of the server's production packages
+          # are pure JavaScript with no binding.gyp, os/cpu constraint or
+          # install script between them, which `--ignore-scripts` there would
+          # not run anyway. Every published image — main, tags, manual dispatch
+          # — is still built for both, so a genuine cross-architecture break is
+          # caught on merge rather than on release.
+          platforms: ${{ env.PUBLISH_IMAGE == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: ${{ env.PUBLISH_IMAGE == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

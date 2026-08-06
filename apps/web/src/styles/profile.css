@@ -129,6 +129,7 @@
 .coverage-aircraft-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 7px; max-height: 220px; overflow: auto; }
 .coverage-aircraft-links a { display: flex; flex-direction: column; padding: 8px; border-radius: 7px; color: inherit; background: var(--panel); }
 .coverage-aircraft-links small { color: var(--muted); }
+.coverage-aircraft-note { margin: 8px 0 0; font-size: 0.85rem; color: var(--muted); }
 .activity-chart .chart-bar[role="button"] { cursor: pointer; }
 .activity-chart .chart-bar[role="button"]:focus { outline: 3px solid var(--text); outline-offset: 2px; }
 .leader-copy { color: inherit; }

@@ -13,16 +13,11 @@ import { StatusService } from "./services/status.js";
 import { AppSettingsService } from "./settings.js";
 
 const bootConfig = loadConfig();
-const database = new Database(bootConfig);
-const settings = new AppSettingsService(database);
-// Persisted settings are loaded after the HTTP server binds, so a database
-// blip at boot surfaces as /health/ready reporting not_ready rather than as a
-// process that never answers at all. Runtime configs are updated in place.
-const config = settings.runtimeConfig(bootConfig);
-const repository = new FlightRepository(database, config);
-const hub = new LiveHub();
+// Built before the pool, which needs somewhere to report the failures of idle
+// connections. `logLevel` is boot configuration, so this is the same level the
+// rest of the application runs at.
 const logger = pino({
-  level: config.logLevel,
+  level: bootConfig.logLevel,
   redact: {
     paths: [
       "req.headers.authorization",
@@ -37,6 +32,14 @@ const logger = pino({
     err: pino.stdSerializers.err
   }
 });
+const database = new Database(bootConfig, logger);
+const settings = new AppSettingsService(database);
+// Persisted settings are loaded after the HTTP server binds, so a database
+// blip at boot surfaces as /health/ready reporting not_ready rather than as a
+// process that never answers at all. Runtime configs are updated in place.
+const config = settings.runtimeConfig(bootConfig);
+const repository = new FlightRepository(database, config);
+const hub = new LiveHub();
 
 const collector = new ReceiverCollector(
   config,

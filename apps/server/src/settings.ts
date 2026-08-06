@@ -191,10 +191,36 @@ export type SettingsResponse = {
   updatedAt: string | null;
 };
 
+/**
+ * Raised when a write arrives before the persisted settings have been read.
+ *
+ * A patch is merged into whatever this process last read, so applying one on
+ * top of the defaults would write those defaults over the operator's real
+ * stored configuration the moment the database came back. Boot serves defaults
+ * so the application can answer at all; it must not save them.
+ */
+export class SettingsNotLoadedError extends Error {
+  readonly code = "SETTINGS_NOT_LOADED";
+
+  constructor() {
+    super(
+      "Settings have not been read from the database yet, so they cannot be changed. Check that PostgreSQL is reachable and retry."
+    );
+    this.name = "SettingsNotLoadedError";
+  }
+}
+
 export class AppSettingsService {
   private current: AppSettings = defaultAppSettings;
   private updatedAt: string | null = null;
   private loaded = false;
+  /*
+   * The live config objects handed out by `runtimeConfig`, updated in place
+   * when settings change. There is deliberately no removal path: a runtime
+   * config is built once at startup and lives as long as the process, so
+   * anything that could unregister one would be dead code. The CLIs build one
+   * each and then exit.
+   */
   private readonly runtimeConfigs = new Set<Record<string, unknown>>();
   private airports: { body: string; etag: string } | null = null;
 
@@ -275,22 +301,32 @@ export class AppSettingsService {
   }
 
   async update(input: unknown): Promise<SettingsResponse> {
+    if (!this.loaded) throw new SettingsNotLoadedError();
     const patch = appSettingsPatchSchema.parse(input);
     const settings = appSettingsSchema.parse({
       ...this.current,
       ...patch
     });
+    /*
+     * An upsert, and the returned row is checked. `load()` creates the row, so
+     * the insert is unreachable in practice — but a bare UPDATE that matches
+     * nothing reports success, and this is the write an operator has just been
+     * told took effect. It must not be possible to lose it quietly.
+     */
     const result = await this.database.query<{ updated_at: Date | string }>(
-      `UPDATE application_settings
-       SET settings = $1::jsonb, updated_at = now()
-       WHERE id = true
+      `INSERT INTO application_settings (id, settings)
+       VALUES (true, $1::jsonb)
+       ON CONFLICT (id) DO UPDATE
+       SET settings = EXCLUDED.settings, updated_at = now()
        RETURNING updated_at`,
       [JSON.stringify(settings)]
     );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Settings were not written; the settings row is missing");
+    }
     this.apply(settings);
-    this.updatedAt = result.rows[0]
-      ? new Date(result.rows[0].updated_at).toISOString()
-      : new Date().toISOString();
+    this.updatedAt = new Date(row.updated_at).toISOString();
     return this.get();
   }
 

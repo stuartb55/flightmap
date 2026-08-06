@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import {
   AppSettingsService,
+  SettingsNotLoadedError,
   appSettingsSchema,
   defaultAppSettings
 } from "../src/settings.js";
@@ -53,8 +54,54 @@ describe("application settings", () => {
     expect(runtime.receiverName).toBe("Loft receiver");
     expect(runtime.historyRetentionDays).toBe(14);
     expect(query).toHaveBeenLastCalledWith(
-      expect.stringContaining("UPDATE application_settings"),
+      expect.stringContaining("INSERT INTO application_settings"),
       [expect.stringContaining('"receiverName":"Loft receiver"')]
+    );
+  });
+
+  /*
+   * Boot serves defaults so the application can answer while PostgreSQL is
+   * unreachable. A patch is merged into whatever was last read, so saving one
+   * during that window would write those defaults over the operator's real
+   * stored configuration as soon as the database came back.
+   */
+  it("refuses to save before persisted settings have been read", async () => {
+    const query = vi.fn();
+    const service = new AppSettingsService({ query } as never);
+
+    await expect(service.update({ receiverName: "Loft receiver" })).rejects.toThrow(
+      SettingsNotLoadedError
+    );
+    expect(query).not.toHaveBeenCalled();
+    expect(service.isLoaded()).toBe(false);
+  });
+
+  /*
+   * A bare UPDATE that matches nothing reports success. This is the write an
+   * operator has just been told took effect, so it must not be possible to
+   * lose it quietly.
+   */
+  it("fails loudly when the write reports no row", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            settings: defaultAppSettings,
+            updated_at: new Date("2026-07-29T12:00:00Z")
+          }
+        ]
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const service = new AppSettingsService({ query } as never);
+    await service.load();
+
+    await expect(service.update({ receiverName: "Loft receiver" })).rejects.toThrow(
+      /settings row is missing/
+    );
+    // The in-memory copy still matches what is stored.
+    expect(service.get().settings.receiverName).toBe(
+      defaultAppSettings.receiverName
     );
   });
 

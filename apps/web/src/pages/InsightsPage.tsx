@@ -1065,6 +1065,15 @@ export function InsightsPage() {
             <header><div><span className="eyebrow">SELECTED CELL</span><h3>{selectedCoverage.cell.latitude.toFixed(3)}, {selectedCoverage.cell.longitude.toFixed(3)}</h3></div><button type="button" className="text-button" onClick={() => setSelectedCoverage(null)}>Close</button></header>
             <dl><div><dt>Reports</dt><dd>{selectedCoverage.cell.reports.toLocaleString('en-GB')}</dd></div><div><dt>Aircraft</dt><dd>{selectedCoverage.cell.uniqueAircraft.toLocaleString('en-GB')}</dd></div><div><dt>Maximum altitude</dt><dd>{formatAltitude(selectedCoverage.cell.maximumAltitudeFt)}</dd></div></dl>
             <div className="coverage-aircraft-links">{selectedCoverage.aircraft.slice(0, 50).map((aircraft) => <Link key={aircraft.icao} to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}><strong>{aircraft.registration || aircraft.icao.toUpperCase()}</strong><small>{aircraft.typeCode || aircraft.operator || 'Aircraft profile'}</small></Link>)}</div>
+            {/* Said plainly, because the count above it is the whole cell and
+                this list is not — over a long range they differ by a lot. */}
+            {selectedCoverage.truncated || selectedCoverage.aircraft.length > 50 ? (
+              <p className="coverage-aircraft-note">
+                Showing {Math.min(50, selectedCoverage.aircraft.length).toLocaleString('en-GB')} of{' '}
+                {selectedCoverage.cell.uniqueAircraft.toLocaleString('en-GB')} aircraft seen in
+                this cell. Narrow the date range to see fewer.
+              </p>
+            ) : null}
           </aside>
         ) : null}
       </section>
