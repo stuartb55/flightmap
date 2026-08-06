@@ -1,4 +1,5 @@
-import { gzipSync } from "node:zlib";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import type { Airport, AirportImportRequest } from "@flightmap/shared";
 import { csvRecordsYielding, selectAirportsYielding } from "../domain/airports.js";
 import type { Config } from "../config.js";
@@ -57,6 +58,8 @@ const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** Below this the file is not an OurAirports export, whatever it is. */
 const MINIMUM_CSV_ROWS = 100;
+
+const compress = promisify(gzip);
 
 export class AirportImportService {
   private running = false;
@@ -156,7 +159,7 @@ export class AirportImportService {
         mapAirportsUpdatedAt: updatedAt
       });
 
-      const summary = this.summarise(items, {
+      const summary = await this.summarise(items, {
         latitude,
         longitude,
         radiusNm: current.airportRadiusNm,
@@ -229,7 +232,14 @@ export class AirportImportService {
     return Buffer.concat(chunks).toString("utf8");
   }
 
-  private summarise(
+  /**
+   * Asynchronous compression, for the same reason the parsers above yield:
+   * this runs inside the process serving the map, and `gzipSync` over a
+   * multi-megabyte payload holds the event loop for all of it — the collector
+   * poll, every WebSocket delta and `/health/ready` would wait behind a
+   * number shown on a settings card.
+   */
+  private async summarise(
     items: readonly Airport[],
     context: {
       latitude: number;
@@ -238,8 +248,9 @@ export class AirportImportService {
       minimumRunwayFt: number;
       updatedAt: string;
     }
-  ): AirportImportSummary {
+  ): Promise<AirportImportSummary> {
     const body = JSON.stringify({ items });
+    const gzipped = await compress(Buffer.from(body));
     return {
       airports: items.length,
       runways: items.reduce((total, airport) => total + airport.runways.length, 0),
@@ -249,7 +260,7 @@ export class AirportImportService {
         small: items.filter((airport) => airport.rank === 1).length
       },
       payloadBytes: Buffer.byteLength(body),
-      gzippedBytes: gzipSync(Buffer.from(body)).byteLength,
+      gzippedBytes: gzipped.byteLength,
       centre: { latitude: context.latitude, longitude: context.longitude },
       radiusNm: context.radiusNm,
       minimumRunwayFt: context.minimumRunwayFt,
