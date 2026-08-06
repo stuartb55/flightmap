@@ -214,6 +214,13 @@ export class AppSettingsService {
   private current: AppSettings = defaultAppSettings;
   private updatedAt: string | null = null;
   private loaded = false;
+  /*
+   * The live config objects handed out by `runtimeConfig`, updated in place
+   * when settings change. There is deliberately no removal path: a runtime
+   * config is built once at startup and lives as long as the process, so
+   * anything that could unregister one would be dead code. The CLIs build one
+   * each and then exit.
+   */
   private readonly runtimeConfigs = new Set<Record<string, unknown>>();
   private airports: { body: string; etag: string } | null = null;
 

@@ -92,9 +92,15 @@ export class IngestRepository extends RepositoryBase {
          WHERE ended_at IS NULL AND last_position_at < $1`,
         [cutoff]
       );
+      // The state blob is cleared alongside the column, as the other two
+      // copies of this statement do. An aircraft absent from this snapshot is
+      // not rewritten by `upsertCurrent` below, so without this it keeps a
+      // sessionId pointing at a session that has ended — until the health
+      // loop's sweep happens to notice.
       await client.query(
         `UPDATE current_aircraft c
-         SET session_id = NULL
+         SET session_id = NULL,
+             state = jsonb_set(c.state, '{sessionId}', 'null'::jsonb)
          FROM track_sessions s
          WHERE c.session_id = s.id AND s.ended_at IS NOT NULL`
       );
@@ -1002,10 +1008,4 @@ export class IngestRepository extends RepositoryBase {
       return closed.rowCount ?? 0;
     });
   }
-
-  /**
-   * `icaos` restricts the read to specific aircraft. The per-row `EXISTS`
-   * against `alert_events` makes the unrestricted form expensive, so callers
-   * that want one aircraft must not scan the whole live table.
-   */
 }

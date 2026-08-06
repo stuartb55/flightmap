@@ -109,10 +109,27 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
       "SELECT count(*) AS count FROM receiver_samples"
     );
     expect(remaining.rows[0]?.count).toBe("0");
-    const log = await database.query<{ dropped_partitions: number }>(
-      "SELECT dropped_partitions FROM maintenance_log"
+    // Every counter the run reports is auditable, including the hourly
+    // deletions — the one table whose removals leave no dropped partition to
+    // show for them.
+    const log = await database.query<{
+      dropped_partitions: number;
+      deleted_alerts: string;
+      deleted_receiver_samples: string;
+      deleted_hourly_activity: string;
+    }>(
+      `SELECT dropped_partitions, deleted_alerts, deleted_receiver_samples,
+              deleted_hourly_activity
+       FROM maintenance_log`
     );
     expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]?.deleted_alerts).toBe(String(result.deletedAlerts));
+    expect(log.rows[0]?.deleted_receiver_samples).toBe(
+      String(result.deletedReceiverSamples)
+    );
+    expect(log.rows[0]?.deleted_hourly_activity).toBe(
+      String(result.deletedHourlyActivity)
+    );
   });
 
   it("closes sessions that stopped reporting and detaches the live row", async () => {

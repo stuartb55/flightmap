@@ -168,14 +168,16 @@ export class MaintenanceService {
           await client.query(
             `INSERT INTO maintenance_log (
                retention_days, dropped_partitions, deleted_sessions,
-               deleted_alerts, deleted_receiver_samples
-             ) VALUES ($1, $2, $3, $4, $5)`,
+               deleted_alerts, deleted_receiver_samples,
+               deleted_hourly_activity
+             ) VALUES ($1, $2, $3, $4, $5, $6)`,
             [
               this.config.historyRetentionDays,
               droppedPartitions,
               deletedSessions,
               deletedAlerts,
-              deletedReceiverSamples
+              deletedReceiverSamples,
+              deletedHourlyActivity
             ]
           );
         });
