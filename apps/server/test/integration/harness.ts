@@ -42,7 +42,6 @@ const applicationTables = [
   "current_aircraft",
   "daily_coverage_cell_aircraft",
   "daily_coverage_cells",
-  "daily_range_histogram_aircraft",
   "daily_range_histogram",
   "hourly_aircraft_activity",
   "daily_aircraft_summary",

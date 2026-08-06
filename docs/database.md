@@ -18,6 +18,7 @@ lock make startup migrations serial and restart-safe.
 | `receiver_samples` | Minute receiver health/statistics | 30 days |
 | `hourly_aircraft_activity` | Compact per-aircraft/hour report and session rollups | Detailed-history retention |
 | `daily_coverage_cells` | Positioned reports grouped into fixed 0.05-degree cells | Indefinite |
+| `daily_coverage_cell_aircraft` | Which airframes made up a cell's reports, one row per day, cell, and aircraft | Indefinite |
 | `daily_range_histogram` | Five-degree bearing, altitude-band, and five-NM range rollups | Indefinite |
 | `alert_events` | Emergency, watchlist, and custom-rule events | 30 days |
 | `custom_alert_rules` | Installation-wide identity/altitude/distance rules | Indefinite |
@@ -32,6 +33,21 @@ lock make startup migrations serial and restart-safe.
 | `receiver_state` | Receiver coordinates/version | Current state only |
 | `collector_checkpoint` | Duplicate/restart-safe snapshot cursor | Current state only |
 | `maintenance_log` | Recent maintenance audit | Operational record |
+
+### Why coverage membership is indefinite
+
+`daily_coverage_cell_aircraft` is the only indefinite table that grows with
+traffic rather than with the number of distinct airframes, so it is worth
+saying why it is not pruned. The coverage map reports a unique-aircraft count
+per cell, and the cell drill-down names the airframes; both read this table.
+Coverage accepts any window up to 366 days, positioned *anywhere* in history,
+so there is no age at which a row becomes unreadable — pruning by age would
+silently turn historical unique counts into zeroes. It is a per-day, per-cell,
+per-aircraft row rather than a per-report one, so it grows far more slowly than
+`position_samples`; see `docs/disk-sizing.md` for what to expect.
+
+The range profile has no equivalent table. It displays counters only, so
+`daily_range_histogram` alone answers it.
 
 ## Position partitions and indexes
 

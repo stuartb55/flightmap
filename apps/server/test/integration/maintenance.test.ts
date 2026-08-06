@@ -164,9 +164,9 @@ describeDatabase("retention maintenance against PostgreSQL", () => {
       "SELECT icao FROM daily_coverage_cell_aircraft ORDER BY icao"
     );
     expect(members.rows.map((row) => row.icao)).toEqual(["400001", "400002"]);
-    const rangeMembers = await database.query<{ count: string }>(
-      "SELECT count(DISTINCT icao) AS count FROM daily_range_histogram_aircraft"
+    const buckets = await database.query<{ reports: string }>(
+      "SELECT sum(reports)::text AS reports FROM daily_range_histogram"
     );
-    expect(rangeMembers.rows[0]?.count).toBe("2");
+    expect(buckets.rows[0]?.reports).toBe("10");
   });
 });

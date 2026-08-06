@@ -293,10 +293,6 @@ export class InsightBackfillService {
         [day]
       );
       await client.query(
-        "DELETE FROM daily_range_histogram_aircraft WHERE profile_date = $1",
-        [day]
-      );
-      await client.query(
         `INSERT INTO daily_range_histogram (
            profile_date, bearing_bucket, altitude_band, range_bucket_nm,
            reports
@@ -315,26 +311,6 @@ export class InsightBackfillService {
          FROM validated_positions
          WHERE bearing_deg IS NOT NULL AND distance_nm IS NOT NULL
          GROUP BY 1, 2, 3, 4`,
-        [day]
-      );
-      await client.query(
-        `INSERT INTO daily_range_histogram_aircraft (
-           profile_date, bearing_bucket, altitude_band, range_bucket_nm, icao
-         )
-         WITH ${validatedPositionCtes()}
-         SELECT DISTINCT $1::date,
-                floor(mod(mod(bearing_deg::numeric, 360) + 360, 360) / 5)::smallint,
-                CASE
-                  WHEN on_ground THEN 'ground'
-                  WHEN trusted_altitude_ft IS NULL OR trusted_altitude_ft < 10000 THEN 'low'
-                  WHEN trusted_altitude_ft < 25000 THEN 'medium'
-                  ELSE 'high'
-                END,
-                least(500, floor(greatest(0, distance_nm) / 5) * 5)::smallint,
-                trim(icao)
-         FROM validated_positions
-         WHERE bearing_deg IS NOT NULL AND distance_nm IS NOT NULL
-         ON CONFLICT DO NOTHING`,
         [day]
       );
       await client.query(

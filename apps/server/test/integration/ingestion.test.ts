@@ -91,10 +91,12 @@ describeDatabase("ingestion against PostgreSQL", () => {
     );
     expect(members.rows.map((row) => row.icao)).toEqual(["400001", "400002"]);
 
-    const rangeMembers = await database.query<{ count: string }>(
-      "SELECT count(*) AS count FROM daily_range_histogram_aircraft"
+    // The range profile reads counters only; membership is kept for coverage,
+    // which is the one place a unique-aircraft count is displayed.
+    const buckets = await database.query<{ reports: string }>(
+      "SELECT reports FROM daily_range_histogram"
     );
-    expect(Number(rangeMembers.rows[0]?.count)).toBeGreaterThan(0);
+    expect(buckets.rows.length).toBeGreaterThan(0);
   });
 
   it("reports coverage insights and cell detail from the membership table", async () => {

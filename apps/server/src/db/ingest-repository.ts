@@ -179,7 +179,6 @@ export class IngestRepository extends RepositoryBase {
         altitudeBand: RangeAltitudeBand;
         rangeBucketNm: number;
         reports: number;
-        aircraftIcaos: Set<string>;
       }>();
       const alertSamples: Array<Record<string, unknown>> = [];
 
@@ -345,15 +344,13 @@ export class IngestRepository extends RepositoryBase {
             const range = rangeByBucket.get(rangeKey);
             if (range) {
               range.reports += 1;
-              range.aircraftIcaos.add(aircraft.icao);
             } else {
               rangeByBucket.set(rangeKey, {
                 profileDate: utcDay(snapshot.recordedAt),
                 bearingBucket,
                 altitudeBand,
                 rangeBucketNm,
-                reports: 1,
-                aircraftIcaos: new Set([aircraft.icao])
+                reports: 1
               });
             }
           }
@@ -412,10 +409,7 @@ export class IngestRepository extends RepositoryBase {
           aircraftIcaos: [...cell.aircraftIcaos]
         }))
       );
-      await this.upsertRangeHistogram(client, [...rangeByBucket.values()].map((range) => ({
-        ...range,
-        aircraftIcaos: [...range.aircraftIcaos]
-      })));
+      await this.upsertRangeHistogram(client, [...rangeByBucket.values()]);
       const insertedAlerts = await this.insertAlerts(client, alertSamples);
       const newlyAlertedIcaos = new Set(
         insertedAlerts
@@ -898,6 +892,10 @@ export class IngestRepository extends RepositoryBase {
     );
   }
 
+  /**
+   * Counters only. The range profile reads nothing but `reports`, so unlike
+   * coverage there is no per-aircraft membership to keep alongside it.
+   */
   private async upsertRangeHistogram(
     client: Queryable,
     rows: Array<{
@@ -906,7 +904,6 @@ export class IngestRepository extends RepositoryBase {
       altitudeBand: RangeAltitudeBand;
       rangeBucketNm: number;
       reports: number;
-      aircraftIcaos: string[];
     }>
   ): Promise<void> {
     if (!rows.length) return;
@@ -915,8 +912,7 @@ export class IngestRepository extends RepositoryBase {
       bearing_bucket: row.bearingBucket,
       altitude_band: row.altitudeBand,
       range_bucket_nm: row.rangeBucketNm,
-      reports: row.reports,
-      aircraft_icaos: row.aircraftIcaos
+      reports: row.reports
     })));
     await client.query(
       `INSERT INTO daily_range_histogram (
@@ -929,20 +925,6 @@ export class IngestRepository extends RepositoryBase {
        )
        ON CONFLICT (profile_date, bearing_bucket, altitude_band, range_bucket_nm) DO UPDATE SET
          reports = daily_range_histogram.reports + EXCLUDED.reports`,
-      [payload]
-    );
-    await client.query(
-      `INSERT INTO daily_range_histogram_aircraft (
-         profile_date, bearing_bucket, altitude_band, range_bucket_nm, icao
-       )
-       SELECT DISTINCT x.profile_date, x.bearing_bucket, x.altitude_band,
-              x.range_bucket_nm, icao
-       FROM jsonb_to_recordset($1::jsonb) AS x(
-         profile_date date, bearing_bucket smallint, altitude_band text,
-         range_bucket_nm smallint, aircraft_icaos text[]
-       )
-       CROSS JOIN LATERAL unnest(x.aircraft_icaos) AS icao
-       ON CONFLICT DO NOTHING`,
       [payload]
     );
   }

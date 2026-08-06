@@ -32,6 +32,34 @@ larger SSD volume or reduce detailed-history retention in Settings. The
 250-aircraft test is a throughput acceptance case and does not imply that a
 40 GB volume can retain 250 aircraft continuously for 30 days.
 
+## The indefinite tables
+
+Lowering retention bounds `position_samples` and the other 30-day tables. It
+does not bound the aggregates, which are kept indefinitely by design and go on
+growing after detailed tracks have been dropped.
+
+`aircraft_summary` and `daily_aircraft_summary` grow with the number of
+distinct airframes heard, which for a fixed receiver flattens out within a few
+months. `daily_coverage_cells` and `daily_range_histogram` are bounded per day
+by the geometry of the receiver's coverage, not by traffic.
+
+`daily_coverage_cell_aircraft` is the one to watch. It holds one row per day,
+0.05-degree cell, and aircraft, so it grows with traffic every day and is never
+pruned — the coverage map's unique-aircraft counts read it, and a 366-day
+window can sit anywhere in history, so no row ever becomes unreadable. Estimate:
+
+```text
+rows per day ≈ distinct aircraft per day × cells each is seen in
+```
+
+A receiver hearing 3,000 distinct aircraft a day, each crossing 40 cells, adds
+about 120,000 rows a day — roughly 44 million rows and a few GB a year
+including the primary-key index. Measure yours with the table breakdown below
+after a representative week and multiply. If that growth is not wanted, the
+supported way to reclaim it is to delete rows older than the oldest coverage
+window you intend to query, accepting that unique-aircraft counts before that
+date become zero.
+
 ## Measure database use
 
 The system page and `GET /api/v1/status` expose total database use and retained
