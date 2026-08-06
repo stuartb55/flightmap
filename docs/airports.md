@@ -59,6 +59,14 @@ configurable there, and saved with the rest of the settings:
 | Airports file | OurAirports `airports.csv` | Where the airport list comes from |
 | Runways file | OurAirports `runways.csv` | Where the centrelines come from |
 
+**Download uses what is on screen, saved or not.** Pressing it sends the four
+values as the form currently shows them, so a radius can be tried before it is
+committed to — the same thing `--dry-run` gives the CLI. They apply to that
+download only: nothing is written back to the settings, so a radius tried and
+not liked is undone by reloading the page. Save the form to keep one. The values
+are validated against the same bounds the form enforces, so a download is not a
+way past them.
+
 The centre of the radius is the receiver position: the Settings override if one
 is set, otherwise the position the receiver advertises in `receiver.json`. If
 neither is known the download stops and says so rather than guessing.
@@ -68,6 +76,32 @@ bounded — 60 seconds and 64 MB per file, fixed rather than configurable, becau
 those are limits rather than choices — and a file too small to be an OurAirports
 export is rejected. Every failure leaves the existing dataset alone: a map still
 showing yesterday's airports is a better answer than one that has lost them.
+
+Parsing yields the event loop as it goes rather than running to completion, so
+an import does not stop the receiver being polled or live clients being served
+while it runs. The dataset it produces is identical either way.
+
+#### What Download can reach
+
+The server fetches whichever URL the two file fields name, and — like every
+endpoint here — the request is not authenticated. Anyone who can reach Flightmap
+on the LAN can therefore make the server issue a `GET` to an address of their
+choosing, including one on the internal network that they could not reach
+themselves, and learn a little about the result from the message that comes back
+(the status code, or that the body was too small to be an export).
+
+This is the same exposure `metadataUrl` has always had, and it is in scope for
+the deployment model in [`operations.md`](operations.md): a trusted LAN, with
+remote access behind a reverse proxy that authenticates. It is written down here
+because the airport import is the first one reachable from a *button* rather
+than a command line, which makes it easy to forget.
+
+What bounds it: the response is read as a stream against a fixed 64 MB ceiling
+rather than buffered whole, the request times out after 60 seconds, the body is
+never rendered or stored unless it parses as an OurAirports export, and the two
+URLs are only settable by someone who can already reach the Settings page. If
+your network cannot carry that assumption, keep the receiver's egress restricted
+and use the CLI path below instead.
 
 ### Without internet access on the server
 

@@ -1,6 +1,12 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { csvRecords, parseCsv, selectAirports } from "../src/domain/airports.js";
+import {
+  csvRecords,
+  csvRecordsYielding,
+  parseCsv,
+  selectAirports,
+  selectAirportsYielding
+} from "../src/domain/airports.js";
 import { parseArguments } from "../src/airports-cli.js";
 
 /*
@@ -311,6 +317,76 @@ describe("airport selection", () => {
     expect(items).toHaveLength(400);
     const gzipped = gzipSync(Buffer.from(JSON.stringify({ items }))).byteLength;
     expect(gzipped).toBeLessThan(250_000);
+  });
+});
+
+/*
+ * The Settings-page import runs inside the process serving the map, so it uses
+ * the yielding pair. `docs/airports.md` promises both paths produce identical
+ * bytes from identical input, which is only true while they share every
+ * decision — these guard that they still do.
+ */
+describe("building the dataset without holding the event loop", () => {
+  /** Big enough that the chunking actually engages, with quotes across it. */
+  function realisticCsvs(count: number): { airports: string; runways: string } {
+    const rows = [AIRPORT_HEADER];
+    const runwayRows = [RUNWAY_HEADER];
+    for (let index = 0; index < count; index += 1) {
+      const ident = `EG${index.toString().padStart(4, "0")}`;
+      rows.push(
+        airportRow({
+          ident,
+          type: index % 3 === 0 ? "large_airport" : index % 3 === 1 ? "medium_airport" : "small_airport",
+          // A comma and a doubled quote, so the escape path is exercised at
+          // whatever offsets the chunking happens to land on.
+          name: `Aerodrome ${index}, the ""old"" field`,
+          latitude: 53.4 + index / 20_000,
+          longitude: -2.3 + index / 20_000
+        })
+      );
+      runwayRows.push(runwayRow({ airport: ident, lengthFt: "6000" }));
+    }
+    return { airports: rows.join("\n"), runways: runwayRows.join("\n") };
+  }
+
+  it("parses a chunked read to exactly what a straight-through one produces", async () => {
+    const { airports, runways } = realisticCsvs(5_000);
+
+    expect(await csvRecordsYielding(airports)).toEqual(csvRecords(airports));
+    expect(await csvRecordsYielding(runways)).toEqual(csvRecords(runways));
+  });
+
+  it("selects the same airports, in the same order", async () => {
+    const { airports, runways } = realisticCsvs(5_000);
+    const airportRows = csvRecords(airports);
+    const runwayRows = csvRecords(runways);
+
+    expect(await selectAirportsYielding(airportRows, runwayRows, OPTIONS)).toEqual(
+      selectAirports(airportRows, runwayRows, OPTIONS),
+    );
+  });
+
+  it("agrees on the awkward inputs too", async () => {
+    // An empty file, a header with no rows, and a quoted field holding the
+    // newline the chunker splits on.
+    for (const text of ["", "a,b\n", 'a,b\n"line\none",2\n', "a,b\r\n1,2"]) {
+      expect(await csvRecordsYielding(text)).toEqual(csvRecords(text));
+    }
+  });
+
+  it("hands the event loop back rather than blocking it", async () => {
+    const { airports } = realisticCsvs(20_000);
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+
+    await csvRecordsYielding(airports);
+    clearInterval(timer);
+
+    // A straight-through parse of this much CSV runs to completion without the
+    // timer firing once, which is the collector poll it would have been.
+    expect(ticks).toBeGreaterThan(0);
   });
 });
 

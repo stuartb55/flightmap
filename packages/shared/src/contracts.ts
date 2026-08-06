@@ -490,6 +490,83 @@ export const airportsResponseSchema = z.object({
   items: z.array(airportSchema)
 });
 
+/**
+ * The settings response, as far as a client needs to trust it.
+ *
+ * The server's `settingsShape` remains the authority on what a *valid* setting
+ * is — its ranges, its URL and time-zone checks, and the persistence rules that
+ * go with them. This is the narrower question the client has: is the body the
+ * shape this build knows how to render? Without it, a server one version out
+ * returns a settings object missing `rangeRingsNm` and the page dies on
+ * `.join(', ')` with a console stack, where every other endpoint would have
+ * said which of the two is out of date.
+ *
+ * Deliberately not `.strict()`: a newer server sending a key this build has
+ * never heard of is not a reason to refuse the whole page.
+ */
+export const appSettingsResponseSchema = z.object({
+  settings: z.object({
+    receiverBaseUrl: z.string(),
+    receiverName: z.string(),
+    receiverLatitude: z.number().nullable(),
+    receiverLongitude: z.number().nullable(),
+    pollIntervalMs: z.number(),
+    receiverTimeoutMs: z.number(),
+    receiverInfoIntervalMs: z.number(),
+    receiverStatsIntervalMs: z.number(),
+    displayTimeZone: z.string(),
+    mapStyleUrl: z.string(),
+    mapStyleUrlLight: z.string(),
+    rangeRingsNm: z.array(z.number()),
+    /** Server-managed: the Settings form reads these but never submits them. */
+    mapWaypoints: z.array(mapWaypointSchema).optional(),
+    mapAirports: z.array(airportSchema).optional(),
+    mapAirportsUpdatedAt: isoDateTimeSchema.nullable().optional(),
+    airportDataUrl: z.string(),
+    airportRunwayDataUrl: z.string(),
+    airportRadiusNm: z.number(),
+    airportMinimumRunwayFt: z.number(),
+    historyRetentionDays: z.number(),
+    sessionGapSeconds: z.number(),
+    currentAircraftTtlSeconds: z.number(),
+    metadataUrl: z.string(),
+    metadataCheckIntervalMs: z.number(),
+    metadataTimeoutMs: z.number(),
+    metadataMinRows: z.number(),
+    metadataMaxDownloadBytes: z.number(),
+    metadataMaxUncompressedBytes: z.number(),
+    databaseVolumeCapacityBytes: z.number().nullable(),
+    collectorEnabled: z.boolean(),
+    maintenanceEnabled: z.boolean(),
+    metadataUpdatesEnabled: z.boolean()
+  }),
+  updatedAt: isoDateTimeSchema.nullable()
+});
+
+/**
+ * What a Settings-driven airport download may be told to use instead of the
+ * saved settings.
+ *
+ * The point of the card is that a radius can be tried before it is committed
+ * to, so Download sends what is in the form rather than what was last saved.
+ * Every field is optional and each one falls back to the stored setting, so an
+ * empty body is still the "use what is saved" request it was before.
+ *
+ * The bounds mirror `settingsShape` in the server's `settings.ts`. They are
+ * repeated rather than shared because that module owns persistence and this one
+ * owns the wire; a download must not be able to write a radius the settings
+ * form would reject.
+ */
+export const airportImportRequestSchema = z
+  .object({
+    airportDataUrl: z.string().url().max(2_000),
+    airportRunwayDataUrl: z.string().url().max(2_000),
+    airportRadiusNm: z.number().positive().max(1_000),
+    airportMinimumRunwayFt: z.number().int().min(0).max(20_000)
+  })
+  .partial()
+  .strict();
+
 /** What a Settings-driven airport download reports back. */
 export const airportImportSummarySchema = z.object({
   airports: z.number().int().nonnegative(),
@@ -1250,6 +1327,7 @@ export type Airport = z.infer<typeof airportSchema>;
 export type AirportRunway = z.infer<typeof airportRunwaySchema>;
 export type AirportsResponse = z.infer<typeof airportsResponseSchema>;
 export type AirportImportSummary = z.infer<typeof airportImportSummarySchema>;
+export type AirportImportRequest = z.infer<typeof airportImportRequestSchema>;
 export type InsightOverview = z.infer<typeof insightOverviewSchema>;
 export type CoverageCell = z.infer<typeof coverageCellSchema>;
 export type InsightCoverageResponse = z.infer<

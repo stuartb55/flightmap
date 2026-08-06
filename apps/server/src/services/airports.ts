@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
-import type { Airport } from "@flightmap/shared";
-import { csvRecords, selectAirports } from "../domain/airports.js";
+import type { Airport, AirportImportRequest } from "@flightmap/shared";
+import { csvRecordsYielding, selectAirportsYielding } from "../domain/airports.js";
 import type { Config } from "../config.js";
 import type { AppSettingsService } from "../settings.js";
 
@@ -76,11 +76,20 @@ export class AirportImportService {
   /**
    * Reads both exports, selects what is in range, and writes `mapAirports`.
    *
+   * `overrides` are the values in the Settings form, which is the point of the
+   * card: a radius or a runway threshold can be tried before it is saved. Each
+   * one falls back to the stored setting, so an empty request is still the
+   * "use what is saved" call it was before. They are used for this run only —
+   * a download is not a way to save settings by the back door, so nothing here
+   * writes them.
+   *
    * Rejects rather than queues when one is already in flight: two concurrent
    * imports would race to write the same setting, and the caller is a person
    * who has just pressed a button and can press it again.
    */
-  async refresh(): Promise<AirportImportSummary> {
+  async refresh(
+    overrides: AirportImportRequest = {}
+  ): Promise<AirportImportSummary> {
     if (this.running) {
       throw new AirportImportError(
         "An airport download is already running",
@@ -89,10 +98,20 @@ export class AirportImportService {
     }
     this.running = true;
     try {
-      const current = this.settings.get().settings;
+      const stored = this.settings.get().settings;
+      // Written out rather than spread so each field stays required: an
+      // override that is absent must fall back, not become undefined.
+      const current = {
+        airportDataUrl: overrides.airportDataUrl ?? stored.airportDataUrl,
+        airportRunwayDataUrl:
+          overrides.airportRunwayDataUrl ?? stored.airportRunwayDataUrl,
+        airportRadiusNm: overrides.airportRadiusNm ?? stored.airportRadiusNm,
+        airportMinimumRunwayFt:
+          overrides.airportMinimumRunwayFt ?? stored.airportMinimumRunwayFt
+      };
       const receiver = this.receiverPosition();
-      const latitude = current.receiverLatitude ?? receiver.latitude;
-      const longitude = current.receiverLongitude ?? receiver.longitude;
+      const latitude = stored.receiverLatitude ?? receiver.latitude;
+      const longitude = stored.receiverLongitude ?? receiver.longitude;
       if (latitude === null || longitude === null) {
         throw new AirportImportError(
           "The receiver position is not known yet, so there is no centre to measure from. Set the receiver latitude and longitude, or wait for the receiver to report its position.",
@@ -105,7 +124,14 @@ export class AirportImportService {
         this.download(current.airportRunwayDataUrl, "runways")
       ]);
 
-      const airportRows = csvRecords(airportsCsv);
+      /*
+       * The yielding parser, because this runs inside the process serving the
+       * map. Straight through, an OurAirports export is a few hundred
+       * milliseconds of uninterrupted work here — closer to a second on
+       * receiver-class hardware — and for all of it the collector poll, every
+       * WebSocket delta and `/health/ready` would be waiting behind it.
+       */
+      const airportRows = await csvRecordsYielding(airportsCsv);
       if (airportRows.length < MINIMUM_CSV_ROWS) {
         throw new AirportImportError(
           `The airports file held ${airportRows.length} rows, which is too few to be an OurAirports export. The dataset has been left as it was.`,
@@ -113,12 +139,16 @@ export class AirportImportService {
         );
       }
 
-      const items = selectAirports(airportRows, csvRecords(runwaysCsv), {
-        latitude,
-        longitude,
-        radiusNm: current.airportRadiusNm,
-        minimumRunwayFt: current.airportMinimumRunwayFt
-      });
+      const items = await selectAirportsYielding(
+        airportRows,
+        await csvRecordsYielding(runwaysCsv),
+        {
+          latitude,
+          longitude,
+          radiusNm: current.airportRadiusNm,
+          minimumRunwayFt: current.airportMinimumRunwayFt
+        }
+      );
 
       const updatedAt = new Date().toISOString();
       await this.settings.update({

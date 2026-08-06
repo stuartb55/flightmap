@@ -5,6 +5,7 @@ import {
   appendTrailPoint,
   initialLiveState,
   isSequenceGap,
+  LIVE_ALERT_LIMIT,
   liveReducer,
   TRAIL_MAX_POINTS,
   TRAIL_MIN_INTERVAL_MS,
@@ -108,6 +109,29 @@ describe('live connection and alert state', () => {
     const dismissed = liveReducer(hydrated, { type: 'dismiss-alert', id: 'a1' })
     expect(dismissed.alerts.find((alert) => alert.id === 'a1')?.dismissedAt).not.toBeNull()
     expect(dismissed.alerts.find((alert) => alert.id === 'a2')?.dismissedAt).toBeNull()
+  })
+
+  it('caps the alert list, keeping the newest', () => {
+    // Nothing evicts on its own, so a receiver left running for days would
+    // otherwise accumulate every alert it ever saw.
+    const alerts: AlertEvent[] = Array.from({ length: LIVE_ALERT_LIMIT + 50 }, (_, index) => ({
+      id: `a${index}`,
+      icao: '406b90',
+      type: 'watchlist',
+      title: 'Watched aircraft',
+      message: 'Watched aircraft',
+      callsign: null,
+      severity: 'warning',
+      // Ascending, so the highest index is the newest.
+      createdAt: new Date(Date.UTC(2026, 6, 29, 0, 0, index)).toISOString(),
+      dismissedAt: null,
+    }))
+
+    const state = liveReducer(initialLiveState, { type: 'hydrate-alerts', alerts })
+
+    expect(state.alerts).toHaveLength(LIVE_ALERT_LIMIT)
+    expect(state.alerts[0]?.id).toBe(`a${alerts.length - 1}`)
+    expect(state.alerts.at(-1)?.id).toBe(`a${alerts.length - LIVE_ALERT_LIMIT}`)
   })
 
   it('applies an optimistic watch state only to a known aircraft', () => {

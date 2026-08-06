@@ -22,7 +22,7 @@ import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
 import { ColumnChooser } from '../components/ColumnChooser'
-import { isFormTarget } from '../components/KeyboardShortcuts'
+import { isFormTarget, isPlainKey } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
 import { api } from '../lib/api'
 import {
@@ -35,7 +35,7 @@ import {
   type AircraftSort,
   type SelectionMove,
 } from '../lib/aircraft-filter'
-import { shareUrl, viewportFromSearch } from '../lib/map-snapshot'
+import { shareUrl, viewportFromParams } from '../lib/map-snapshot'
 import { useOrderedAircraft } from '../lib/use-ordered-aircraft'
 import { bandForRange, toggleBand, type AltitudeBand } from '../lib/altitude-bands'
 import { aircraftLabel, formatAltitude, formatDateTime } from '../lib/format'
@@ -92,10 +92,12 @@ export function LivePage() {
    * is asking to see the sender's view, not their own — and the viewport it
    * carries is handed to the map at construction so there is no jump.
    */
+  // Both read the router rather than `window.location`, and both are lazy
+  // initialisers: a link is what the page opened with, not something it tracks.
   const [filters, setFilters] = useState<AircraftFilterState>(
-    () => filtersFromParams(new URLSearchParams(window.location.search)) ?? storedFilters(),
+    () => filtersFromParams(searchParams) ?? storedFilters(),
   )
-  const sharedViewport = useMemo(() => viewportFromSearch(window.location.search), [])
+  const [sharedViewport] = useState(() => viewportFromParams(searchParams))
   const [sort, setSort] = useState<AircraftSort>({ key: 'distance', direction: 'asc' })
   const [columns, setColumns] = useAircraftColumns()
   const [listCollapsed, setListCollapsed] = useState(false)
@@ -282,10 +284,16 @@ export function LivePage() {
     ]
   }, [mapDisplay.trailMinutes, selected, selectedTrack])
 
+  /*
+   * Selection is not navigation: it replaces the current entry rather than
+   * pushing one, so Back leaves the page instead of walking twenty aircraft
+   * backwards, and it patches the query string rather than replacing it, so a
+   * shared link keeps its viewport and the sender's filters.
+   */
   // Stable so the memoised aircraft rows are not invalidated every render.
   const selectAircraft = useCallback(
     (icao: string) => {
-      setSearchParams({ aircraft: icao })
+      setSearchParams({ aircraft: icao }, true)
       setMobilePanel(null)
     },
     [setSearchParams],
@@ -293,7 +301,7 @@ export function LivePage() {
 
   // Stable so the keyboard listener below is not rebuilt on every render.
   const closeDetails = useCallback(() => {
-    setSearchParams({})
+    setSearchParams({ aircraft: null }, true)
   }, [setSearchParams])
 
   const dismissBanner = async () => {
@@ -411,7 +419,9 @@ export function LivePage() {
   // rather than being torn down and rebuilt on each 1 Hz snapshot render.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (isFormTarget(event.target)) return
+      // Every branch below is a single key, so a chord built on the same letter
+      // belongs to the browser: ⌘A selects all, ⌘↑/⌘↓ walk the page.
+      if (!isPlainKey(event) || isFormTarget(event.target)) return
       if (event.key === '/') {
         event.preventDefault()
         setListCollapsed(false)

@@ -753,6 +753,14 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const shareRef = useRef(share)
   shareRef.current = share
   const initialViewportRef = useRef(initialViewport)
+  /*
+   * Where the camera was when the map was last torn down. A style change —
+   * which a theme change is — replaces every layer, so the map is rebuilt
+   * rather than patched; without this the replacement would be constructed from
+   * `initialViewportRef` and the reader would lose wherever they had panned to.
+   * Null on the first mount, which is what leaves a shared link in charge.
+   */
+  const lastViewportRef = useRef<MapViewport | null>(null)
   // Only set when the view was restored from a link: see the recentre effect.
   const restoredSelectionRef = useRef(initialViewport ? selectedIcao ?? null : null)
   const [shareStatus, setShareStatus] = useState<string | null>(null)
@@ -936,7 +944,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     const labels = mapLabelColours[theme]
     let map: MapLibreMap
     try {
-      const restored = initialViewportRef.current
+      // A rebuild resumes where the previous map left off; only a first mount
+      // falls back to the link's viewport, and only then to the receiver.
+      const restored = lastViewportRef.current ?? initialViewportRef.current
       map = new maplibregl.Map({
         container: containerRef.current,
         style: mapStyleUrl,
@@ -1350,6 +1360,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     })
 
     return () => {
+      // Read before `remove`, which leaves the map unable to report its camera.
+      lastViewportRef.current = getViewport() ?? lastViewportRef.current
       map.remove()
       mapRef.current = null
       popupRef.current = null
@@ -1425,7 +1437,31 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
    */
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map || !airports?.length || map.getSource(AIRPORT_SOURCE)) return
+    if (!mapReady || !map) return
+    if (map.getSource(AIRPORT_SOURCE)) {
+      /*
+       * The layers exist, so this is a dataset that has changed under them — an
+       * operator rebuilding it on the Settings page. Re-supplying the source is
+       * all that is needed; the layers and their paint are unchanged.
+       *
+       * A dataset that has become empty takes its layers with it rather than
+       * being drawn as nothing, because the OurAirports credit is declared on
+       * the source and would otherwise outlive the data it credits.
+       */
+      if (airports?.length) {
+        setSourceData(map, RUNWAY_SOURCE, runwayData(airports))
+        setSourceData(map, AIRPORT_SOURCE, airportData(airports))
+        return
+      }
+      for (const id of ['airport-labels', 'airport-markers', 'airport-runways']) {
+        if (map.getLayer(id)) map.removeLayer(id)
+      }
+      for (const id of [AIRPORT_SOURCE, RUNWAY_SOURCE]) {
+        if (map.getSource(id)) map.removeSource(id)
+      }
+      return
+    }
+    if (!airports?.length) return
     const labels = mapLabelColours[theme]
     // Below the traffic, so an aircraft is never hidden behind ground context.
     const beforeId = ['range-ring-fill', 'route-waypoint-markers', 'aircraft-new-halo'].find(

@@ -42,7 +42,7 @@ import {
   useSightingThreshold,
   type SightingThreshold,
 } from '../lib/sighting-preferences'
-import type { AirportImportSummary } from '@flightmap/shared'
+import type { AirportImportRequest, AirportImportSummary } from '@flightmap/shared'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
@@ -263,6 +263,27 @@ interface AirportImportState {
   failure: string | null
 }
 
+/**
+ * The four airport fields as the form currently shows them, which is what
+ * Download sends. A field left blank or unparseable is omitted rather than sent
+ * as a guess, so the server falls back to the stored setting for it.
+ */
+function airportOverrides(form: HTMLFormElement): AirportImportRequest {
+  const data = new FormData(form)
+  const overrides: AirportImportRequest = {}
+  const airportDataUrl = String(data.get('airportDataUrl') ?? '').trim()
+  const airportRunwayDataUrl = String(data.get('airportRunwayDataUrl') ?? '').trim()
+  const radiusNm = optionalNumber(data, 'airportRadiusNm')
+  const minimumRunwayFt = optionalNumber(data, 'airportMinimumRunwayFt')
+  if (airportDataUrl) overrides.airportDataUrl = airportDataUrl
+  if (airportRunwayDataUrl) overrides.airportRunwayDataUrl = airportRunwayDataUrl
+  if (radiusNm !== null && Number.isFinite(radiusNm)) overrides.airportRadiusNm = radiusNm
+  if (minimumRunwayFt !== null && Number.isInteger(minimumRunwayFt)) {
+    overrides.airportMinimumRunwayFt = minimumRunwayFt
+  }
+  return overrides
+}
+
 /** "1 airport", "137 airports" — the count is data, so it should read like it. */
 function plural(count: number, noun: string): string {
   return `${count.toLocaleString('en-GB')} ${noun}${count === 1 ? '' : 's'}`
@@ -285,19 +306,25 @@ function AirportData({
 }: {
   settings: AppSettings
   /*
-   * Owned by the page rather than by this component. Re-reading the settings
-   * after a download changes `updatedAt`, which is the form's key, so the whole
-   * form — this card included — is deliberately remounted to pick up the new
-   * values. State held here would not survive that; the outcome of the download
-   * has to outlive the remount it causes.
+   * Owned by the page rather than by this component, because the outcome of a
+   * download has to survive anything that remounts the form.
    */
   state: AirportImportState
-  onDownload: () => void
+  onDownload: (form: HTMLFormElement) => void
 }) {
   const { running, result, failure } = state
   const airports = settings.mapAirports ?? []
-  const configured = airports.length
-  const runways = airports.reduce((total, airport) => total + airport.runways.length, 0)
+  /*
+   * What is on the map now. After a download that is the summary the server
+   * reported for what it has just written, not the settings this page read
+   * before it — refetching those to find out would change `updatedAt`, which is
+   * the form's key, and remounting the form would discard every unsaved edit
+   * the operator had typed.
+   */
+  const configured = result?.airports ?? airports.length
+  const runways =
+    result?.runways ?? airports.reduce((total, airport) => total + airport.runways.length, 0)
+  const updatedAt = result?.updatedAt ?? settings.mapAirportsUpdatedAt
 
   return (
     <>
@@ -309,15 +336,19 @@ function AirportData({
             {configured ? `${plural(configured, 'airport')} · ${plural(runways, 'runway')}` : 'No airport data yet'}
           </strong>
           <small>
-            {settings.mapAirportsUpdatedAt
-              ? `Last downloaded ${formatDateTime(settings.mapAirportsUpdatedAt)}`
+            {updatedAt
+              ? `Last downloaded ${formatDateTime(updatedAt)}`
               : 'The map layer stays hidden until this is downloaded.'}
           </small>
         </span>
         <button
           className="secondary-button"
           type="button"
-          onClick={onDownload}
+          // The form is read at the moment of the press, so the radius and the
+          // sources on screen are the ones downloaded — saved or not.
+          onClick={(event) => {
+            if (event.currentTarget.form) onDownload(event.currentTarget.form)
+          }}
           disabled={running}
         >
           <DownloadCloud size={15} />
@@ -422,14 +453,14 @@ export function SettingsPage() {
     failure: null,
   })
 
-  async function downloadAirports() {
+  async function downloadAirports(form: HTMLFormElement) {
     setAirportImport({ running: true, result: null, failure: null })
     try {
-      const result = await api.refreshAirports()
+      const result = await api.refreshAirports(airportOverrides(form))
+      // The summary is what the server reports for what it has just written, so
+      // the card can say what is on the map without re-reading settings — which
+      // would change `updatedAt`, remount the form, and discard unsaved edits.
       setAirportImport({ running: false, result, failure: null })
-      // The server has already applied the new dataset to its own settings, so
-      // re-reading them is what keeps this page honest about what is stored.
-      setRetryKey((key) => key + 1)
       // The map caches the dataset it read at startup, in this tab and in the
       // service worker. Both are now out of date by exactly the download the
       // operator just ran, so the map would still report no airport data.
@@ -692,7 +723,7 @@ export function SettingsPage() {
             <AirportData
               settings={settings}
               state={airportImport}
-              onDownload={() => void downloadAirports()}
+              onDownload={(form) => void downloadAirports(form)}
             />
           </SettingsCard>
 

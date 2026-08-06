@@ -17,6 +17,21 @@ type LocationState = {
 
 type RouterContextValue = LocationState & {
   navigate: (to: string, replace?: boolean) => void
+  /**
+   * Updates the address bar without telling the router.
+   *
+   * For a page that describes its own state in the URL continuously — History
+   * writes its filters, selection and replay position as they change — where
+   * publishing the change would re-render the page that caused it and, through
+   * whatever reads the location, re-run the search that produced the state
+   * being written.
+   *
+   * The consequence is that `search` here is then behind the address bar until
+   * the next real navigation. That is the point, but it has to be deliberate
+   * and named, because it used to happen through a bare `replaceState` call in
+   * a page and everything reading `useLocation()` was quietly wrong.
+   */
+  replaceSilently: (to: string) => void
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null)
@@ -49,9 +64,19 @@ export function Router({ children }: { children: ReactNode }) {
     setLocation(readLocation())
   }, [])
 
+  const replaceSilently = useCallback((to: string) => {
+    const target = new URL(to, window.location.href)
+    if (target.origin !== window.location.origin) return
+    window.history.replaceState(
+      null,
+      '',
+      `${target.pathname}${target.search}${target.hash}`,
+    )
+  }, [])
+
   const value = useMemo(
-    () => ({ ...location, navigate }),
-    [location, navigate],
+    () => ({ ...location, navigate, replaceSilently }),
+    [location, navigate, replaceSilently],
   )
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }
@@ -111,9 +136,18 @@ export function NavLink({ className, end = false, to, ...props }: NavLinkProps) 
   )
 }
 
+/**
+ * A `URLSearchParams` replaces the query string outright; a record patches it,
+ * setting each named key and deleting the ones given as `null`.
+ *
+ * The patch form is the one callers usually want. A shared link carries more
+ * than the parameter being changed — the Live map's `view=` viewport and the
+ * sender's filters ride in the same query string — and replacing wholesale
+ * silently threw those away the first time the reader clicked an aircraft.
+ */
 type SearchParamsInput =
   | URLSearchParams
-  | Record<string, string>
+  | Record<string, string | null>
 
 export function useSearchParams(): [
   URLSearchParams,
@@ -123,16 +157,21 @@ export function useSearchParams(): [
   const params = useMemo(() => new URLSearchParams(search), [search])
   const setParams = useCallback(
     (next: SearchParamsInput, replace = false) => {
-      const nextParams = new URLSearchParams()
+      let nextParams: URLSearchParams
       if (next instanceof URLSearchParams) {
+        nextParams = new URLSearchParams()
         next.forEach((value, key) => nextParams.append(key, value))
       } else {
-        Object.entries(next).forEach(([key, value]) => nextParams.set(key, value))
+        nextParams = new URLSearchParams(search)
+        for (const [key, value] of Object.entries(next)) {
+          if (value === null) nextParams.delete(key)
+          else nextParams.set(key, value)
+        }
       }
       const query = nextParams.toString()
       navigate(`${pathname}${query ? `?${query}` : ''}`, replace)
     },
-    [navigate, pathname],
+    [navigate, pathname, search],
   )
   return [params, setParams]
 }

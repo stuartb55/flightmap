@@ -69,7 +69,7 @@ describe("insight rollup boundaries", () => {
       sessions: 1
     }]);
     const leaderCall = query.mock.calls.find(([sql]) =>
-      sql.includes("reference_designators")
+      sql.includes("FROM ranked WHERE rank")
     );
     expect(leaderCall?.[0]).toContain("activity_callsigns");
     // A correlated subquery per ICAO made this the slowest query in the app.
@@ -78,6 +78,52 @@ describe("insight rollup boundaries", () => {
       designator: "EZY",
       operator: "easyJet"
     });
+  });
+
+  /*
+   * Inferring an operator from this receiver's own callsigns means scanning
+   * `aircraft_summary` — the table that only ever grows — and joining the
+   * metadata. It takes no range parameter, so the answer is the same for every
+   * preset and every Refresh, and it used to run inside the leaderboard query
+   * on every one of them.
+   */
+  it("reuses the inferred operator mapping across requests", async () => {
+    const query = vi.fn(async (sql: string) => ({
+      rows: sql.includes("aircraft_count >= 2")
+        ? [{ designator: "ABC", operator: "Some Airline" }]
+        : []
+    }));
+    const repository = new FlightRepository({ query } as never, {
+      sessionGapSeconds: 300,
+      currentAircraftTtlSeconds: 60,
+      historyRetentionDays: 30
+    });
+    const overview = (from: string, to: string) =>
+      repository.insightsOverview(
+        { from, to, bucket: "hour", compare: false },
+        new Date("2026-08-01T12:00:00.000Z")
+      );
+
+    await overview("2026-08-01T10:00:00.000Z", "2026-08-01T11:00:00.000Z");
+    await overview("2026-08-01T09:00:00.000Z", "2026-08-01T11:00:00.000Z");
+
+    const inferenceCalls = query.mock.calls.filter(([sql]) =>
+      sql.includes("aircraft_count >= 2")
+    );
+    expect(inferenceCalls).toHaveLength(1);
+
+    // What this receiver implies reaches the leaderboard alongside the shipped
+    // reference list, and the reference list still wins where both name one.
+    const leaderCall = query.mock.calls.find(([sql]) =>
+      sql.includes("FROM ranked WHERE rank")
+    );
+    const mapping = JSON.parse(String(leaderCall?.[1]?.[2])) as Array<{
+      designator: string;
+      operator: string;
+    }>;
+    expect(mapping).toContainEqual({ designator: "ABC", operator: "Some Airline" });
+    expect(mapping).toContainEqual({ designator: "EZY", operator: "easyJet" });
+    expect(mapping.filter((row) => row.designator === "EZY")).toHaveLength(1);
   });
 
   it("bins positions into stable 0.05 degree cells", () => {

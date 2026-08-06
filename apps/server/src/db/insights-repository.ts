@@ -121,8 +121,82 @@ const busiestDaySql = `SELECT summary_date::text AS occurred_on,
                        GROUP BY summary_date
                        ORDER BY value DESC LIMIT 1`;
 
+/**
+ * Which operator a three-letter callsign prefix belongs to, according to this
+ * receiver's own history: the airframes whose callsign looks like an airline
+ * one, grouped by prefix, with the operator that most of them carry.
+ *
+ * A full scan of `aircraft_summary` joined to `aircraft_metadata` — the one
+ * table that only ever grows. It takes no range parameter, so the answer is the
+ * same for every preset, every custom range and every Refresh, which is why it
+ * is cached rather than folded into the leaderboard query it feeds.
+ *
+ * `>= 2` is the floor for believing a prefix at all: one airframe with an
+ * airline-shaped callsign is as likely to be a coincidence as a pattern.
+ */
+const inferredDesignatorsSql = `WITH evidence AS (
+    SELECT left(upper(trim(s.latest_callsign)), 3) AS designator,
+           COALESCE(NULLIF(m.operator, ''),
+                    NULLIF(s.latest_operator, '')) AS operator,
+           count(*) AS aircraft_count
+    FROM aircraft_summary s
+    LEFT JOIN aircraft_metadata m ON m.icao = s.icao
+    WHERE upper(trim(s.latest_callsign)) ~ '^[A-Z]{3}[0-9][A-Z0-9]{0,4}$'
+      AND COALESCE(NULLIF(m.operator, ''),
+                   NULLIF(s.latest_operator, '')) IS NOT NULL
+    GROUP BY left(upper(trim(s.latest_callsign)), 3),
+             COALESCE(NULLIF(m.operator, ''),
+                      NULLIF(s.latest_operator, ''))
+  ), ranked AS (
+    SELECT designator, operator, aircraft_count,
+           row_number() OVER (
+             PARTITION BY designator
+             ORDER BY aircraft_count DESC, operator
+           ) AS rank
+    FROM evidence
+  )
+  SELECT designator, operator FROM ranked
+  WHERE rank = 1 AND aircraft_count >= 2`;
+
+/**
+ * How long an inferred mapping is reused.
+ *
+ * It only moves when `aircraft_metadata` or `aircraft_summary` changes, and
+ * neither is on a hot path — metadata refreshes weekly by default, and a new
+ * airframe shifts a prefix's majority only over months. Short enough that no
+ * one waits on the staleness, long enough that a reader clicking between
+ * presets pays for the scan once rather than once per click.
+ */
+const DESIGNATOR_CACHE_MS = 5 * 60_000;
+
+type DesignatorRow = { designator: string; operator: string };
+
 /** Aggregated activity, coverage, patterns and range profiles. */
 export class InsightsRepository extends RepositoryBase {
+  private designators: { at: number; rows: DesignatorRow[] } | null = null;
+
+  /**
+   * The shipped reference list, plus what this receiver's history implies for
+   * the prefixes the list does not name. Reference wins: a curated mapping
+   * beats a majority vote among however many airframes happened to be heard.
+   */
+  private async designatorMapping(now = Date.now()): Promise<DesignatorRow[]> {
+    if (this.designators && now - this.designators.at < DESIGNATOR_CACHE_MS) {
+      return this.designators.rows;
+    }
+    const inferred = await this.database.query<DesignatorRow>(
+      inferredDesignatorsSql
+    );
+    const named = new Set(
+      airlineOperatorRows.map((row) => row.designator.toUpperCase())
+    );
+    const rows = [
+      ...airlineOperatorRows,
+      ...inferred.rows.filter((row) => !named.has(row.designator.toUpperCase()))
+    ];
+    this.designators = { at: now, rows };
+    return rows;
+  }
   async insightAvailability(
     requestedFrom?: Date,
     now = new Date()
@@ -328,41 +402,20 @@ export class InsightsRepository extends RepositoryBase {
            FROM activity_totals t
            LEFT JOIN activity_callsigns c ON c.icao = t.icao
          )`;
-    const leadersSql = `${activityCte}, reference_designators AS (
+    /*
+     * `$3` carries the whole designator-to-operator mapping — the shipped
+     * reference list plus whatever this receiver's own history implies — rather
+     * than the inference being rebuilt here. It used to be three CTEs that
+     * scanned `aircraft_summary`, joined `aircraft_metadata` and grouped, on
+     * every request, for a result that takes no range parameter and is
+     * therefore identical for every preset and every Refresh. See
+     * `inferredDesignators`.
+     */
+    const leadersSql = `${activityCte}, designators AS (
          SELECT upper(d.designator) AS designator, d.operator
          FROM jsonb_to_recordset($3::jsonb) AS d(
            designator text, operator text
          )
-       ), designator_evidence AS (
-         SELECT left(upper(trim(s.latest_callsign)), 3) AS designator,
-                COALESCE(NULLIF(m.operator, ''),
-                         NULLIF(s.latest_operator, '')) AS operator,
-                count(*) AS aircraft_count
-         FROM aircraft_summary s
-         LEFT JOIN aircraft_metadata m ON m.icao = s.icao
-         WHERE upper(trim(s.latest_callsign)) ~ '^[A-Z]{3}[0-9][A-Z0-9]{0,4}$'
-           AND COALESCE(NULLIF(m.operator, ''),
-                        NULLIF(s.latest_operator, '')) IS NOT NULL
-         GROUP BY left(upper(trim(s.latest_callsign)), 3),
-                  COALESCE(NULLIF(m.operator, ''),
-                           NULLIF(s.latest_operator, ''))
-       ), ranked_designator_evidence AS (
-         SELECT designator, operator, aircraft_count,
-                row_number() OVER (
-                  PARTITION BY designator
-                  ORDER BY aircraft_count DESC, operator
-                ) AS rank
-         FROM designator_evidence
-       ), designators AS (
-         SELECT designator, operator FROM reference_designators
-         UNION ALL
-         SELECT e.designator, e.operator
-         FROM ranked_designator_evidence e
-         WHERE e.rank = 1 AND e.aircraft_count >= 2
-           AND NOT EXISTS (
-             SELECT 1 FROM reference_designators r
-             WHERE r.designator = e.designator
-           )
        ), resolved AS (
          SELECT a.icao, a.reports, a.positioned_reports, a.sessions,
                 COALESCE(NULLIF(m.registration, ''),
@@ -441,6 +494,10 @@ export class InsightsRepository extends RepositoryBase {
                          GROUP BY bucket_start
                          ORDER BY bucket_start`;
 
+    // Resolved before the leaderboard rather than inside it, and reused across
+    // the requests an Insights session makes: it does not depend on the range.
+    const designators = await this.designatorMapping();
+
     const [
       seriesResult,
       metricsResult,
@@ -460,7 +517,7 @@ export class InsightsRepository extends RepositoryBase {
           reports: number | string;
           positioned_reports: number | string;
           sessions: number | string;
-        }>(leadersSql, [from, to, JSON.stringify(airlineOperatorRows)]),
+        }>(leadersSql, [from, to, JSON.stringify(designators)]),
         this.database.query<ReceiverInsightRow>(receiverSql, [from, to, cutoff]),
         query.compare
           ? this.database.query<InsightAggregateRow>(metricsSql, [

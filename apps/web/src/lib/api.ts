@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import type {
   AircraftActivityResponse,
+  AirportImportRequest,
   AirportImportSummary,
   AirportsResponse,
   CoverageCellDetailResponse,
@@ -26,6 +27,7 @@ import {
   aircraftActivityResponseSchema,
   aircraftDetailResponseSchema,
   airportImportSummarySchema,
+  appSettingsResponseSchema,
   airportsResponseSchema,
   alertEventSchema,
   alertsResponseSchema,
@@ -92,6 +94,26 @@ interface ApiErrorBody {
 
 type ResponseSchema<T> = { parse: (value: unknown) => T }
 
+/**
+ * How long to wait on a server that has accepted the connection and then gone
+ * quiet. Without a ceiling those requests never settle, and the caller shows a
+ * spinner with no way back except a reload.
+ *
+ * Generous, because it has to clear the slowest legitimate call: the airport
+ * download fetches two files with a 60 second server-side timeout each.
+ */
+const REQUEST_TIMEOUT_MS = 180_000
+
+/**
+ * Aborts on the caller's signal or on the timeout, whichever comes first.
+ * `AbortSignal.any` is what makes the caller's own cancellation — the
+ * per-effect controllers the pages use — still work.
+ */
+function withTimeout(signal: AbortSignal | null | undefined): AbortSignal {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
@@ -99,6 +121,7 @@ async function request<T>(
 ): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
+    signal: withTimeout(init?.signal),
     headers: {
       Accept: 'application/json',
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -446,18 +469,25 @@ export const api = {
   },
 
   settings(signal?: AbortSignal) {
-    return request<AppSettingsResponse>('/settings', { signal })
+    return request<AppSettingsResponse>(
+      '/settings',
+      { signal },
+      appSettingsResponseSchema,
+    )
   },
 
   /**
-   * Rebuilds the airport dataset from the configured sources. Slow by nature —
-   * it downloads two files — so the caller shows progress rather than assuming
-   * this returns promptly.
+   * Rebuilds the airport dataset. Slow by nature — it downloads two files — so
+   * the caller shows progress rather than assuming this returns promptly.
+   *
+   * `overrides` are the values in the Settings form, sent so that a radius can
+   * be tried before it is saved. Each falls back to the stored setting, and
+   * none of them is persisted by the download.
    */
-  refreshAirports() {
+  refreshAirports(overrides: AirportImportRequest = {}) {
     return request<AirportImportSummary>(
       '/airports/refresh',
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(overrides) },
       airportImportSummarySchema,
     )
   },
@@ -482,10 +512,11 @@ export const api = {
   },
 
   updateSettings(settings: AppSettings) {
-    return request<AppSettingsResponse>('/settings', {
-      method: 'PATCH',
-      body: JSON.stringify(settings),
-    })
+    return request<AppSettingsResponse>(
+      '/settings',
+      { method: 'PATCH', body: JSON.stringify(settings) },
+      appSettingsResponseSchema,
+    )
   },
 }
 

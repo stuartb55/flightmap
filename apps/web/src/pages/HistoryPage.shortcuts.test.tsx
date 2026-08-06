@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from '../lib/router'
@@ -16,8 +16,6 @@ vi.mock('../lib/api', () => ({ api: apiMock }))
 vi.mock('../components/RadarMap', () => ({
   RadarMap: () => <div data-testid="radar-map" />,
 }))
-// Only the component is stood in for; the axis-mode helpers beside it are the
-// page's own URL contract and have to stay real.
 vi.mock('../components/FlightProfile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../components/FlightProfile')>()),
   FlightProfile: () => <div data-testid="flight-profile" />,
@@ -45,62 +43,75 @@ const session: SessionSummary = {
   alertKinds: [],
 }
 
-// Long enough that a replay cannot reach the end during the test; the original
-// debounce only settled once playback stopped.
 const track: TrackResponse = {
   session,
   resolution: '1s',
-  points: Array.from({ length: 200 }, (_, index) => ({
-    recordedAt: new Date(Date.parse(session.startedAt) + index * 9_000).toISOString(),
-    latitude: 53.4 + index * 0.001,
-    longitude: -2.3 + index * 0.001,
-    altitudeFt: 10_000 + index,
-    groundSpeedKt: 400,
-    trackDegrees: 90,
-  })),
+  points: [
+    {
+      recordedAt: session.startedAt,
+      latitude: 53.4,
+      longitude: -2.3,
+      altitudeFt: 10_000,
+      groundSpeedKt: 400,
+      trackDegrees: 90,
+    },
+    {
+      recordedAt: session.endedAt as string,
+      latitude: 53.5,
+      longitude: -2.2,
+      altitudeFt: 12_000,
+      groundSpeedKt: 410,
+      trackDegrees: 90,
+    },
+  ],
   events: [],
   truncated: false,
 }
 
-afterEach(() => {
-  cleanup()
-  vi.useRealTimers()
-})
+afterEach(cleanup)
 
-describe('history URL while a replay is playing', () => {
+/**
+ * `c` clears the loaded tracks, which makes ⌘C — the chord a reader presses
+ * after selecting a callsign in the session table — destructive as well as
+ * useless. Copy is the common case; clearing is not.
+ */
+describe('history keyboard shortcuts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.history.replaceState(null, '', '/history')
     apiMock.sessions.mockResolvedValue({ sessions: [session], nextCursor: null })
-    apiMock.summaries.mockResolvedValue({ summaries: [], nextCursor: null })
+    apiMock.summaries.mockResolvedValue({ items: [], nextCursor: null })
     apiMock.track.mockResolvedValue(track)
     apiMock.savedViews.mockResolvedValue([])
     apiMock.coverage.mockResolvedValue({ cells: [] })
   })
 
-  it('records the selected session even while replay advances every frame', async () => {
+  const selectTrack = async () => {
     const user = userEvent.setup()
     render(
       <Router>
         <HistoryPage />
       </Router>,
     )
-
-    const card = await screen.findByRole('button', { name: /EZY42KD/i }, { timeout: 5_000 })
-    await user.click(card)
+    await user.click(await screen.findByRole('button', { name: /EZY42KD/i }, { timeout: 5_000 }))
     await waitFor(() => expect(apiMock.track).toHaveBeenCalledWith(SESSION_ID, 'auto', expect.any(AbortSignal)))
+    expect(await screen.findByTestId('flight-profile')).toBeInTheDocument()
+  }
 
-    await user.click(await screen.findByRole('button', { name: 'Play replay' }))
-    // Playback is still running: the URL must not wait for it to finish.
-    expect(screen.getByRole('button', { name: 'Pause replay' })).toBeInTheDocument()
+  it('keeps the loaded tracks when c arrives as a copy chord', async () => {
+    await selectTrack()
 
-    await waitFor(
-      () => {
-        const params = new URLSearchParams(window.location.search)
-        expect(params.getAll('session')).toEqual([SESSION_ID])
-        expect(params.has('replay')).toBe(true)
-      },
-      { timeout: 5_000 },
-    )
+    fireEvent.keyDown(document, { key: 'c', metaKey: true })
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+
+    expect(screen.getByTestId('flight-profile')).toBeInTheDocument()
+  })
+
+  it('still clears the loaded tracks on a plain c', async () => {
+    await selectTrack()
+
+    fireEvent.keyDown(document, { key: 'c' })
+
+    await waitFor(() => expect(screen.queryByTestId('flight-profile')).not.toBeInTheDocument())
   })
 })

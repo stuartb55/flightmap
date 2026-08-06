@@ -116,12 +116,27 @@ function seedTrails(aircraft: Aircraft[], at: number): Record<string, TrailPoint
   return trails
 }
 
+/**
+ * How many alerts the live state keeps.
+ *
+ * Nothing here evicts on its own: dismissing marks `dismissedAt` and keeps the
+ * row, and a snapshot leaves the list alone. On the deployment this app is for
+ * — a wall display left up for days — an uncapped list only grows, and every
+ * delta carrying an alert rebuilds a Map over all of it, re-sorts, and through
+ * the status context re-renders every consumer.
+ *
+ * Far more than the emergency banner or the Alerts page reads at once, and the
+ * server stays the source of truth for anything older through GET /alerts.
+ */
+export const LIVE_ALERT_LIMIT = 200
+
 function mergeAlerts(current: AlertEvent[], incoming: AlertEvent[]): AlertEvent[] {
   if (!incoming.length) return current
   const next = new Map(current.map((alert) => [alert.id, alert]))
   for (const alert of incoming) next.set(alert.id, alert)
   return [...next.values()]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, LIVE_ALERT_LIMIT)
 }
 
 export function liveReducer(state: LiveState, action: LiveAction): LiveState {
