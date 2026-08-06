@@ -7,28 +7,23 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
-import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
-import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import type { Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
 import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
 import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
-import { useResolvedTheme, type ResolvedTheme } from '../lib/theme'
+import { useResolvedTheme } from '../lib/theme'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
 import { Link } from '../lib/router'
 import {
-  aircraftShape,
   aircraftShapes,
   shapeLabels,
-  shapeOutlines,
   shapePoints,
-  type AircraftShape,
 } from '../lib/aircraft-category'
-import { aircraftLabel, altitudeColour, altitudeDisplayValue, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
-import { unitLabels, useUnitPreferences, type UnitPreferences } from '../lib/unit-preferences'
-import { isNewSighting } from '../lib/sighting-preferences'
+import { aircraftLabel, formatAltitude, formatDistance, formatSpeed } from '../lib/format'
+import { unitLabels, useUnitPreferences } from '../lib/unit-preferences'
 import type { Airport } from '@flightmap/shared'
 import type { Aircraft, Receiver, TrackPoint, TrackResponse } from '../types'
 import type { TrailPoint } from '../state/live-reducer'
@@ -45,7 +40,7 @@ import {
   snapshotFilename,
   type SnapshotCaption,
 } from '../lib/map-snapshot'
-import { trackColour, trackColourModes, type TrackColourMode } from '../lib/track-colour'
+import { trackColourModes, type TrackColourMode } from '../lib/track-colour'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
 
@@ -120,570 +115,43 @@ interface Props {
   }
 }
 
-const AIRCRAFT_SOURCE = 'live-aircraft'
-const RECEIVER_SOURCE = 'receiver'
-const RINGS_SOURCE = 'range-rings'
-const WAYPOINT_SOURCE = 'route-waypoints'
-const TRACK_SOURCE = 'history-tracks'
-const ALL_TRAILS_SOURCE = 'all-aircraft-trails'
-const REPLAY_SOURCE = 'replay-aircraft'
-const COVERAGE_SOURCE = 'map-coverage'
-const RULER_SOURCE = 'map-ruler'
-const AIRPORT_SOURCE = 'airports'
-const RUNWAY_SOURCE = 'airport-runways'
+import {
+  AIRCRAFT_COLOURS,
+  AIRCRAFT_SOURCE,
+  AIRPORT_SOURCE,
+  ALL_TRAILS_SOURCE,
+  COVERAGE_SOURCE,
+  RECEIVER_SOURCE,
+  REPLAY_SOURCE,
+  RINGS_SOURCE,
+  RULER_SOURCE,
+  RUNWAY_SOURCE,
+  TRACK_SOURCE,
+  WAYPOINT_SOURCE,
+  aircraftIconId,
+  aircraftImage,
+  allTrailsData,
+  applyLayerVisibility,
+  bandDescription,
+  bandLabel,
+  coverageData,
+  greatCircle,
+  hasHoverPointer,
+  liveAircraftData,
+  mapLabelColours,
+  motionDuration,
+  needsRecentre,
+  receiverData,
+  replayData,
+  replayPointAtTime,
+  resolveStyleImageAlias,
+  ringData,
+  rulerData,
+  scaleUnit,
+  setSourceData,
+  trackData,
+} from './radar-map-data'
 
-const layerIds = {
-  coverage: ['map-coverage-heat'],
-  rangeRings: ['range-ring-fill', 'range-ring-line'],
-  aircraftLabels: ['aircraft-labels', 'replay-label'],
-  trails: ['history-track-shadow', 'history-track'],
-  allTrails: ['all-aircraft-trails'],
-  airports: ['airport-runways', 'airport-markers', 'airport-labels'],
-  manchesterWaypoints: ['route-waypoint-markers', 'route-waypoint-labels'],
-} satisfies Record<keyof MapLayerPreferences, string[]>
-
-/**
- * One line per aircraft, coloured by its current altitude. Per-segment colouring
- * would multiply the feature count by the buffer length for a difference nobody
- * can see on a trail this short.
- */
-export function allTrailsData(
-  trails: Record<string, TrailPoint[]>,
-  theme?: ResolvedTheme,
-): FeatureCollection<LineString> {
-  const features: Feature<LineString>[] = []
-  for (const [icao, points] of Object.entries(trails)) {
-    if (points.length < 2) continue
-    features.push({
-      type: 'Feature',
-      properties: {
-        icao,
-        colour: altitudeColour(points[points.length - 1]!.altitudeBaro, theme),
-      },
-      geometry: {
-        type: 'LineString',
-        coordinates: points.map((point) => [point.longitude, point.latitude]),
-      },
-    })
-  }
-  return { type: 'FeatureCollection', features }
-}
-
-function coverageData(cells: CoverageCell[]): FeatureCollection<Point> {
-  return {
-    type: 'FeatureCollection',
-    features: cells.map((cell, index) => ({
-      type: 'Feature',
-      id: index,
-      properties: { intensity: Math.max(1, Math.log10(cell.reports + 1)) },
-      geometry: { type: 'Point', coordinates: [cell.longitude, cell.latitude] },
-    })),
-  }
-}
-
-function applyLayerVisibility(map: MapLibreMap, layers: MapLayerPreferences) {
-  for (const [key, ids] of Object.entries(layerIds) as Array<[
-    keyof MapLayerPreferences,
-    string[],
-  ]>) {
-    for (const id of ids) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', layers[key] ? 'visible' : 'none')
-    }
-  }
-}
-
-const AIRCRAFT_COLOURS = {
-  ground: '#aeb9c3',
-  low: '#67dda9',
-  lower: '#52d5df',
-  middle: '#5a9ff5',
-  high: '#a987f0',
-  veryHigh: '#e57bd4',
-  extreme: '#ff7684',
-  unknown: '#8d9aa8',
-} as const
-
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-
-function motionDuration(milliseconds: number) {
-  return prefersReducedMotion ? 0 : milliseconds
-}
-
-/**
- * Touch browsers synthesise a mouse event stream from a tap, so hover-only
- * affordances have to ask whether the pointer can actually hover rather than
- * whether a mouse event arrived.
- */
-function hasHoverPointer() {
-  if (typeof window === 'undefined') return false
-  return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? true
-}
-
-/**
- * Whether a selected aircraft sits far enough from the centre of the view to be
- * worth moving the camera for. The margin keeps an aircraft hard against an
- * edge from counting as visible, and is clamped so it can never exceed a third
- * of a small container - otherwise a narrow map would always recentre.
- */
-export function needsRecentre(
-  point: { x: number; y: number },
-  width: number,
-  height: number,
-  marginPx = 90,
-): boolean {
-  if (width <= 0 || height <= 0) return true
-  const margin = Math.min(marginPx, width / 3, height / 3)
-  return (
-    point.x < margin ||
-    point.x > width - margin ||
-    point.y < margin ||
-    point.y > height - margin
-  )
-}
-
-export function isEmergencyAircraft(
-  aircraft: Pick<Aircraft, 'squawk' | 'emergency'>,
-): boolean {
-  const emergency = aircraft.emergency?.trim().toLowerCase()
-  return (
-    ['7500', '7600', '7700'].includes(aircraft.squawk ?? '') ||
-    (emergency != null && !['none', 'no emergency', 'no_emergency'].includes(emergency))
-  )
-}
-
-function altitudeBand(altitude: Aircraft['altitudeBaro'] | number | null) {
-  if (altitude === 'ground') return 'ground'
-  if (altitude == null) return 'unknown'
-  if (altitude < 3_000) return 'low'
-  if (altitude < 10_000) return 'lower'
-  if (altitude < 20_000) return 'middle'
-  if (altitude < 30_000) return 'high'
-  if (altitude < 40_000) return 'veryHigh'
-  return 'extreme'
-}
-
-function fillOutline(context: CanvasRenderingContext2D, shape: AircraftShape) {
-  const points = shapeOutlines[shape]
-  const start = points[0]
-  if (!start) return
-  context.beginPath()
-  context.moveTo(start[0], start[1])
-  for (const [x, y] of points.slice(1)) context.lineTo(x, y)
-  context.closePath()
-  context.fill()
-}
-
-/**
- * Decoration drawn on top of the shared body outline. Only the shapes that need
- * more than a silhouette to be recognisable have an entry.
- */
-const shapeDecorations: Partial<Record<AircraftShape, (context: CanvasRenderingContext2D) => void>> = {
-  // Four nacelles read as "heavy" faster than wingspan alone at low zoom.
-  heavy: (context) => {
-    for (const [x, y] of [[7.4, 21], [11.4, 18.6], [20.6, 18.6], [24.6, 21]]) {
-      context.fillRect(x!, y!, 2.2, 3.4)
-    }
-  },
-  // A faint rotor disc is what actually distinguishes a helicopter in traffic.
-  rotorcraft: (context) => {
-    const alpha = context.globalAlpha
-    context.globalAlpha = alpha * 0.5
-    context.beginPath()
-    context.arc(17, 16, 12.5, 0, Math.PI * 2)
-    context.lineWidth = 1.3
-    context.strokeStyle = context.fillStyle
-    context.stroke()
-    context.globalAlpha = alpha
-    context.fillRect(13.4, 29.6, 7.2, 1.6)
-  },
-}
-
-/**
- * Colours for the layers MapLibre paints itself. These sit on the basemap
- * rather than on a panel, so they cannot read a CSS token — and a pale label
- * with a dark halo, which is right over a dark basemap, reads as a smudge over
- * a pale one.
- */
-const mapLabelColours = {
-  dark: {
-    halo: '#091015',
-    aircraft: '#d7e3eb',
-    replay: '#ffffff',
-    arrival: '#ffd287',
-    departure: '#7ce8c9',
-    trackCasing: '#020406',
-    airport: '#9fb4c4',
-    runway: '#8fa6b8',
-  },
-  light: {
-    halo: '#ffffff',
-    aircraft: '#16202a',
-    replay: '#101820',
-    arrival: '#814300',
-    departure: '#006d4b',
-    trackCasing: '#ffffff',
-    airport: '#43596b',
-    runway: '#5a7183',
-  },
-} as const satisfies Record<ResolvedTheme, Record<string, string>>
-
-function aircraftImage(shape: AircraftShape, colour: string): ImageData {
-  const canvas = document.createElement('canvas')
-  canvas.width = 34
-  canvas.height = 34
-  const context = canvas.getContext('2d')
-  if (!context) return new ImageData(34, 34)
-  context.fillStyle = colour
-  context.shadowColor = 'rgba(0,0,0,.8)'
-  context.shadowBlur = 3
-  fillOutline(context, shape)
-  shapeDecorations[shape]?.(context)
-  return context.getImageData(0, 0, 34, 34)
-}
-
-/**
- * Surface vehicles never report a useful altitude, so they always take the
- * ground colour rather than the "unknown" grey.
- */
-export function aircraftIconId(shape: AircraftShape, band: string): string {
-  return `aircraft-${shape}-${shape === 'ground' ? 'ground' : band}`
-}
-
-type StyleImageMap = Pick<MapLibreMap, 'addImage' | 'getImage' | 'hasImage'>
-
-const STYLE_IMAGE_ALIASES: Readonly<Record<string, string>> = {
-  'circle-11': 'circle_11',
-}
-
-export function resolveStyleImageAlias(map: StyleImageMap, id: string): void {
-  const sourceId = STYLE_IMAGE_ALIASES[id]
-  if (!sourceId || map.hasImage(id) || !map.hasImage(sourceId)) return
-
-  const source = map.getImage(sourceId)
-  map.addImage(
-    id,
-    {
-      width: source.data.width,
-      height: source.data.height,
-      data: source.data.data,
-    },
-    {
-      pixelRatio: source.pixelRatio,
-      sdf: source.sdf,
-      stretchX: source.stretchX,
-      stretchY: source.stretchY,
-      content: source.content,
-      textFitWidth: source.textFitWidth,
-      textFitHeight: source.textFitHeight,
-    },
-  )
-}
-
-function destinationPoint(
-  latitude: number,
-  longitude: number,
-  bearingDegrees: number,
-  distanceNm: number,
-): [number, number] {
-  const radiusNm = 3_440.065
-  const angularDistance = distanceNm / radiusNm
-  const bearing = (bearingDegrees * Math.PI) / 180
-  const lat1 = (latitude * Math.PI) / 180
-  const lon1 = (longitude * Math.PI) / 180
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(angularDistance) +
-      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing),
-  )
-  const lon2 =
-    lon1 +
-    Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
-      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
-    )
-  return [(lon2 * 180) / Math.PI, (lat2 * 180) / Math.PI]
-}
-
-/**
- * Great-circle distance and initial bearing between two points, the inverse of
- * `destinationPoint` above and the same spherical model the server measures
- * ranges with (`domain/geo.ts`).
- */
-export function greatCircle(
-  from: [number, number],
-  to: [number, number],
-): { distanceNm: number; bearingDegrees: number } {
-  const radiusNm = 3_440.065
-  const toRadians = (value: number) => (value * Math.PI) / 180
-  const lat1 = toRadians(from[1])
-  const lat2 = toRadians(to[1])
-  const deltaLat = lat2 - lat1
-  const deltaLon = toRadians(to[0] - from[0])
-  const haversine =
-    Math.sin(deltaLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2
-  const distanceNm = 2 * radiusNm * Math.asin(Math.min(1, Math.sqrt(haversine)))
-  const bearing = Math.atan2(
-    Math.sin(deltaLon) * Math.cos(lat2),
-    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon),
-  )
-  return { distanceNm, bearingDegrees: ((bearing * 180) / Math.PI + 360) % 360 }
-}
-
-/** The measured line and its endpoints, for the ruler layers. */
-export function rulerData(points: Array<[number, number]>): FeatureCollection {
-  const features: Feature[] = points.map((point, index) => ({
-    type: 'Feature',
-    properties: { index },
-    geometry: { type: 'Point', coordinates: point },
-  }))
-  if (points.length === 2) {
-    features.push({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'LineString', coordinates: points },
-    })
-  }
-  return { type: 'FeatureCollection', features }
-}
-
-function ringData(
-  receiver: Receiver | null | undefined,
-  rings: readonly number[],
-  units: UnitPreferences,
-): FeatureCollection<Polygon> {
-  const latitude = receiver?.latitude ?? defaultReceiver().latitude
-  const longitude = receiver?.longitude ?? defaultReceiver().longitude
-  return {
-    type: 'FeatureCollection',
-    features: rings.map((distance) => {
-      const points = Array.from({ length: 97 }, (_, index) =>
-        destinationPoint(latitude, longitude, (index / 96) * 360, distance),
-      )
-      return {
-        type: 'Feature',
-        // Rings are configured in nautical miles; only their label follows the
-        // browser's distance unit.
-        properties: { distance, label: formatDistance(distance, units) },
-        geometry: { type: 'Polygon', coordinates: [points] },
-      }
-    }),
-  }
-}
-
-/** Exported for the emphasis-precedence test; the map is its only caller. */
-export function liveAircraftData(
-  aircraft: Aircraft[],
-  units: UnitPreferences,
-  selectedIcao?: string | null,
-  newSince: number | null = null,
-): FeatureCollection<Point> {
-  return {
-    type: 'FeatureCollection',
-    features: aircraft
-      .filter(
-        (item) =>
-          item.latitude != null &&
-          item.longitude != null &&
-          Number.isFinite(item.latitude) &&
-          Number.isFinite(item.longitude),
-      )
-      .map((item) => ({
-        type: 'Feature',
-        id: item.icao,
-        properties: {
-          icao: item.icao,
-          label: aircraftLabel(item),
-          secondary:
-            item.altitudeBaro === 'ground'
-              ? 'GND'
-              : item.altitudeBaro == null
-                ? ''
-                : altitudeDisplayValue(item.altitudeBaro, units).toLocaleString('en-GB'),
-          rotation: item.track ?? item.trueHeading ?? 0,
-          icon: aircraftIconId(aircraftShape(item), altitudeBand(item.altitudeBaro)),
-          selected: item.icao === selectedIcao ? 1 : 0,
-          emergency: isEmergencyAircraft(item) ? 1 : 0,
-          watched: item.watched ? 1 : 0,
-          /*
-           * Emphasis precedence: emergency, then alert, then watchlist, then
-           * new. Resolved here rather than by layer order so an aircraft that
-           * is more than one thing wears exactly one halo — a first sighting
-           * must never be what someone sees instead of an alert.
-           */
-          newSighting:
-            isNewSighting(item.firstSeenAt, newSince) &&
-            !isEmergencyAircraft(item) &&
-            !item.hasActiveAlert &&
-            !item.watched
-              ? 1
-              : 0,
-          opacity: item.seenPositionSeconds == null ? 0.65 : Math.max(0.25, 1 - item.seenPositionSeconds / 60),
-        },
-        geometry: { type: 'Point', coordinates: [item.longitude!, item.latitude!] },
-      })),
-  }
-}
-
-function receiverData(receiver?: Receiver | null): FeatureCollection<Point> {
-  return {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: { name: receiver?.name ?? defaultReceiver().name },
-        geometry: {
-          type: 'Point',
-          coordinates: [
-            receiver?.longitude ?? defaultReceiver().longitude,
-            receiver?.latitude ?? defaultReceiver().latitude,
-          ],
-        },
-      },
-    ],
-  }
-}
-
-function trackData(
-  tracks: TrackResponse[],
-  colourMode: TrackColourMode,
-  theme?: ResolvedTheme,
-): FeatureCollection<LineString> {
-  const features: Feature<LineString>[] = []
-  for (const track of tracks) {
-    for (let index = 1; index < track.points.length; index += 1) {
-      const previous = track.points[index - 1]
-      const point = track.points[index]
-      if (!previous || !point) continue
-      features.push({
-        type: 'Feature',
-        properties: {
-          sessionId: track.session.id,
-          icao: track.session.icao,
-          colour: trackColour(colourMode, point, theme),
-        },
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [previous.longitude, previous.latitude],
-            [point.longitude, point.latitude],
-          ],
-        },
-      })
-    }
-  }
-  return { type: 'FeatureCollection', features }
-}
-
-export function interpolateTrack(points: TrackPoint[], time: number): TrackPoint | null {
-  if (!points.length) return null
-  const first = points[0]
-  const last = points[points.length - 1]
-  if (!first || !last) return null
-  if (time <= new Date(first.recordedAt).getTime()) return first
-  if (time >= new Date(last.recordedAt).getTime()) return last
-
-  let low = 0
-  let high = points.length - 1
-  while (low < high - 1) {
-    const middle = Math.floor((low + high) / 2)
-    const middlePoint = points[middle]
-    if (!middlePoint || new Date(middlePoint.recordedAt).getTime() > time) high = middle
-    else low = middle
-  }
-  const from = points[low]
-  const to = points[high]
-  if (!from || !to) return from ?? to ?? null
-  const fromTime = new Date(from.recordedAt).getTime()
-  const toTime = new Date(to.recordedAt).getTime()
-  const ratio = toTime === fromTime ? 0 : (time - fromTime) / (toTime - fromTime)
-  const interpolate = (left: number | null, right: number | null) =>
-    left == null || right == null ? (left ?? right) : left + (right - left) * ratio
-  return {
-    recordedAt: new Date(time).toISOString(),
-    latitude: interpolate(from.latitude, to.latitude)!,
-    longitude: interpolate(from.longitude, to.longitude)!,
-    altitudeFt: interpolate(from.altitudeFt, to.altitudeFt),
-    groundSpeedKt: interpolate(from.groundSpeedKt, to.groundSpeedKt),
-    trackDegrees: interpolate(from.trackDegrees, to.trackDegrees),
-  }
-}
-
-export function replayPointAtTime(points: TrackPoint[], time: number): TrackPoint | null {
-  const first = points[0]
-  const last = points[points.length - 1]
-  if (!first || !last) return null
-  const firstTime = new Date(first.recordedAt).getTime()
-  const lastTime = new Date(last.recordedAt).getTime()
-  if (
-    !Number.isFinite(firstTime) ||
-    !Number.isFinite(lastTime) ||
-    time < firstTime ||
-    time > lastTime
-  ) {
-    return null
-  }
-  return interpolateTrack(points, time)
-}
-
-function replayData(tracks: TrackResponse[], replayTime?: number | null): FeatureCollection<Point> {
-  if (replayTime == null) return { type: 'FeatureCollection', features: [] }
-  return {
-    type: 'FeatureCollection',
-    features: tracks.flatMap((track) => {
-      const point = replayPointAtTime(track.points, replayTime)
-      if (!point) return []
-      return [
-        {
-          type: 'Feature' as const,
-          properties: {
-            sessionId: track.session.id,
-            icao: track.session.icao,
-            label: track.session.callsigns[0] || track.session.icao.toUpperCase(),
-            rotation: point.trackDegrees ?? 0,
-            // Historical points carry no emitter category, so replay always
-            // uses the neutral airliner glyph.
-            icon: aircraftIconId('standard', altitudeBand(point.altitudeFt)),
-          },
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [point.longitude, point.latitude],
-          },
-        },
-      ]
-    }),
-  }
-}
-
-/** Thousands label for the legend, so the colour bands stay readable in metres. */
-export function scaleLabel(feet: number, units: UnitPreferences): string {
-  const thousands = altitudeDisplayValue(feet, units) / 1_000
-  return `${units.altitude === 'm' ? thousands.toFixed(1) : thousands.toFixed(0)}k`
-}
-
-/** Legend segment label: the band's floor, so the segments read as a scale. */
-export function bandLabel(band: AltitudeBand, units: UnitPreferences): string {
-  if (band.key === 'ground') return 'GND'
-  if (band.minimumFt === 0) return '0'
-  return `${scaleLabel(band.minimumFt, units)}${band.maximumFt == null ? '+' : ''}`
-}
-
-/** What isolating a band would show, spoken in the reader's own units. */
-export function bandDescription(band: AltitudeBand, units: UnitPreferences): string {
-  if (band.key === 'ground') return 'on the ground'
-  if (band.maximumFt == null) return `above ${formatAltitude(band.minimumFt, units)}`
-  return `from ${formatAltitude(band.minimumFt, units)} to ${formatAltitude(band.maximumFt, units)}`
-}
-
-/** MapLibre's scale bar offers three unit families; map ours onto them. */
-function scaleUnit(unit: UnitPreferences['distance']): 'nautical' | 'metric' | 'imperial' {
-  if (unit === 'km') return 'metric'
-  return unit === 'mi' ? 'imperial' : 'nautical'
-}
-
-function setSourceData(map: MapLibreMap, source: string, data: FeatureCollection) {
-  ;(map.getSource(source) as GeoJSONSource | undefined)?.setData(data)
-}
 
 export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   {

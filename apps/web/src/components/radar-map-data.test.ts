@@ -11,7 +11,7 @@ import {
   replayPointAtTime,
   resolveStyleImageAlias,
   rulerData,
-} from './RadarMap'
+} from './radar-map-data'
 import { altitudeBands } from '../lib/altitude-bands'
 import { aviationUnits, metricUnits } from '../lib/unit-preferences'
 import { aircraft } from '../test/fixtures'
