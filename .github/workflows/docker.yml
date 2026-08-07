@@ -123,6 +123,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha,scope=flightmap-app
-          cache-to: type=gha,mode=max,scope=flightmap-app
+          # `ignore-error`, because the cache is an optimisation and failing to
+          # export one is not a reason to fail an image that built. Re-running
+          # this workflow for a pull request that has since merged does exactly
+          # that: GitHub tears the merge ref's cache scope down with the pull
+          # request, so the export fails with `error writing layer blob: failed
+          # to reserve cache` on a build that produced a working image.
+          cache-to: type=gha,mode=max,ignore-error=true,scope=flightmap-app
           provenance: mode=max
           sbom: true
