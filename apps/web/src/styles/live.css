@@ -1472,6 +1472,21 @@
   font-size: 13px;
 }
 
+/* The aircraft in words rather than as a designator. This is prose, not an
+   identifier, so it takes the interface face while the registration and
+   operator below keep the monospace that makes them comparable character by
+   character. */
+.detail-identity .detail-type {
+  overflow: hidden;
+  margin: 2px 0 2px;
+  color: var(--ink-11);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .watch-button {
   display: flex;
   align-items: center;

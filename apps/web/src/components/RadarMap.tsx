@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewport } from '@flightmap/shared'
 import * as maplibregl from 'maplibre-gl'
-import type { Map as MapLibreMap } from 'maplibre-gl'
+import type { DataDrivenPropertyValueSpecification, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
 import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
@@ -687,11 +687,11 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         filter: ['==', ['get', 'selected'], 1],
         paint: {
-          'circle-radius': 23,
+          'circle-radius': 24,
           'circle-color': '#f5fcff',
-          'circle-opacity': 0.08,
+          'circle-opacity': 0.12,
           'circle-stroke-color': '#eafcff',
-          'circle-stroke-width': 1.5,
+          'circle-stroke-width': 2.5,
         },
       })
       map.addLayer({
@@ -700,7 +700,9 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         layout: {
           'icon-image': ['get', 'icon'],
-          'icon-size': ['case', ['==', ['get', 'selected'], 1], 1.65, 1.4],
+          /* A wider gap than the ring alone gave. The ring says which one is
+             selected once you have found it; the size is what finds it. */
+          'icon-size': ['case', ['==', ['get', 'selected'], 1], 1.9, 1.35],
           'icon-rotate': ['get', 'rotation'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
@@ -714,13 +716,51 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         source: AIRCRAFT_SOURCE,
         minzoom: 7.2,
         layout: {
-          'text-field': ['concat', ['get', 'label'], '  ', ['get', 'secondary']],
+          /*
+           * The altitude doubles the width of a label, and at the zoom where
+           * the whole receiver range is on screen it is the callsign that is
+           * being scanned for. It joins once there is room for it, which is
+           * also the point where the labels stop being the widest thing on
+           * the map.
+           */
+          'text-field': [
+            'step',
+            ['zoom'],
+            ['get', 'label'],
+            9,
+            ['concat', ['get', 'label'], '  ', ['get', 'secondary']],
+          ],
           'text-font': ['Noto Sans Regular'],
-          'text-size': 14,
-          'text-offset': [0, 2.35],
-          'text-anchor': 'top',
+          'text-size': 13,
+          /*
+           * A fixed anchor below the aircraft put the label over its own trail
+           * — the trail leaves from behind, so on anything heading north the
+           * two were always on top of each other — and clipped it against the
+           * viewport edge. Four candidates let the placement move to whichever
+           * side is free instead.
+           */
+          'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+          'text-radial-offset': 1.25,
+          'text-justify': 'auto',
+          'text-padding': 4,
           'text-allow-overlap': false,
           'text-optional': true,
+          /*
+           * Collision drops whichever label it reaches second, which without an
+           * order of its own is whichever happens to sort later. The aircraft
+           * someone has picked out, or that is shouting, keeps its label and
+           * the anonymous traffic around it gives one up.
+           */
+          'symbol-sort-key': [
+            'case',
+            ['==', ['get', 'selected'], 1],
+            0,
+            ['==', ['get', 'emergency'], 1],
+            1,
+            ['==', ['get', 'watched'], 1],
+            2,
+            3,
+          ],
         },
         paint: {
           'text-color': labels.aircraft,
@@ -1019,6 +1059,41 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     if (!mapReady || !mapRef.current) return
     applyLayerVisibility(mapRef.current, mapLayers)
   }, [mapLayers, mapReady])
+
+  /*
+   * With something selected, the rest of the traffic steps back.
+   *
+   * Colouring by altitude means every target already carries a strong colour of
+   * its own, so the selected one cannot be picked out by hue the way it could on
+   * a map where all traffic is one colour. Contrast against dimmed neighbours is
+   * what makes it findable, and it costs nothing: the altitude each aircraft is
+   * at is still readable, just quieter.
+   */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.getLayer('aircraft-icons')) return
+    const staleness: DataDrivenPropertyValueSpecification<number> = ['get', 'opacity']
+    const stepBack = (factor: number): DataDrivenPropertyValueSpecification<number> => [
+      'case',
+      ['==', ['get', 'selected'], 1],
+      ['get', 'opacity'],
+      ['*', ['get', 'opacity'], factor],
+    ]
+
+    map.setPaintProperty('aircraft-icons', 'icon-opacity', selectedIcao ? stepBack(0.4) : staleness)
+    if (map.getLayer('aircraft-labels')) {
+      map.setPaintProperty(
+        'aircraft-labels',
+        'text-opacity',
+        selectedIcao ? stepBack(0.45) : staleness,
+      )
+    }
+    // The selected aircraft's own track is drawn by its own layer, brightly, so
+    // the shared trails only ever compete with it.
+    if (map.getLayer('all-aircraft-trails')) {
+      map.setPaintProperty('all-aircraft-trails', 'line-opacity', selectedIcao ? 0.16 : 0.42)
+    }
+  }, [selectedIcao, mapReady])
 
   useEffect(() => {
     const map = mapRef.current

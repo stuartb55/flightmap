@@ -236,7 +236,21 @@ export function AircraftDetailPanel({
   // it is the authoritative record, and it arrives a moment after the panel.
   const isNew = isNewSighting(summary?.firstSeenAt ?? aircraft.firstSeenAt, newSince)
   const inferredOperator = airlineOperatorFromCallsign(aircraft.callsign)
-  const operator = inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator
+  /*
+   * An airliner has an operator; a light aircraft on a private flight has only
+   * an owner, and showing nothing there was the difference between "we know who
+   * this is" and "we have no idea". The live record carries neither for a
+   * private owner, so the detail fetch is what fills it in.
+   */
+  const operator =
+    inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator ?? metadata?.owner
+  /*
+   * `typeCode` is the four-character ICAO designator — B738, P28A — which is
+   * precise and unreadable. The description is the same aircraft in words, and
+   * it is the one a reader can actually place, so it leads and the designator
+   * stays as the eyebrow above it.
+   */
+  const readableType = aircraft.description ?? metadata?.description
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
   const swipe = useSheetSwipe(expanded, onToggleExpanded)
   const climbing = aircraft.verticalRate == null || Math.abs(aircraft.verticalRate) < 64
@@ -291,6 +305,7 @@ export function AircraftDetailPanel({
                 <Star size={19} fill={aircraft.watched ? 'currentColor' : 'none'} />
               </button>
             </div>
+            {readableType ? <p className="detail-type">{readableType}</p> : null}
             <p>
               {aircraft.registration || aircraft.icao.toUpperCase()}
               {operator ? ` · ${operator}` : aircraft.country ? ` · ${aircraft.country}` : ''}
