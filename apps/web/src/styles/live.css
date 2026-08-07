@@ -536,11 +536,17 @@
   font-size: 12px;
 }
 
-.map-controls {
+/* The camera controls and the overflow they open share one anchor, so the
+   menu hangs off the block rather than being positioned against the map
+   separately and drifting from it at another width. */
+.map-tools {
   position: absolute;
   z-index: 3;
   top: 14px;
   right: 14px;
+}
+
+.map-controls {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -549,6 +555,54 @@
   background: var(--veil-17);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
+}
+
+/* Named, not guessed at. These are the tools that were unreadable as glyphs,
+   which is why they left the permanent block. */
+.map-tools-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 232px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--line-mid-rgb) / 0.62);
+  border-radius: 10px;
+  background: var(--veil-10);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.map-tools-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 13px;
+  color: var(--ink-11);
+  border: 0;
+  border-bottom: 1px solid rgb(var(--line-bright-rgb) / 0.4);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-tools-menu button:last-child {
+  border-bottom: 0;
+}
+
+.map-tools-menu button:hover:not(:disabled),
+.map-tools-menu button.active {
+  color: var(--accent-bright);
+  background: rgb(var(--accent-rgb) / 0.09);
+}
+
+.map-tools-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .map-controls button {
@@ -1532,11 +1586,21 @@
   background: var(--veil-12);
 }
 
+/* These name the four numbers a reader looks at first, and at 10px in the
+   muted ink with 0.07em between the letters they were the hardest text in the
+   sheet. Wider tracking is what small caps need to stay separable, but it also
+   costs width, and at this size the shortfall was contrast rather than
+   spacing. */
 .detail-hero-stats dt {
-  color: var(--muted);
-  font-size: 10px;
+  /* Two of the four names take two lines at this width. Holding every label to
+     the taller of the two keeps the readings themselves on one line across the
+     row, which is the comparison the block exists to make. */
+  min-height: calc(2 * 1.25em);
+  color: var(--muted-bright);
+  font-size: 11px;
   font-weight: 650;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
   text-transform: uppercase;
 }
 
@@ -1544,8 +1608,9 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 3px 0 0;
+  color: var(--ink-4);
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

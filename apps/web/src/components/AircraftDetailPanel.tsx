@@ -319,9 +319,13 @@ export function AircraftDetailPanel({
         {/* The sheet's collapsed stop shows the hero alone, so what the map
             cannot say — how high, how fast, which way, how far — belongs here
             rather than behind an expand. */}
+        {/* Named for which reading each one is. The record carries barometric
+            and geometric altitude, and ground, indicated and true airspeed, so
+            an unqualified "Altitude" or "Speed" was picking one of several
+            without saying so. */}
         <dl className="detail-hero-stats">
           <div>
-            <dt>Altitude</dt>
+            <dt>Baro altitude</dt>
             <dd>
               {formatAltitude(aircraft.altitudeBaro)}
               {climbing == null ? null : (
@@ -331,15 +335,18 @@ export function AircraftDetailPanel({
               )}
             </dd>
           </div>
-          <div><dt>Speed</dt><dd>{formatSpeed(aircraft.groundSpeed)}</dd></div>
+          <div><dt>Ground speed</dt><dd>{formatSpeed(aircraft.groundSpeed)}</dd></div>
           <div><dt>Track</dt><dd>{formatBearing(aircraft.track)}</dd></div>
           <div><dt>Range</dt><dd>{formatDistance(aircraft.distanceNm)}</dd></div>
         </dl>
 
+        {/* Named for what each one shows about this aircraft. Two of them read
+            "Live" and "History", which are also two of the six tabs along the
+            bottom, and they went somewhere else entirely. */}
         <div className="aircraft-workflow-links">
-          <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>Live</Link>
+          <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>On the map</Link>
           <Link to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}>Profile</Link>
-          <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>History</Link>
+          <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>Past flights</Link>
         </div>
       </div>
 

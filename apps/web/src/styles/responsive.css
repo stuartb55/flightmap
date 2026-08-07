@@ -247,9 +247,12 @@
      separators the stacked borders used to draw. Two columns are wider than
      one, so the block drops below the layer and saved-view row rather than
      racing it for the same line on a narrow screen. */
-  .map-controls {
+  .map-tools {
     top: calc(var(--map-overlay-top) + var(--map-overlay-row));
     right: max(10px, env(safe-area-inset-right));
+  }
+
+  .map-controls {
     display: grid;
     grid-template-columns: repeat(2, 44px);
     gap: 1px;

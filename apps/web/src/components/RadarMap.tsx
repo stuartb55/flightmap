@@ -12,7 +12,7 @@ import * as maplibregl from 'maplibre-gl'
 import type { DataDrivenPropertyValueSpecification, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createPortal } from 'react-dom'
-import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react'
+import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, MoreHorizontal, Plus, Ruler, X } from 'lucide-react'
 import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
 import { useResolvedTheme } from '../lib/theme'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
@@ -213,6 +213,8 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [hoveredIcao, setHoveredIcao] = useState<string | null>(null)
   const [legendOpen, setLegendOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const toolsRef = useRef<HTMLDivElement>(null)
   const [rulerPoints, setRulerPoints] = useState<Array<[number, number]>>([])
   const rulerActiveRef = useRef(rulerActive)
   const hoverPointerRef = useRef(hasHoverPointer())
@@ -1069,6 +1071,24 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
    * what makes it findable, and it costs nothing: the altitude each aircraft is
    * at is still readable, just quieter.
    */
+  /* Matches the layer menu on the opposite corner: a press outside closes it,
+     and Escape does too, because it covers part of the map while it is open. */
+  useEffect(() => {
+    if (!toolsOpen) return
+    const closeOnPress = (event: MouseEvent) => {
+      if (!toolsRef.current?.contains(event.target as Node)) setToolsOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setToolsOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnPress)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnPress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [toolsOpen])
+
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map?.getLayer('aircraft-icons')) return
@@ -1266,47 +1286,85 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         role="region"
         aria-label="Interactive aircraft radar map with configured arrival and departure fixes. Use the adjacent controls to zoom and centre the view."
       />
-      <div className="map-controls" aria-label="Map controls">
-        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
-          <Plus size={20} />
-        </button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => mapRef.current?.zoomOut()}>
-          <Minus size={20} />
-        </button>
-        <button type="button" title="Centre receiver" aria-label="Centre receiver" onClick={centerReceiver}>
-          <LocateFixed size={20} />
-        </button>
-        <button type="button" title="Fit active aircraft" aria-label="Fit active aircraft" onClick={fitAircraft}>
-          <Maximize2 size={20} />
-        </button>
-        {selectedIcao ? <button type="button" className={followSelected ? 'active' : ''} title="Follow selected aircraft" aria-label="Follow selected aircraft" aria-pressed={followSelected} onClick={() => setFollowSelected((value) => !value)}><Focus size={20} /></button> : null}
-        {share ? (
-          <>
-            <button type="button" title="Copy a link to this view" aria-label="Copy a link to this view" onClick={() => void copyLink()}>
-              <Link2 size={20} />
+      {/*
+        Eight unlabelled icons held a permanent block down the side of the map,
+        over the traffic, and half of them were unguessable from the glyph
+        alone. What is left here is the four that move the camera — the ones
+        worth a permanent place and the ones an icon can carry. The rest keep
+        their names, one press away.
+      */}
+      <div className="map-tools" ref={toolsRef}>
+        <div className="map-controls" aria-label="Map controls">
+          <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>
+            <Plus size={20} />
+          </button>
+          <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => mapRef.current?.zoomOut()}>
+            <Minus size={20} />
+          </button>
+          <button type="button" title="Centre receiver" aria-label="Centre receiver" onClick={centerReceiver}>
+            <LocateFixed size={20} />
+          </button>
+          <button type="button" title="Fit active aircraft" aria-label="Fit active aircraft" onClick={fitAircraft}>
+            <Maximize2 size={20} />
+          </button>
+          {selectedIcao ? <button type="button" className={followSelected ? 'active' : ''} title="Follow selected aircraft" aria-label="Follow selected aircraft" aria-pressed={followSelected} onClick={() => setFollowSelected((value) => !value)}><Focus size={20} /></button> : null}
+          <button
+            type="button"
+            className={`map-tools-more ${toolsOpen || rulerActive ? 'active' : ''}`}
+            aria-expanded={toolsOpen}
+            aria-haspopup="dialog"
+            title="More map tools"
+            aria-label="More map tools"
+            onClick={() => setToolsOpen((value) => !value)}
+          >
+            <MoreHorizontal size={20} />
+          </button>
+        </div>
+        {toolsOpen ? (
+          <div className="map-tools-menu" role="dialog" aria-label="More map tools">
+            {/* The map's click handlers are registered once its style has
+                loaded, so arming the ruler before then gives a tool that
+                silently drops the first point the user places. */}
+            <button
+              type="button"
+              className={rulerActive ? 'active' : ''}
+              aria-pressed={rulerActive}
+              disabled={!mapReady}
+              onClick={() => {
+                setRulerPoints([])
+                setRulerActive((value) => !value)
+                setToolsOpen(false)
+              }}
+            >
+              <Ruler size={17} aria-hidden="true" />
+              {rulerActive ? 'Stop measuring' : 'Measure distance'}
             </button>
-            <button type="button" title="Download this view as an image" aria-label="Download this view as an image" onClick={() => void downloadImage()}>
-              <Camera size={20} />
-            </button>
-          </>
+            {share ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void copyLink()
+                    setToolsOpen(false)
+                  }}
+                >
+                  <Link2 size={17} aria-hidden="true" />
+                  Copy link to this view
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void downloadImage()
+                    setToolsOpen(false)
+                  }}
+                >
+                  <Camera size={17} aria-hidden="true" />
+                  Save this view as an image
+                </button>
+              </>
+            ) : null}
+          </div>
         ) : null}
-        {/* The map's click handlers are registered once its style has loaded,
-            so arming the ruler before then gives a tool that silently drops
-            the first point the user places. */}
-        <button
-          type="button"
-          className={rulerActive ? 'active' : ''}
-          title="Measure distance and bearing"
-          aria-label="Measure distance and bearing"
-          aria-pressed={rulerActive}
-          disabled={!mapReady}
-          onClick={() => {
-            setRulerPoints([])
-            setRulerActive((value) => !value)
-          }}
-        >
-          <Ruler size={20} />
-        </button>
       </div>
       {/* Outcomes of a share are announced rather than shown silently: neither
           the clipboard nor a download changes anything on screen. */}
@@ -1373,11 +1431,11 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
               </small>
               <dl>
                 <div>
-                  <dt>Altitude</dt>
+                  <dt>Baro altitude</dt>
                   <dd>{pinned.altitudeBaro === 'ground' ? 'Ground' : pinned.altitudeBaro == null ? '—' : formatAltitude(pinned.altitudeBaro, units)}</dd>
                 </div>
                 <div>
-                  <dt>Speed</dt>
+                  <dt>Ground speed</dt>
                   <dd>{pinned.groundSpeed == null ? '—' : formatSpeed(pinned.groundSpeed, units)}</dd>
                 </div>
                 <div>
