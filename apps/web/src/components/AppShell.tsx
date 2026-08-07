@@ -21,6 +21,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const activeAlerts = alerts.filter((alert) => !alert.dismissedAt).length
   const receiverState =
     connection === 'live' ? (receiver?.status ?? 'connecting') : connection === 'connecting' ? 'connecting' : connection
+  /*
+   * The map is the only page whose content wants the whole screen, and the only
+   * one the header tells you nothing about: on a phone it spent a tenth of the
+   * height repeating a title the tab bar already highlights. Narrow layouts drop
+   * it there and give the space to the map, which is why the map carries its own
+   * copy of the receiver state the header would otherwise have shown.
+   */
+  const immersive = pathname === '/'
 
   useEffect(() => {
     const page = pathname.startsWith('/aircraft/')
@@ -31,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [pathname])
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${immersive ? 'shell-immersive' : ''}`}>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="app-header">
         <NavLink className="brand" to="/" aria-label="Flightmap live dashboard">
