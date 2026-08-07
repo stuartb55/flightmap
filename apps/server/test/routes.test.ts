@@ -49,6 +49,13 @@ function dependencies() {
       deleteSavedView: vi.fn(),
       track: vi.fn(),
       liveAircraft: vi.fn().mockResolvedValue([]),
+      aircraftDetail: vi.fn().mockResolvedValue({
+        aircraft: { icao: "abc123", callsign: "EXS8TZ" },
+        metadata: null,
+        summary: null,
+        recentSessions: [],
+        alerts: []
+      }),
       databaseReady: vi.fn().mockResolvedValue(true)
     },
     collector: {
@@ -86,6 +93,9 @@ function dependencies() {
         updatedAt: "2026-08-05T12:00:00.000Z"
       })
     },
+    routes: {
+      lookup: vi.fn().mockResolvedValue(null)
+    },
     applyRuntimeSettings: vi.fn().mockResolvedValue(undefined)
   };
 }
@@ -96,7 +106,9 @@ const sameOrigin = {
   origin: "http://localhost:8080"
 } as const;
 
-async function app(): Promise<FastifyInstance> {
+async function app(
+  deps: ReturnType<typeof dependencies> = dependencies()
+): Promise<FastifyInstance> {
   return buildApp({
     config: loadConfig({
       NODE_ENV: "test",
@@ -107,7 +119,7 @@ async function app(): Promise<FastifyInstance> {
     }),
     // The invalid requests below are rejected before unrelated repository
     // methods can run; minimal mocks make that boundary explicit.
-    dependencies: dependencies() as never,
+    dependencies: deps as never,
     logger: false
   });
 }
@@ -455,6 +467,38 @@ describe("structured route errors", () => {
         to: "2026-08-02T00:00:00.000Z"
       })
     );
+    await server.close();
+  });
+
+  /* A route needs a third party, so it is resolved for the one aircraft that
+     was asked about rather than for every aircraft in the live snapshot. */
+  it("resolves the route for the callsign on the aircraft detail", async () => {
+    const deps = dependencies();
+    deps.routes.lookup = vi.fn().mockResolvedValue({
+      callsign: "EXS8TZ",
+      origin: { iata: "NCL", icao: "EGNT", name: null, municipality: "Newcastle" },
+      destination: { iata: "AGP", icao: "LEMG", name: null, municipality: "Malaga" },
+      resolvedAt: "2026-08-07T09:00:00.000Z"
+    });
+    const server = await app(deps);
+
+    const response = await server.inject("/api/v1/aircraft/abc123");
+
+    expect(deps.routes.lookup).toHaveBeenCalledWith("EXS8TZ");
+    expect(response.json()).toMatchObject({
+      route: { origin: { iata: "NCL" }, destination: { iata: "AGP" } }
+    });
+    await server.close();
+  });
+
+  it("serves the aircraft detail with no route when the lookup has none", async () => {
+    const deps = dependencies();
+    const server = await app(deps);
+
+    const response = await server.inject("/api/v1/aircraft/abc123");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().route).toBeNull();
     await server.close();
   });
 

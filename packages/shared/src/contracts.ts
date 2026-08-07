@@ -329,12 +329,38 @@ export const liveAircraftResponseSchema = z.object({
   aircraft: z.array(liveAircraftSchema)
 });
 
+/**
+ * One end of a scheduled flight. ADS-B carries none of this — a transponder
+ * broadcasts a callsign, not a route — so every field is what a lookup was able
+ * to resolve from that callsign and any of them may be missing.
+ */
+export const routeAirportSchema = z.object({
+  iata: z.string().nullable(),
+  icao: z.string().nullable(),
+  name: z.string().nullable(),
+  municipality: z.string().nullable()
+});
+
+export const flightRouteSchema = z.object({
+  callsign: z.string(),
+  origin: routeAirportSchema.nullable(),
+  destination: routeAirportSchema.nullable(),
+  /** When the lookup that produced this ran, so a client can age it. */
+  resolvedAt: isoDateTimeSchema
+});
+
 export const aircraftDetailResponseSchema = z.object({
   aircraft: liveAircraftSchema.nullable(),
   metadata: aircraftMetadataSchema.nullable(),
   summary: aircraftSummarySchema.nullable(),
   recentSessions: z.array(trackSessionSchema),
-  alerts: z.array(alertEventSchema)
+  alerts: z.array(alertEventSchema),
+  /**
+   * Null covers three different things a client treats the same way: route
+   * lookup is switched off, the aircraft has no callsign to look up, and the
+   * lookup ran and found nothing. None of them is an error.
+   */
+  route: flightRouteSchema.nullable().optional()
 });
 
 export const sessionsResponseSchema = z.object({
@@ -536,9 +562,14 @@ export const appSettingsResponseSchema = z.object({
     metadataMaxDownloadBytes: z.number(),
     metadataMaxUncompressedBytes: z.number(),
     databaseVolumeCapacityBytes: z.number().nullable(),
+    routeLookupUrl: z.string(),
+    routeLookupTimeoutMs: z.number(),
+    routeLookupTtlHours: z.number(),
+    routeLookupNegativeTtlHours: z.number(),
     collectorEnabled: z.boolean(),
     maintenanceEnabled: z.boolean(),
-    metadataUpdatesEnabled: z.boolean()
+    metadataUpdatesEnabled: z.boolean(),
+    routeLookupEnabled: z.boolean()
   }),
   updatedAt: isoDateTimeSchema.nullable()
 });
@@ -1302,6 +1333,8 @@ export type LiveAircraftResponse = z.infer<typeof liveAircraftResponseSchema>;
 export type AircraftDetailResponse = z.infer<
   typeof aircraftDetailResponseSchema
 >;
+export type FlightRoute = z.infer<typeof flightRouteSchema>;
+export type RouteAirport = z.infer<typeof routeAirportSchema>;
 export type SessionsResponse = z.infer<typeof sessionsResponseSchema>;
 export type TrackResponse = z.infer<typeof trackResponseSchema>;
 export type AircraftActivityPoint = z.infer<typeof aircraftActivityPointSchema>;

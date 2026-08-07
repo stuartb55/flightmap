@@ -101,9 +101,14 @@ const settingsShape = {
     .positive()
     .max(Number.MAX_SAFE_INTEGER)
     .nullable(),
+  routeLookupUrl: httpUrlSchema,
+  routeLookupTimeoutMs: z.number().int().min(500).max(30_000),
+  routeLookupTtlHours: z.number().int().min(1).max(8_760),
+  routeLookupNegativeTtlHours: z.number().int().min(1).max(8_760),
   collectorEnabled: z.boolean(),
   maintenanceEnabled: z.boolean(),
-  metadataUpdatesEnabled: z.boolean()
+  metadataUpdatesEnabled: z.boolean(),
+  routeLookupEnabled: z.boolean()
 };
 
 /**
@@ -181,9 +186,20 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   metadataMaxDownloadBytes: 50_000_000,
   metadataMaxUncompressedBytes: 250_000_000,
   databaseVolumeCapacityBytes: null,
+  /*
+   * `{callsign}` is substituted. Off by default and left to the operator to
+   * turn on, because it is the one part of this application that talks to a
+   * third party about what the receiver is hearing, on a box otherwise built to
+   * stay on the LAN.
+   */
+  routeLookupUrl: "https://api.adsbdb.com/v0/callsign/{callsign}",
+  routeLookupTimeoutMs: 4_000,
+  routeLookupTtlHours: 24 * 14,
+  routeLookupNegativeTtlHours: 24 * 3,
   collectorEnabled: true,
   maintenanceEnabled: true,
-  metadataUpdatesEnabled: true
+  metadataUpdatesEnabled: true,
+  routeLookupEnabled: false
 });
 
 export type SettingsResponse = {

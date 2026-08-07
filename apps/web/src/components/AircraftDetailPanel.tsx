@@ -37,7 +37,7 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { isNewSighting } from '../lib/sighting-preferences'
 import { useLiveDispatch } from '../state/LiveContext'
-import type { Aircraft, AircraftDetail } from '../types'
+import type { Aircraft, AircraftDetail, RouteAirport } from '../types'
 
 interface Props {
   aircraft: Aircraft
@@ -113,6 +113,28 @@ function useSheetSwipe(expanded: boolean, onToggleExpanded?: () => void) {
       event.preventDefault()
     },
   }
+}
+
+/**
+ * One end of a route. Which identifier is shown depends on what the lookup
+ * resolved: an IATA code is what a passenger would recognise, an ICAO code is
+ * what a spotter would, and a bare name is what is left when neither came back.
+ */
+function RouteEnd({
+  airport,
+  align = 'start',
+}: {
+  airport: RouteAirport | null
+  align?: 'start' | 'end'
+}) {
+  const code = airport?.iata ?? airport?.icao
+  const place = airport?.municipality ?? airport?.name
+  return (
+    <div className={`detail-route-end ${align === 'end' ? 'align-end' : ''}`}>
+      <strong>{code ?? '—'}</strong>
+      <small>{place ?? (airport ? '' : 'Not available')}</small>
+    </div>
+  )
 }
 
 function Metric({
@@ -251,6 +273,9 @@ export function AircraftDetailPanel({
    * stays as the eyebrow above it.
    */
   const readableType = aircraft.description ?? metadata?.description
+  /* Only worth a block when at least one end came back; a route with neither
+     resolved says nothing the callsign above it has not already said. */
+  const route = detail?.route?.origin || detail?.route?.destination ? detail.route : null
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
   const swipe = useSheetSwipe(expanded, onToggleExpanded)
   const climbing = aircraft.verticalRate == null || Math.abs(aircraft.verticalRate) < 64
@@ -319,6 +344,25 @@ export function AircraftDetailPanel({
         {/* The sheet's collapsed stop shows the hero alone, so what the map
             cannot say — how high, how fast, which way, how far — belongs here
             rather than behind an expand. */}
+        {/*
+          Where it came from and where it is going, above the telemetry,
+          because for most of the people looking at a callsign it is the
+          question the telemetry does not answer. Absent for the majority of
+          what a receiver hears — general aviation has no scheduled route — so
+          the block appears only when there is one.
+        */}
+        {route ? (
+          <div className="detail-route">
+            <RouteEnd airport={route.origin} />
+            <span className="detail-route-leg" aria-hidden="true">
+              <i />
+              <Plane size={15} />
+              <i />
+            </span>
+            <RouteEnd airport={route.destination} align="end" />
+          </div>
+        ) : null}
+
         {/* Named for which reading each one is. The record carries barometric
             and geometric altitude, and ground, indicated and true airspeed, so
             an unqualified "Altitude" or "Speed" was picking one of several

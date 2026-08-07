@@ -5,6 +5,7 @@ import {
   MapPinned,
   Plane,
   RadioTower,
+  Route,
   Save,
   Server,
 } from 'lucide-react'
@@ -96,6 +97,11 @@ function buildSettings(data: FormData): AppSettings {
     collectorEnabled: data.get('collectorEnabled') === 'on',
     maintenanceEnabled: data.get('maintenanceEnabled') === 'on',
     metadataUpdatesEnabled: data.get('metadataUpdatesEnabled') === 'on',
+    routeLookupEnabled: data.get('routeLookupEnabled') === 'on',
+    routeLookupUrl: String(data.get('routeLookupUrl') ?? ''),
+    routeLookupTimeoutMs: requiredNumber(data, 'routeLookupTimeoutSeconds') * 1_000,
+    routeLookupTtlHours: requiredNumber(data, 'routeLookupTtlHours'),
+    routeLookupNegativeTtlHours: requiredNumber(data, 'routeLookupNegativeTtlHours'),
   }
 }
 
@@ -762,6 +768,44 @@ export function SettingsPage() {
               </Field>
               <Field label="Maximum uncompressed data" hint="MiB">
                 <input name="metadataMaxUncompressedMiB" type="number" min={5_000_000 / MEBIBYTE} max={1_000_000_000 / MEBIBYTE} step="any" defaultValue={settings.metadataMaxUncompressedBytes / MEBIBYTE} required />
+              </Field>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Route size={20} />}
+            eyebrow="LOOKUP DATA"
+            title="Flight routes"
+            description="Where a selected aircraft came from and where it is going, resolved from its callsign."
+          >
+            {/* The one place this application talks to a third party about what
+                the receiver is hearing, so it says so plainly and starts off. */}
+            <label className="settings-toggle">
+              <span>
+                <strong>Look up flight routes</strong>
+                <small>
+                  ADS-B carries no route, so each callsign is sent to the service below.
+                  Off by default: nothing leaves this network until it is switched on.
+                </small>
+              </span>
+              <input
+                name="routeLookupEnabled"
+                type="checkbox"
+                defaultChecked={settings.routeLookupEnabled}
+              />
+            </label>
+            <Field label="Route lookup URL" hint="{callsign} is replaced with the callsign">
+              <input name="routeLookupUrl" type="url" defaultValue={settings.routeLookupUrl} required />
+            </Field>
+            <div className="settings-field-grid">
+              <Field label="Request timeout" hint="Seconds">
+                <input name="routeLookupTimeoutSeconds" type="number" min={0.5} max={30} step="any" defaultValue={settings.routeLookupTimeoutMs / 1_000} required />
+              </Field>
+              <Field label="Cache a found route for" hint="Hours">
+                <input name="routeLookupTtlHours" type="number" min={1} max={8_760} defaultValue={settings.routeLookupTtlHours} required />
+              </Field>
+              <Field label="Cache a miss for" hint="Hours — most callsigns never resolve">
+                <input name="routeLookupNegativeTtlHours" type="number" min={1} max={8_760} defaultValue={settings.routeLookupNegativeTtlHours} required />
               </Field>
             </div>
           </SettingsCard>
