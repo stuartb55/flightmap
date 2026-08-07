@@ -131,6 +131,7 @@ import {
   aircraftIconId,
   aircraftImage,
   allTrailsData,
+  applyBasemapContrast,
   applyLayerVisibility,
   bandDescription,
   bandLabel,
@@ -451,6 +452,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       if (!map.isStyleLoaded()) setMapError(event.error?.message ?? 'Map tiles are unavailable')
     })
     map.on('style.load', () => {
+      // Before any of our own layers are added, so a style that happens to name
+      // a layer the way this one matches cannot be re-coloured by it.
+      applyBasemapContrast(map, theme)
+
       for (const shape of aircraftShapes) {
         for (const [band, colour] of Object.entries(AIRCRAFT_COLOURS)) {
           const id = aircraftIconId(shape, band)
