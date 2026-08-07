@@ -105,11 +105,32 @@ export interface AlertEvent {
   severity: 'critical' | 'warning' | 'info'
 }
 
+/** One end of a scheduled flight, as far as the callsign lookup resolved it. */
+export interface RouteAirport {
+  iata: string | null
+  icao: string | null
+  name: string | null
+  municipality: string | null
+}
+
+export interface FlightRoute {
+  callsign: string
+  origin: RouteAirport | null
+  destination: RouteAirport | null
+  resolvedAt: string
+}
+
 export interface AircraftDetail {
   aircraft: Aircraft | null
   metadata: AircraftMetadata | null
   recentSessions: SessionSummary[]
   alerts: AlertEvent[]
+  /**
+   * Absent or null whenever there is no route to show: lookup is off, the
+   * aircraft has no callsign, or the lookup found nothing. All three are
+   * ordinary, and most of what a receiver hears will never resolve.
+   */
+  route?: FlightRoute | null
   summary: {
     firstSeenAt: string | null
     lastSeenAt: string | null

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   aircraftIconId,
+  applyBasemapContrast,
   bandDescription,
   bandLabel,
   greatCircle,
@@ -241,5 +242,96 @@ describe('altitude legend labels', () => {
     expect(bandDescription(band('ground'), aviationUnits)).toBe('on the ground')
     expect(bandDescription(band('high'), aviationUnits)).toBe('from 20,000 ft to 30,000 ft')
     expect(bandDescription(band('extreme'), aviationUnits)).toBe('above 40,000 ft')
+  })
+})
+
+describe('applyBasemapContrast', () => {
+  const style = {
+    layers: [
+      { id: 'highway-motorway', type: 'line', 'source-layer': 'transportation' },
+      { id: 'highway-motorway-casing', type: 'line', 'source-layer': 'transportation' },
+      { id: 'highway-name-major', type: 'symbol', 'source-layer': 'transportation_name' },
+      { id: 'place-city', type: 'symbol', 'source-layer': 'place' },
+      { id: 'water', type: 'fill', 'source-layer': 'water' },
+      { id: 'landcover-grass', type: 'fill', 'source-layer': 'landcover' },
+      { id: 'background', type: 'background' },
+    ],
+  }
+  const stubMap = () => ({ getStyle: vi.fn(() => style), setPaintProperty: vi.fn() })
+
+  it('lifts roads and their labels without touching widths', () => {
+    const map = stubMap()
+    applyBasemapContrast(map as never, 'dark')
+
+    const properties = map.setPaintProperty.mock.calls.map(([, property]) => property)
+    expect(properties).not.toContain('line-width')
+    expect(properties).not.toContain('text-size')
+    expect(map.setPaintProperty).toHaveBeenCalledWith(
+      'place-city',
+      'text-color',
+      expect.any(String),
+    )
+  })
+
+  it('keeps the road hierarchy in one expression rather than flattening it', () => {
+    const map = stubMap()
+    applyBasemapContrast(map as never, 'dark')
+
+    const fill = map.setPaintProperty.mock.calls.find(
+      ([id, property]) => id === 'highway-motorway' && property === 'line-color',
+    )
+    expect(fill?.[2]).toEqual(expect.arrayContaining(['match', ['get', 'class']]))
+  })
+
+  /* Casings are wider than the fill they sit under, so lifting both would draw
+     the road as a band of flat colour rather than a line with an edge. */
+  it('holds road casings near the background', () => {
+    const map = stubMap()
+    applyBasemapContrast(map as never, 'dark')
+
+    const casing = map.setPaintProperty.mock.calls.find(
+      ([id, property]) => id === 'highway-motorway-casing' && property === 'line-color',
+    )
+    expect(typeof casing?.[2]).toBe('string')
+  })
+
+  it('leaves layers it does not recognise alone', () => {
+    const map = stubMap()
+    applyBasemapContrast(map as never, 'dark')
+
+    const touched = map.setPaintProperty.mock.calls.map(([id]) => id)
+    expect(touched).not.toContain('landcover-grass')
+    expect(touched).not.toContain('background')
+  })
+
+  /* The bright style's road colouring is already the conventional one and
+     already clears its pale background. */
+  it('leaves the light basemap untouched', () => {
+    const map = stubMap()
+    applyBasemapContrast(map as never, 'light')
+
+    expect(map.setPaintProperty).not.toHaveBeenCalled()
+  })
+})
+
+/* The real style keeps railway hatching in a companion layer drawn over the
+   line, so lifting it fills the hatch in and the railway reads as a road. */
+describe('applyBasemapContrast decoration layers', () => {
+  it('leaves railway dashlines at the colour the style chose', () => {
+    const map = {
+      getStyle: vi.fn(() => ({
+        layers: [
+          { id: 'railway', type: 'line', 'source-layer': 'transportation' },
+          { id: 'railway_dashline', type: 'line', 'source-layer': 'transportation' },
+        ],
+      })),
+      setPaintProperty: vi.fn(),
+    }
+
+    applyBasemapContrast(map as never, 'dark')
+
+    const touched = map.setPaintProperty.mock.calls.map(([id]) => id)
+    expect(touched).toContain('railway')
+    expect(touched).not.toContain('railway_dashline')
   })
 })

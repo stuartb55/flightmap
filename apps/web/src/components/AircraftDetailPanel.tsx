@@ -37,7 +37,7 @@ import {
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { isNewSighting } from '../lib/sighting-preferences'
 import { useLiveDispatch } from '../state/LiveContext'
-import type { Aircraft, AircraftDetail } from '../types'
+import type { Aircraft, AircraftDetail, RouteAirport } from '../types'
 
 interface Props {
   aircraft: Aircraft
@@ -113,6 +113,28 @@ function useSheetSwipe(expanded: boolean, onToggleExpanded?: () => void) {
       event.preventDefault()
     },
   }
+}
+
+/**
+ * One end of a route. Which identifier is shown depends on what the lookup
+ * resolved: an IATA code is what a passenger would recognise, an ICAO code is
+ * what a spotter would, and a bare name is what is left when neither came back.
+ */
+function RouteEnd({
+  airport,
+  align = 'start',
+}: {
+  airport: RouteAirport | null
+  align?: 'start' | 'end'
+}) {
+  const code = airport?.iata ?? airport?.icao
+  const place = airport?.municipality ?? airport?.name
+  return (
+    <div className={`detail-route-end ${align === 'end' ? 'align-end' : ''}`}>
+      <strong>{code ?? '—'}</strong>
+      <small>{place ?? (airport ? '' : 'Not available')}</small>
+    </div>
+  )
 }
 
 function Metric({
@@ -236,7 +258,24 @@ export function AircraftDetailPanel({
   // it is the authoritative record, and it arrives a moment after the panel.
   const isNew = isNewSighting(summary?.firstSeenAt ?? aircraft.firstSeenAt, newSince)
   const inferredOperator = airlineOperatorFromCallsign(aircraft.callsign)
-  const operator = inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator
+  /*
+   * An airliner has an operator; a light aircraft on a private flight has only
+   * an owner, and showing nothing there was the difference between "we know who
+   * this is" and "we have no idea". The live record carries neither for a
+   * private owner, so the detail fetch is what fills it in.
+   */
+  const operator =
+    inferredOperator?.operator ?? metadata?.operator ?? aircraft.operator ?? metadata?.owner
+  /*
+   * `typeCode` is the four-character ICAO designator — B738, P28A — which is
+   * precise and unreadable. The description is the same aircraft in words, and
+   * it is the one a reader can actually place, so it leads and the designator
+   * stays as the eyebrow above it.
+   */
+  const readableType = aircraft.description ?? metadata?.description
+  /* Only worth a block when at least one end came back; a route with neither
+     resolved says nothing the callsign above it has not already said. */
+  const route = detail?.route?.origin || detail?.route?.destination ? detail.route : null
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
   const swipe = useSheetSwipe(expanded, onToggleExpanded)
   const climbing = aircraft.verticalRate == null || Math.abs(aircraft.verticalRate) < 64
@@ -291,6 +330,7 @@ export function AircraftDetailPanel({
                 <Star size={19} fill={aircraft.watched ? 'currentColor' : 'none'} />
               </button>
             </div>
+            {readableType ? <p className="detail-type">{readableType}</p> : null}
             <p>
               {aircraft.registration || aircraft.icao.toUpperCase()}
               {operator ? ` · ${operator}` : aircraft.country ? ` · ${aircraft.country}` : ''}
@@ -304,9 +344,32 @@ export function AircraftDetailPanel({
         {/* The sheet's collapsed stop shows the hero alone, so what the map
             cannot say — how high, how fast, which way, how far — belongs here
             rather than behind an expand. */}
+        {/*
+          Where it came from and where it is going, above the telemetry,
+          because for most of the people looking at a callsign it is the
+          question the telemetry does not answer. Absent for the majority of
+          what a receiver hears — general aviation has no scheduled route — so
+          the block appears only when there is one.
+        */}
+        {route ? (
+          <div className="detail-route">
+            <RouteEnd airport={route.origin} />
+            <span className="detail-route-leg" aria-hidden="true">
+              <i />
+              <Plane size={15} />
+              <i />
+            </span>
+            <RouteEnd airport={route.destination} align="end" />
+          </div>
+        ) : null}
+
+        {/* Named for which reading each one is. The record carries barometric
+            and geometric altitude, and ground, indicated and true airspeed, so
+            an unqualified "Altitude" or "Speed" was picking one of several
+            without saying so. */}
         <dl className="detail-hero-stats">
           <div>
-            <dt>Altitude</dt>
+            <dt>Baro altitude</dt>
             <dd>
               {formatAltitude(aircraft.altitudeBaro)}
               {climbing == null ? null : (
@@ -316,15 +379,18 @@ export function AircraftDetailPanel({
               )}
             </dd>
           </div>
-          <div><dt>Speed</dt><dd>{formatSpeed(aircraft.groundSpeed)}</dd></div>
+          <div><dt>Ground speed</dt><dd>{formatSpeed(aircraft.groundSpeed)}</dd></div>
           <div><dt>Track</dt><dd>{formatBearing(aircraft.track)}</dd></div>
           <div><dt>Range</dt><dd>{formatDistance(aircraft.distanceNm)}</dd></div>
         </dl>
 
+        {/* Named for what each one shows about this aircraft. Two of them read
+            "Live" and "History", which are also two of the six tabs along the
+            bottom, and they went somewhere else entirely. */}
         <div className="aircraft-workflow-links">
-          <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>Live</Link>
+          <Link to={`/?aircraft=${encodeURIComponent(aircraft.icao)}`}>On the map</Link>
           <Link to={`/aircraft/${encodeURIComponent(aircraft.icao)}`}>Profile</Link>
-          <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>History</Link>
+          <Link to={`/history?aircraft=${encodeURIComponent(aircraft.icao)}`}>Past flights</Link>
         </div>
       </div>
 

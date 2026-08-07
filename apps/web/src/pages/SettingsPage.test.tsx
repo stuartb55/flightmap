@@ -47,6 +47,11 @@ const defaultSettings: AppSettings = {
   collectorEnabled: true,
   maintenanceEnabled: true,
   metadataUpdatesEnabled: true,
+  routeLookupEnabled: false,
+  routeLookupUrl: 'https://api.example.test/v0/callsign/{callsign}',
+  routeLookupTimeoutMs: 4_000,
+  routeLookupTtlHours: 336,
+  routeLookupNegativeTtlHours: 72,
 }
 
 beforeEach(() => {

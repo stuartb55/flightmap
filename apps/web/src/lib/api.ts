@@ -71,6 +71,7 @@ import type {
   WireStatus,
   WireTrackPoint,
 } from './wire'
+import type { FlightRoute } from '../types'
 import { dateTimeInputToIso } from './format'
 import { displayTimeZone } from '../config'
 
@@ -204,6 +205,7 @@ export const api = {
       } | null
       recentSessions: WireSession[]
       alerts: WireAlert[]
+      route?: FlightRoute | null
     }>(
       `/aircraft/${encodeURIComponent(icao)}`,
       { signal },

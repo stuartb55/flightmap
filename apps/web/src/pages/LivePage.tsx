@@ -85,6 +85,10 @@ export function LivePage() {
   const airports = useAirports()
   const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
+  // Mirrors the header's own reading of the two states, so the dot the map
+  // shows in its place cannot disagree with the one the other pages show.
+  const receiverState =
+    connection === 'live' ? (receiver?.status ?? 'connecting') : connection === 'connecting' ? 'connecting' : connection
   const dispatch = useLiveDispatch()
   const [searchParams, setSearchParams] = useSearchParams()
   /*
@@ -626,6 +630,43 @@ export function LivePage() {
           share={liveShare}
         />
         {trackError || coverage.error ? <p className="map-data-warning" role="status">{trackError ?? coverage.error}</p> : null}
+
+        {/* The list and the filters used to hold a bar of their own below the
+            map. Floating them over it returns that strip to the map without
+            putting either out of reach, and they stay above the detail sheet
+            so a selected aircraft never buries the way back to the list. */}
+        <div className="mobile-map-actions">
+          {/* The receiver state the hidden header used to carry. It rides in
+              the same row as the actions so it cannot land on them, and it is
+              hidden with them on layouts that still have a header. */}
+          <div className="map-receiver-state" title={receiver?.lastSnapshotAt ?? 'Waiting for receiver'}>
+            <span className={`status-dot status-${receiverState}`} aria-hidden="true" />
+            <span className="visually-hidden">{`Receiver ${receiverState}`}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobilePanel(mobilePanel === 'list' ? null : 'list')}
+            aria-expanded={mobilePanel === 'list'}
+            /* Named here as well as in the label, which the narrowest screens
+               hide to keep the row clear of the layer button. */
+            aria-label={`Aircraft list, ${filtered.length} shown`}
+          >
+            <List size={18} />
+            <span className="action-label">Aircraft</span>
+            <span className="action-count">{filtered.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePanel(mobilePanel === 'filters' ? null : 'filters')}
+            aria-expanded={mobilePanel === 'filters'}
+            aria-label={filterCount ? `Filters, ${filterCount} active` : 'Filters'}
+          >
+            <Filter size={18} />
+            <span className="action-label">Filters</span>
+            {filterCount ? <span className="action-count">{filterCount}</span> : null}
+          </button>
+        </div>
+
         {selected ? (
           <div className="selected-map-card">
             <button type="button" className="back-control" onClick={closeDetails}>
@@ -649,27 +690,6 @@ export function LivePage() {
           onToggleExpanded={() => setDetailExpanded((value) => !value)}
         />
       ) : null}
-
-      <div className="mobile-map-actions">
-        <button
-          type="button"
-          onClick={() => setMobilePanel(mobilePanel === 'list' ? null : 'list')}
-          aria-expanded={mobilePanel === 'list'}
-        >
-          <List size={18} />
-          Aircraft
-          <span>{filtered.length}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobilePanel(mobilePanel === 'filters' ? null : 'filters')}
-          aria-expanded={mobilePanel === 'filters'}
-        >
-          <Filter size={18} />
-          Filters
-          {filterCount ? <span>{filterCount}</span> : null}
-        </button>
-      </div>
 
       {mobilePanel ? (
         <button

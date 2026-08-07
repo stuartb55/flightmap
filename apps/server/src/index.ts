@@ -9,6 +9,7 @@ import { MaintenanceService } from "./services/maintenance.js";
 import { InsightBackfillService } from "./services/insight-backfill.js";
 import { MetadataService } from "./services/metadata.js";
 import { AirportImportService } from "./services/airports.js";
+import { RouteLookup } from "./services/routes.js";
 import { StatusService } from "./services/status.js";
 import { AppSettingsService } from "./settings.js";
 
@@ -55,6 +56,10 @@ const maintenance = new MaintenanceService(
 const insightBackfill = new InsightBackfillService(database, logger);
 const metadata = new MetadataService(database, config, logger);
 const status = new StatusService(config, repository, collector.state);
+/* Reads the settings on every lookup rather than at construction, so turning
+   route lookup on or off takes effect on the next selection instead of on the
+   next restart. */
+const routes = new RouteLookup(database, () => config, logger);
 const airportImport = new AirportImportService(
   settings,
   config,
@@ -84,6 +89,7 @@ const app = await buildApp({
     status,
     settings,
     airportImport,
+    routes,
     applyRuntimeSettings,
     bootstrapped: () => settings.isLoaded()
   },

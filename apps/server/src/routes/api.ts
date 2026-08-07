@@ -25,6 +25,7 @@ import type { FlightRepository } from "../db/repository.js";
 import type { ReceiverCollector } from "../ingestion/collector.js";
 import type { LiveHub } from "../realtime/live-hub.js";
 import { AirportImportError, type AirportImportService } from "../services/airports.js";
+import type { RouteLookup } from "../services/routes.js";
 import type { StatusService } from "../services/status.js";
 import type { AppSettingsService } from "../settings.js";
 import {
@@ -45,6 +46,7 @@ export type ApiDependencies = {
   status: StatusService;
   settings: AppSettingsService;
   airportImport: AirportImportService;
+  routes: RouteLookup;
   applyRuntimeSettings: () => Promise<void>;
   /** False until boot-time settings have loaded; `/health/ready` reports
    *  `not_ready` rather than the process exiting on a database blip. */
@@ -62,6 +64,7 @@ export async function registerApiRoutes(
     status,
     settings,
     airportImport,
+    routes,
     applyRuntimeSettings,
     bootstrapped = () => true
   } = dependencies;
@@ -160,7 +163,13 @@ export async function registerApiRoutes(
         }
       });
     }
-    return detail;
+    /*
+     * Resolved here rather than in the live snapshot: a route needs a third
+     * party, and the snapshot is rebuilt for every aircraft in range on a timer.
+     * This runs once, when someone has asked about one aircraft. It never
+     * rejects — the panel opens with or without a route.
+     */
+    return { ...detail, route: await routes.lookup(detail.aircraft?.callsign ?? null) };
   });
 
   app.get("/api/v1/aircraft/:icao/activity", async (request) => {

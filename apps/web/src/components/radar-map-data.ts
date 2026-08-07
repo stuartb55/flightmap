@@ -9,7 +9,11 @@
  */
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import type { CoverageCell, MapLayerPreferences } from '@flightmap/shared'
-import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import type {
+  DataDrivenPropertyValueSpecification,
+  GeoJSONSource,
+  Map as MapLibreMap,
+} from 'maplibre-gl'
 import { defaultReceiver } from '../config'
 import type { ResolvedTheme } from '../lib/theme'
 import type { AltitudeBand } from '../lib/altitude-bands'
@@ -594,4 +598,119 @@ export function scaleUnit(unit: UnitPreferences['distance']): 'nautical' | 'metr
 
 export function setSourceData(map: MapLibreMap, source: string, data: FeatureCollection) {
   ;(map.getSource(source) as GeoJSONSource | undefined)?.setData(data)
+}
+
+/**
+ * The basemap is fetched rather than authored here, and the dark style it ships
+ * with draws its road network only a few percent above the background: at a
+ * glance the motorways and A-roads a reader actually navigates by are not on
+ * the map at all, and neither are the town names over them.
+ *
+ * These raise the classes the eye uses — motorway down to minor — and the
+ * labels above them. Only colours are rewritten. Widths are zoom expressions
+ * the style is entitled to own, and a flat width would break at either end of
+ * the zoom range.
+ *
+ * The light basemap is left alone. Its road colouring is the conventional one,
+ * already well clear of a pale background, and overriding it would trade a
+ * familiar map for an unfamiliar one to fix a problem it does not have.
+ */
+const basemapContrast = {
+  /* A steep ramp rather than an even one. The point is to be able to place
+     yourself at a glance, which two or three classes of road do; lifting the
+     rest by the same amount buys nothing and costs a web of lines over the
+     traffic, which is the thing actually being read. */
+  road: {
+    motorway: '#8fa3b3',
+    primary: '#5e7082',
+    secondary: '#46525e',
+    minor: '#2f3841',
+    rail: '#3a444e',
+    /* Paths, tracks, piers and ferry lines. Present at this zoom in quantity
+       and never what someone is navigating by. */
+    other: '#242b32',
+  },
+  /* Roads are drawn as a wide casing under a narrower fill. Keeping the casing
+     near the background turns the lift above into a line with an edge rather
+     than a band of flat colour. */
+  roadCasing: '#0d1319',
+  place: { text: '#e8eef3', halo: '#05090d' },
+  roadLabel: { text: '#b9c6d1', halo: '#05090d' },
+  water: '#132a37',
+} as const
+
+/** The OpenMapTiles layers this reads. Anything else in the style is untouched. */
+const ROAD_SOURCE_LAYER = 'transportation'
+const ROAD_LABEL_SOURCE_LAYER = 'transportation_name'
+const PLACE_SOURCE_LAYER = 'place'
+const WATER_SOURCE_LAYER = 'water'
+
+/**
+ * Layers in the road source that are not the road. A dashline is the dark
+ * overlay that makes a railway read as hatched rather than solid, so lifting it
+ * to a road colour fills the hatch in and turns the railway into a road.
+ */
+const ROAD_DECORATION = /dashline|hatch/i
+
+type BasemapStyleMap = Pick<MapLibreMap, 'getStyle' | 'setPaintProperty'>
+
+/**
+ * `class` is a feature property rather than something encoded in the layer id,
+ * so one expression re-colours every road layer a style happens to define —
+ * surface, bridge, tunnel and low-zoom variants included — and keeps the
+ * hierarchy that a single flat override would have thrown away.
+ */
+function roadColourExpression(): DataDrivenPropertyValueSpecification<string> {
+  return [
+    'match',
+    ['get', 'class'],
+    'motorway',
+    basemapContrast.road.motorway,
+    ['trunk', 'primary'],
+    basemapContrast.road.primary,
+    ['secondary', 'tertiary'],
+    basemapContrast.road.secondary,
+    ['minor', 'service', 'busway', 'bus_guideway'],
+    basemapContrast.road.minor,
+    ['rail', 'transit'],
+    basemapContrast.road.rail,
+    basemapContrast.road.other,
+  ]
+}
+
+export function applyBasemapContrast(map: BasemapStyleMap, theme: ResolvedTheme): void {
+  if (theme !== 'dark') return
+  const road = roadColourExpression()
+
+  for (const layer of map.getStyle().layers ?? []) {
+    const sourceLayer = 'source-layer' in layer ? layer['source-layer'] : undefined
+    if (!sourceLayer) continue
+
+    if (layer.type === 'line' && sourceLayer === ROAD_SOURCE_LAYER) {
+      if (ROAD_DECORATION.test(layer.id)) continue
+      // Casings are named, not typed: every style in this family marks them in
+      // the layer id because nothing in the data distinguishes them.
+      const casing = /casing|outline/i.test(layer.id)
+      map.setPaintProperty(layer.id, 'line-color', casing ? basemapContrast.roadCasing : road)
+      continue
+    }
+
+    if (layer.type !== 'symbol') {
+      if (layer.type === 'fill' && sourceLayer === WATER_SOURCE_LAYER) {
+        map.setPaintProperty(layer.id, 'fill-color', basemapContrast.water)
+      }
+      continue
+    }
+
+    const labels =
+      sourceLayer === PLACE_SOURCE_LAYER
+        ? basemapContrast.place
+        : sourceLayer === ROAD_LABEL_SOURCE_LAYER
+          ? basemapContrast.roadLabel
+          : null
+    if (!labels) continue
+    map.setPaintProperty(layer.id, 'text-color', labels.text)
+    map.setPaintProperty(layer.id, 'text-halo-color', labels.halo)
+    map.setPaintProperty(layer.id, 'text-halo-width', 1.2)
+  }
 }

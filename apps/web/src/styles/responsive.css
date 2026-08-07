@@ -83,9 +83,23 @@
     /* Width of the map layer button plus the gap after it, so the saved-view
        button beside it and the panels below both line up with one value. */
     --map-layer-button-span: 107px;
-    /* One 48px button row with its padding. The detail sheet stops on top of
-       it, so both read the height from here. */
-    --mobile-map-actions-height: 64px;
+    /* Where the first row of floating map controls starts. The immersive map
+       runs under the status bar, so every overlay on that edge clears the
+       inset from one value rather than each guessing at it. */
+    --map-overlay-top: calc(env(safe-area-inset-top) + 10px);
+    /* The row of floating controls, plus the gap below it, that anything on
+       the next row down has to clear. */
+    --map-overlay-row: 54px;
+  }
+
+  /* The live map runs edge to edge and under the status bar; every other page
+     keeps the header, which is the only thing carrying its title. */
+  .shell-immersive .app-header {
+    display: none;
+  }
+
+  .shell-immersive .app-content {
+    height: calc(100% - var(--mobile-nav-height));
   }
 
   html,
@@ -233,9 +247,12 @@
      separators the stacked borders used to draw. Two columns are wider than
      one, so the block drops below the layer and saved-view row rather than
      racing it for the same line on a narrow screen. */
+  .map-tools {
+    top: calc(var(--map-overlay-top) + var(--map-overlay-row));
+    right: max(10px, env(safe-area-inset-right));
+  }
+
   .map-controls {
-    top: 62px;
-    right: 10px;
     display: grid;
     grid-template-columns: repeat(2, 44px);
     gap: 1px;
@@ -361,14 +378,14 @@
      full width and scrolling internally. Only one can be open: each closes on
      a press outside itself. */
   .map-layer-control {
-    top: 10px;
-    left: 10px;
+    top: var(--map-overlay-top);
+    left: max(10px, env(safe-area-inset-left));
     z-index: 64;
   }
 
   .map-saved-views {
-    top: 10px;
-    left: calc(10px + var(--map-layer-button-span));
+    top: var(--map-overlay-top);
+    left: calc(max(10px, env(safe-area-inset-left)) + var(--map-layer-button-span));
     z-index: 63;
     max-width: none;
   }
@@ -411,22 +428,29 @@
     max-height: none;
   }
 
+  /* Floated over the map's top-right rather than holding a strip below it.
+     The layer button owns the opposite corner of the same row, so the pair
+     shrink their labels away before either would run into it. */
   .mobile-map-actions {
+    position: absolute;
     z-index: 25;
-    display: grid;
-    flex: 0 0 auto;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    height: var(--mobile-map-actions-height);
-    padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+    top: var(--map-overlay-top);
+    right: max(10px, env(safe-area-inset-right));
+    display: flex;
+    gap: 7px;
+    max-width: calc(100% - var(--map-layer-button-span) - 20px);
   }
 
   .mobile-map-actions button {
     display: flex;
+    flex: 0 1 auto;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    height: 48px;
+    gap: 6px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0 11px;
+    overflow: hidden;
     color: var(--ink-7);
     border: 1px solid var(--edge-10);
     border-radius: 9px;
@@ -434,20 +458,49 @@
     box-shadow: var(--shadow);
     font-size: 13px;
     font-weight: 700;
+    white-space: nowrap;
     backdrop-filter: blur(12px);
   }
 
-  .mobile-map-actions button > span {
+  .mobile-map-actions button > svg {
+    flex: 0 0 auto;
+  }
+
+  .mobile-map-actions .action-count {
     display: grid;
+    flex: 0 0 auto;
     place-items: center;
-    min-width: 24px;
-    height: 24px;
+    min-width: 22px;
+    height: 22px;
     padding: 0 4px;
     color: var(--accent);
     border-radius: 10px;
     background: rgb(var(--accent-rgb) / 0.1);
     font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
     font-size: 12px;
+  }
+
+  /* The receiver state the hidden header used to carry. Only the dot, because
+     the header had already dropped the name at this width. */
+  .map-receiver-state {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--edge-10);
+    border-radius: 9px;
+    background: var(--veil-22);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+
+  /* Labels are the first thing to go when the row runs out of room: the icon,
+     the count and the accessible name each still say what the button is. */
+  @media (max-width: 400px) {
+    .mobile-map-actions .action-label {
+      display: none;
+    }
   }
 
   .mobile-sheet-backdrop {
@@ -537,7 +590,7 @@
        63 and 64 — but under the modal list and filter sheets at 69. */
     z-index: 65;
     right: 0;
-    bottom: var(--mobile-map-actions-height);
+    bottom: 0;
     left: 0;
     width: auto;
     height: auto;
