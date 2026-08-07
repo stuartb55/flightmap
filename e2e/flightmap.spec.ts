@@ -4,8 +4,13 @@ import { expect, test, type Locator, type Page, type Response } from '@playwrigh
 
 async function openFlightmap(page: Page) {
   await page.goto('/')
-  const appReady = page.getByRole('link', { name: 'Flightmap live dashboard' })
-  await expect(appReady).toBeVisible()
+  /*
+   * The shell's content region rather than the header brand. The live map runs
+   * without a header at narrow widths — the map takes that space — so the brand
+   * is not a signal that exists on every layout this suite covers. Both render
+   * in the same pass, so this waits for exactly as much as it used to.
+   */
+  await expect(page.getByRole('main')).toBeVisible()
 }
 
 /**
@@ -163,8 +168,10 @@ test('supports live selection and optimistic watchlist editing', async ({ page, 
   const details = page.locator('.detail-panel')
   await expect(details).toBeVisible()
   await expect(page.locator('.selected-map-card')).toBeVisible()
-  await expect(details.getByRole('link', { name: 'Live' })).toBeVisible()
-  await expect(details.getByRole('link', { name: 'History' })).toBeVisible()
+  // Named for what they show about this aircraft, because "Live" and "History"
+  // are also two of the tabs along the bottom and went somewhere else.
+  await expect(details.getByRole('link', { name: 'On the map' })).toBeVisible()
+  await expect(details.getByRole('link', { name: 'Past flights' })).toBeVisible()
 
   const addResponse = page.waitForResponse((response) =>
     response.request().method() === 'PUT' && response.url().includes('/api/v1/watchlist/'),
@@ -282,7 +289,7 @@ async function openLayerMenu(page: Page) {
     const dismiss = page.getByRole('button', { name: 'Dismiss alert banner' })
     if (await dismiss.count()) await dismiss.click({ timeout: 2_000 })
     await expect(page.locator('.alert-banner')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Layers' }).click({ timeout: 2_000 })
+    await page.getByRole('button', { name: 'Layers', exact: true }).click({ timeout: 2_000 })
   }).toPass({ timeout: 30_000 })
   return page.getByRole('dialog', { name: 'Map layers' })
 }
@@ -462,7 +469,10 @@ test('pins a popup to the selected aircraft and dismisses it', async ({ page }, 
 test('measures distance and bearing with the ruler', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'One pass over the ruler is enough')
   await openFlightmap(page)
-  await page.getByRole('button', { name: 'Measure distance and bearing' }).click()
+  // Measuring, sharing and saving an image live behind the overflow now; only
+  // the four camera controls kept a permanent place over the map.
+  await page.getByRole('button', { name: 'More map tools' }).click()
+  await page.getByRole('button', { name: 'Measure distance' }).click()
   const readout = page.locator('.map-ruler-readout')
   await expect(readout).toContainText('Click two points to measure')
 
@@ -495,7 +505,8 @@ test('shares the live map as a link and as a captioned image', async ({ page, co
    * exist — the same as a LAN deployment — so this is the fallback path, and
    * the link has to be readable rather than lost.
    */
-  await page.getByRole('button', { name: 'Copy a link to this view' }).click()
+  await page.getByRole('button', { name: 'More map tools' }).click()
+  await page.getByRole('button', { name: 'Copy link to this view' }).click()
   const readout = page.locator('.map-share-readout')
   await expect(readout).toContainText('Select the link below to copy it')
   const link = await page.getByRole('textbox', { name: 'Link to this view' }).inputValue()
@@ -508,13 +519,15 @@ test('shares the live map as a link and as a captioned image', async ({ page, co
   await opened.goto(link)
   await expect(opened.locator('.detail-panel')).toBeVisible({ timeout: 15_000 })
   await opened.waitForTimeout(1_500)
-  await opened.getByRole('button', { name: 'Copy a link to this view' }).click()
+  await opened.getByRole('button', { name: 'More map tools' }).click()
+  await opened.getByRole('button', { name: 'Copy link to this view' }).click()
   const restored = await opened.getByRole('textbox', { name: 'Link to this view' }).inputValue()
   expect(new URL(restored).search).toBe(new URL(link).search)
   await opened.close()
 
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download this view as an image' }).click()
+  await page.getByRole('button', { name: 'More map tools' }).click()
+  await page.getByRole('button', { name: 'Save this view as an image' }).click()
   const file = await download
   expect(file.suggestedFilename()).toMatch(/^flightmap-live-.*\.png$/)
   const path = await file.path()
@@ -938,6 +951,14 @@ test('shows retained data through a WebSocket interruption and reconnects', asyn
 })
 
 test('keeps mobile panels and controls inside the usable viewport', async ({ page }) => {
+  /*
+   * By some way the longest test here: the list sheet, the detail sheet at both
+   * of its stops, two drag gestures, the expand and collapse controls, and two
+   * further pages. It runs in about twenty seconds on its own, which leaves
+   * nothing spare against the thirty-second default once the other project is
+   * competing for the same machine.
+   */
+  test.setTimeout(60_000)
   await page.setViewportSize({ width: 320, height: 568 })
   await openFlightmap(page)
 
@@ -956,6 +977,8 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
     const list = document.querySelector('.mobile-list-sheet .aircraft-table-wrap')!.getBoundingClientRect()
     const navigation = document.querySelector('.mobile-nav')!.getBoundingClientRect()
     const legend = document.querySelector('.map-legend')!.getBoundingClientRect()
+    const actions = document.querySelector('.mobile-map-actions')!.getBoundingClientRect()
+    const stage = document.querySelector('.map-stage')!.getBoundingClientRect()
     return {
       sheetTop: sheet.top,
       sheetBottom: sheet.bottom,
@@ -964,9 +987,20 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
       navigationTop: navigation.top,
       legendLeft: legend.left,
       legendRight: legend.right,
+      // Against the map rather than the viewport: a banner takes its own row
+      // above the map and moves everything in it down the page.
+      actionsInset: actions.top - stage.top,
     }
   })
-  expect(liveLayout.sheetTop).toBeGreaterThanOrEqual(63)
+  /*
+   * The sheet used to have to clear the header. There is no header on the map
+   * at this width, so the two things worth asserting are that the row of
+   * floating controls sits at the top of the map — which is where the strip
+   * below it went — and that the sheet still leaves enough of the backdrop to
+   * dismiss it by pressing outside.
+   */
+  expect(liveLayout.actionsInset).toBeLessThan(60)
+  expect(liveLayout.sheetTop).toBeGreaterThan(40)
   expect(liveLayout.sheetBottom).toBeLessThanOrEqual(liveLayout.navigationTop)
   expect(liveLayout.sheetHeight).toBeGreaterThan(350)
   expect(liveLayout.listHeight).toBeGreaterThan(220)
@@ -999,12 +1033,20 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
       // sheet leaves rather than a share of a stage whose height varies.
       mapVisible: sheet.top - stage.top,
       sheetBottom: sheet.bottom,
-      actionsTop: actions.top,
+      pageBottom: live.bottom,
+      actionsInset: actions.top - stage.top,
     }
   })
   expect(collapsed.sheetHeight).toBeLessThan(collapsed.pageHeight * 0.5)
   expect(collapsed.mapVisible).toBeGreaterThan(140)
-  expect(collapsed.sheetBottom).toBeLessThanOrEqual(collapsed.actionsTop + 0.5)
+  /*
+   * The action buttons float over the top of the map rather than holding a
+   * strip below it, so the sheet now runs to the bottom of the page instead of
+   * stopping above them. They stay clear of it — and so stay reachable while an
+   * aircraft is selected — by being at the other end of the map entirely.
+   */
+  expect(collapsed.sheetBottom).toBeGreaterThanOrEqual(collapsed.pageBottom - 0.5)
+  expect(collapsed.actionsInset).toBeLessThan(60)
   await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
 
   // Collapsed, the sheet answers what the map cannot, without an expand.

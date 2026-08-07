@@ -538,10 +538,14 @@
 
 /* The camera controls and the overflow they open share one anchor, so the
    menu hangs off the block rather than being positioned against the map
-   separately and drifting from it at another width. */
+   separately and drifting from it at another width.
+
+   Above the rest of the map's own overlays. The controls alone never left
+   their corner, but the menu drops a long way down the same edge and reaches
+   the legend, which sits in that corner and would otherwise paint over it. */
 .map-tools {
   position: absolute;
-  z-index: 3;
+  z-index: 10;
   top: 14px;
   right: 14px;
 }
