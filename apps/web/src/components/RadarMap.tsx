@@ -1062,15 +1062,6 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     applyLayerVisibility(mapRef.current, mapLayers)
   }, [mapLayers, mapReady])
 
-  /*
-   * With something selected, the rest of the traffic steps back.
-   *
-   * Colouring by altitude means every target already carries a strong colour of
-   * its own, so the selected one cannot be picked out by hue the way it could on
-   * a map where all traffic is one colour. Contrast against dimmed neighbours is
-   * what makes it findable, and it costs nothing: the altitude each aircraft is
-   * at is still readable, just quieter.
-   */
   /* Matches the layer menu on the opposite corner: a press outside closes it,
      and Escape does too, because it covers part of the map while it is open. */
   useEffect(() => {
@@ -1089,29 +1080,49 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
   }, [toolsOpen])
 
+  /*
+   * With something selected, the rest of the traffic steps back — but it stays
+   * traffic. The selected aircraft is already found by size and by its ring, so
+   * the neighbours only have to be quieter than it, not gone: the map's job is
+   * still to show where everything else is while you read one of them.
+   *
+   * The step back is therefore floored. Aircraft carry an opacity of their own
+   * that falls to 0.25 as their position goes stale, and multiplying that by a
+   * flat factor drove the stale ones down to a tenth of full, which reads as
+   * having disappeared rather than as receded. The floor holds every target at
+   * a visible level, and the min() keeps it from ever brightening one past the
+   * opacity its own staleness earned it.
+   */
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map?.getLayer('aircraft-icons')) return
     const staleness: DataDrivenPropertyValueSpecification<number> = ['get', 'opacity']
-    const stepBack = (factor: number): DataDrivenPropertyValueSpecification<number> => [
+    const stepBack = (
+      factor: number,
+      floor: number,
+    ): DataDrivenPropertyValueSpecification<number> => [
       'case',
       ['==', ['get', 'selected'], 1],
       ['get', 'opacity'],
-      ['*', ['get', 'opacity'], factor],
+      ['min', ['get', 'opacity'], ['max', ['*', ['get', 'opacity'], factor], floor]],
     ]
 
-    map.setPaintProperty('aircraft-icons', 'icon-opacity', selectedIcao ? stepBack(0.4) : staleness)
+    map.setPaintProperty(
+      'aircraft-icons',
+      'icon-opacity',
+      selectedIcao ? stepBack(0.65, 0.45) : staleness,
+    )
     if (map.getLayer('aircraft-labels')) {
       map.setPaintProperty(
         'aircraft-labels',
         'text-opacity',
-        selectedIcao ? stepBack(0.45) : staleness,
+        selectedIcao ? stepBack(0.6, 0.4) : staleness,
       )
     }
     // The selected aircraft's own track is drawn by its own layer, brightly, so
     // the shared trails only ever compete with it.
     if (map.getLayer('all-aircraft-trails')) {
-      map.setPaintProperty('all-aircraft-trails', 'line-opacity', selectedIcao ? 0.16 : 0.42)
+      map.setPaintProperty('all-aircraft-trails', 'line-opacity', selectedIcao ? 0.28 : 0.42)
     }
   }, [selectedIcao, mapReady])
 
