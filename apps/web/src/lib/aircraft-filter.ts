@@ -54,6 +54,66 @@ function altitudeValue(aircraft: Aircraft): number | null {
 }
 
 /**
+ * Everything a reader might type to name one aircraft, lowercased. Callsigns
+ * arrive from the receiver padded to a fixed width, so they are trimmed here
+ * rather than at every comparison.
+ */
+function identityFields(aircraft: Aircraft): string[] {
+  return [
+    aircraft.callsign,
+    aircraft.registration,
+    aircraft.icao,
+    aircraft.typeCode,
+    aircraft.operator,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.trim().toLowerCase())
+}
+
+/** How many matches the map's search offers before it stops listing them. */
+export const searchResultLimit = 8
+
+/**
+ * Aircraft whose identity contains `query`, best match first.
+ *
+ * Deliberately matched against the whole live set rather than the filtered one:
+ * the map draws every aircraft the receiver can hear, so anything visible on it
+ * has to be findable by name — including the aircraft an altitude or range
+ * filter has taken out of the list. Searching the filtered list would mean
+ * typing a callsign that is plainly on screen and being told there is nothing
+ * there, which is the one answer a search must never give.
+ *
+ * A field that *is* the query outranks one that starts with it, which outranks
+ * one that merely contains it; ties go to the nearest, since two aircraft
+ * matching equally well are told apart by which one the reader can see.
+ */
+export function searchAircraft(
+  aircraft: Aircraft[],
+  query: string,
+  limit: number = searchResultLimit,
+): Aircraft[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return []
+  const matches: Array<{ aircraft: Aircraft; rank: number }> = []
+  for (const item of aircraft) {
+    let rank = 3
+    for (const value of identityFields(item)) {
+      if (value === needle) rank = Math.min(rank, 0)
+      else if (value.startsWith(needle)) rank = Math.min(rank, 1)
+      else if (value.includes(needle)) rank = Math.min(rank, 2)
+    }
+    if (rank < 3) matches.push({ aircraft: item, rank })
+  }
+  matches.sort(
+    (left, right) =>
+      left.rank - right.rank ||
+      (left.aircraft.distanceNm ?? Number.POSITIVE_INFINITY) -
+        (right.aircraft.distanceNm ?? Number.POSITIVE_INFINITY),
+  )
+  return matches.slice(0, limit).map((entry) => entry.aircraft)
+}
+
+/**
  * Whether this receiver first heard the airframe at or after `cutoff`, which
  * comes from the sighting preference in `sighting-preferences.ts` — the module
  * that owns the setting re-exports this, and is where every caller should
@@ -95,14 +155,7 @@ export function filterAircraft(
   const freshness = filters.maximumFreshness === '' ? null : Number(filters.maximumFreshness)
 
   return aircraft.filter((item) => {
-    if (
-      query &&
-      ![item.callsign, item.registration, item.icao, item.typeCode, item.operator]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query))
-    ) {
-      return false
-    }
+    if (query && !identityFields(item).some((value) => value.includes(query))) return false
     const altitude = altitudeValue(item)
     if (minimum != null && (altitude == null || altitude < minimum)) return false
     if (maximum != null && (altitude == null || altitude > maximum)) return false

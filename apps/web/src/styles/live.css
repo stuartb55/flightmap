@@ -2458,8 +2458,9 @@ input[aria-invalid='true'] {
 }
 
 /* Belongs to the layout where the map has the screen to itself; beside the map
-   the aircraft panel carries its own search field. */
-.map-search {
+   the aircraft panel carries its own search field, with the table it narrows
+   already in view. */
+.map-search-shell {
   display: none;
 }
 

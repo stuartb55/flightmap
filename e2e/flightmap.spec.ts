@@ -1134,10 +1134,18 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
    * the map. The corner card the wide layout draws would only repeat what the
    * sheet's own header says, so this width does without it.
    */
+  /*
+   * Search answers with its matches directly under the field rather than only
+   * narrowing the sheet below: at the peek stop that list is a strip at the
+   * bottom of the screen, and once an aircraft is selected it is not on screen
+   * at all, so typing a callsign used to produce no visible change whatsoever.
+   */
   await page.locator('.map-search').getByLabel('Search aircraft').fill('FLT0001')
-  const row = sheet.locator('.sheet-row').filter({ hasText: 'FLT0001' }).first()
-  await expect(row).toBeVisible({ timeout: 15_000 })
-  await row.click()
+  const result = page.locator('.map-search-result').filter({ hasText: 'FLT0001' }).first()
+  await expect(result).toBeVisible({ timeout: 15_000 })
+  await result.click()
+  // Picking one is an answer, so the results give the map back.
+  await expect(page.locator('.map-search-results')).toBeHidden()
 
   const detailSheet = page.locator('.detail-panel')
   await expect(detailSheet).toBeVisible()
@@ -1196,6 +1204,27 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(full).toBeLessThan(swipedTop)
   await page.getByRole('button', { name: 'Collapse the sheet' }).click()
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
+
+  /*
+   * Searching for a second aircraft while the first is still open: the case
+   * that used to have nowhere to show an answer, since the sheet is the open
+   * aircraft rather than the list. Enter takes the best match.
+   */
+  const search = page.locator('.map-search').getByLabel('Search aircraft')
+  await search.fill('FLT0002')
+  await expect(page.locator('.map-search-result').first()).toBeVisible({ timeout: 15_000 })
+  await search.press('Enter')
+  await expect(detailSheet.getByRole('heading', { name: 'FLT0002' })).toBeVisible()
+
+  // A query that names nothing says so rather than leaving the reader to guess
+  // whether the field is working.
+  await search.fill('ZZZZZZ')
+  await expect(page.locator('.map-search-empty')).toHaveText('No aircraft match ZZZZZZ.')
+  await search.press('Escape')
+  await expect(page.locator('.map-search-results')).toBeHidden()
+  // Escape closed the results without also closing the aircraft under them.
+  await expect(detailSheet).toBeVisible()
+  await page.locator('.map-search').getByRole('button', { name: 'Clear search' }).click()
 
   /*
    * Four tabs, not six. The three pages a receiver is not watched through

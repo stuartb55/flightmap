@@ -536,12 +536,20 @@
      map controls beside it drop to 44px squares so the field gets everything
      that is left, which is what makes it read as the page's primary way in
      rather than as one more chip over the map. */
-  .map-search {
+  .map-search-shell {
     position: absolute;
+    /* Over the map's own overlays, but under the sheet at 65 — at the full stop
+       the sheet is the page and the field belongs behind its edge. */
     z-index: 25;
     top: var(--map-overlay-top);
     left: max(10px, env(safe-area-inset-left));
     right: calc(max(10px, env(safe-area-inset-right)) + var(--map-overlay-buttons));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .map-search {
     display: flex;
     align-items: center;
     gap: 9px;
@@ -594,6 +602,133 @@
     border-radius: 50%;
     background: transparent;
     cursor: pointer;
+  }
+
+  /*
+   * Only while it is answering does search outrank the sheet: an answer the
+   * sheet could cover would be no more use than the sheet was, and this is the
+   * one moment where what the reader is doing is not reading the sheet. Raised
+   * on the shell rather than the panel so the field stays attached to its own
+   * results instead of floating behind them.
+   */
+  .live-page.searching .map-search-shell {
+    z-index: 66;
+  }
+
+  /* For the same moment: the map's own controls are not what is being read, and
+     a zoom stack half behind a list of aircraft reads as breakage rather than as
+     depth. They come back as soon as the results are dismissed. */
+  .live-page.searching .map-tools {
+    display: none;
+  }
+
+  /* The answer, directly under the question. Capped so it can never become the
+     screen: the point of finding an aircraft is to see where it is. */
+  .map-search-results {
+    max-height: min(45vh, 340px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--edge-10);
+    border-radius: 13px;
+    background: var(--veil-22);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+
+  .map-search-results ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .map-search-empty {
+    margin: 0;
+    padding: 13px 14px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .map-search-empty strong {
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  }
+
+  .map-search-result {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 9px 13px;
+    border: 0;
+    border-bottom: 1px solid rgb(var(--line-soft-rgb) / 0.72);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .map-search-results li:last-child .map-search-result {
+    border-bottom: 0;
+  }
+
+  .map-search-result.active {
+    background: rgb(var(--accent-rgb) / 0.1);
+  }
+
+  .map-search-result-tile {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+
+  .map-search-result-tile svg {
+    display: block;
+  }
+
+  .map-search-result-identity {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .map-search-result-identity strong {
+    overflow: hidden;
+    color: var(--ink-4);
+    font-size: 15px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-search-result-identity small,
+  .map-search-result-readings small {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 12px;
+  }
+
+  .map-search-result-identity small {
+    overflow: hidden;
+    margin-top: 2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-search-result-readings {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .map-search-result-readings strong {
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 13px;
   }
 
   .mobile-sheet-backdrop {
@@ -804,7 +939,7 @@
 
   /* Search stays — it is the way out of a full sheet as much as a way into the
      map — and takes the width the two buttons were holding. */
-  .live-page.sheet-full .map-search {
+  .live-page.sheet-full .map-search-shell {
     right: max(10px, env(safe-area-inset-right));
   }
 
