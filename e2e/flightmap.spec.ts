@@ -582,6 +582,95 @@ test('opens aircraft profiles and synchronised flight analysis', async ({ page }
   await expect(profileTable.locator('tbody td').first()).toContainText('ft')
 })
 
+/*
+ * The panel with a photograph in it, which the default installation never
+ * shows: photographs are off until an operator configures a source, and an
+ * acceptance run must not reach a third party to prove the panel works. The
+ * detail response and the image are both fulfilled locally, which exercises the
+ * client's rendering path — the box it reserves, the credit it shows, and the
+ * focus ring on the link — without a real one.
+ */
+test('shows a credited photograph without shifting the page', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The photograph panel is exercised once on desktop Chromium')
+
+  // A 4x3 PNG, so the panel has real intrinsic dimensions to reserve space for.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAFElEQVR4nGP8//8/AzbAxIAD' +
+    'DEUJAJgcAgaqp6HTAAAAAElFTkSuQmCC',
+    'base64',
+  )
+  await page.route('**/api/v1/aircraft/*/photo', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'image/png', body: png })
+  })
+  await page.route('**/api/v1/aircraft/*', async (route) => {
+    // Only the detail document; the photo and activity routes have their own.
+    if (!/\/aircraft\/[0-9a-f]{6}$/.test(new URL(route.request().url()).pathname)) {
+      return route.fallback()
+    }
+    const response = await route.fetch()
+    const body = await response.json() as Record<string, unknown>
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        photo: {
+          available: true,
+          credit: 'A Photographer',
+          linkUrl: 'https://photos.example.test/photo/1',
+          width: 4,
+          height: 3,
+        },
+      },
+    })
+  })
+
+  await openFlightmap(page)
+  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
+  await page.locator('.detail-panel').getByRole('link', { name: 'Profile' }).click()
+  await expect(page.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
+
+  /*
+   * The box is reserved from the cached dimensions rather than from the bytes,
+   * so the element has a height before the image has decoded and the page does
+   * not shift under a reader who has already started reading it.
+   */
+  const image = page.locator('.aircraft-photo')
+  await expect(image).toBeVisible()
+  await expect(image).toHaveAttribute('width', '4')
+  await expect(image).toHaveAttribute('height', '3')
+  const settled = await image.evaluate((element: HTMLImageElement) => element.complete)
+  expect(settled).toBe(true)
+
+  // Every licence that permits redisplay wants the credit visible, and a
+  // keyboard user has to be able to reach the link and see that they have.
+  const credit = page.getByRole('link', { name: 'A Photographer' })
+  await expect(credit).toBeVisible()
+  await expect(credit).toHaveAttribute('rel', 'noreferrer noopener')
+  /*
+   * Reached with Tab rather than with `focus()`: the ring is drawn by
+   * `:focus-visible`, which a programmatic focus deliberately does not satisfy,
+   * so focusing it in code would assert nothing about what a keyboard user
+   * sees. Walking there also proves it is reachable at all.
+   */
+  await page.locator('body').press('Tab')
+  for (let step = 0; step < 60 && !(await credit.evaluate((element) => element === document.activeElement)); step += 1) {
+    await page.keyboard.press('Tab')
+  }
+  await expect(credit).toBeFocused()
+  const ring = await credit.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { outline: style.outlineStyle, width: style.outlineWidth }
+  })
+  expect(ring.outline).not.toBe('none')
+  expect(Number.parseFloat(ring.width)).toBeGreaterThan(0)
+
+  const results = await new AxeBuilder({ page }).analyze()
+  const important = results.violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? ''),
+  )
+  expect(important, important.map((violation) => violation.id).join(', ')).toEqual([])
+})
+
 test('previews, creates, toggles, and removes a custom alert rule', async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'Installation-wide alert rule mutation is exercised once')
   // Rules are installation-wide, so a retry must not inherit the rule a failed attempt left behind.

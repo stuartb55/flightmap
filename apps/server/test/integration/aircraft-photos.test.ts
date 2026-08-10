@@ -167,6 +167,43 @@ describeDatabase("the aircraft photograph cache against PostgreSQL", () => {
     expect(await photos.state("400a1f")).toBeUndefined();
   });
 
+  /* The Settings card decides against this number, so it has to be the real
+     one — counted, not estimated. */
+  it("counts what the cache holds, split by whether there is an image", async () => {
+    await present("406b90");
+    await present("4ca8c3");
+    await photos.save("400a1f", { status: "absent", ttlSeconds: 3_600 });
+    await photos.save("4074a2", { status: "failed", ttlSeconds: 3_600 });
+
+    expect(await photos.summary()).toEqual({
+      photographs: 2,
+      misses: 2,
+      bytes: pngBytes().byteLength * 2
+    });
+  });
+
+  it("counts an empty cache as empty rather than as unknown", async () => {
+    expect(await photos.summary()).toEqual({
+      photographs: 0,
+      misses: 0,
+      bytes: 0
+    });
+  });
+
+  /*
+   * The misses go with the photographs. Someone clearing the cache has usually
+   * changed the source, and keeping the old source's "no photograph of this"
+   * answers would suppress the new one's for a week.
+   */
+  it("empties the cache completely, misses included", async () => {
+    await present("406b90");
+    await photos.save("400a1f", { status: "absent", ttlSeconds: 3_600 });
+
+    expect(await photos.clear()).toBe(2);
+    expect(await photos.summary()).toMatchObject({ photographs: 0, misses: 0 });
+    expect(await photos.state("406b90")).toBeUndefined();
+  });
+
   it("leaves a cache under its limit alone", async () => {
     await present("406b90");
 

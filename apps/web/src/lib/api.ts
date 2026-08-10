@@ -15,7 +15,9 @@ import type {
   CustomAlertRulePatch,
   InsightCoverageResponse,
   InsightOverview,
+  AircraftPhoto,
   InsightPatternsResponse,
+  PhotoCacheSummary,
   RangeProfileResponse,
   ReceiverRecordsResponse,
   SavedView,
@@ -40,6 +42,7 @@ import {
   insightCoverageResponseSchema,
   insightOverviewSchema,
   insightPatternsResponseSchema,
+  photoCacheSummarySchema,
   rangeProfileResponseSchema,
   receiverRecordsResponseSchema,
   savedViewSchema,
@@ -206,6 +209,7 @@ export const api = {
       recentSessions: WireSession[]
       alerts: WireAlert[]
       route?: FlightRoute | null
+      photo?: AircraftPhoto | null
     }>(
       `/aircraft/${encodeURIComponent(icao)}`,
       { signal },
@@ -492,6 +496,20 @@ export const api = {
       { method: 'POST', body: JSON.stringify(overrides) },
       airportImportSummarySchema,
     )
+  },
+
+  /** What the photograph cache holds, for the Settings card to report. */
+  photoCacheSummary(signal?: AbortSignal) {
+    return request<PhotoCacheSummary>(
+      '/aircraft/photos/summary',
+      { signal },
+      photoCacheSummarySchema,
+    )
+  },
+
+  /** Empties it. Nothing is lost that cannot be fetched again. */
+  clearPhotoCache() {
+    return request<{ cleared: number }>('/aircraft/photos', { method: 'DELETE' })
   },
 
   /**

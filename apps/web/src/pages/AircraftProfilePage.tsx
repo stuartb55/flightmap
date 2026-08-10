@@ -6,7 +6,7 @@ import { formatAltitude, formatDate, formatDateTime, formatDistance } from '../l
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { Link, useLocation } from '../lib/router'
 import { ChartDataTable } from '../components/ChartDataTable'
-import type { AircraftDetail } from '../types'
+import type { AircraftDetail, AircraftMetadata, AircraftPhoto } from '../types'
 
 type Preset = '30d' | '90d' | '1y' | 'all'
 
@@ -53,6 +53,77 @@ function ActivityBars({ activity }: { activity: AircraftActivityResponse }) {
         }))}
       />
     </>
+  )
+}
+
+/**
+ * The airframe, photographed.
+ *
+ * Renders nothing at all when the cache has no photograph — not an empty frame
+ * and not a spinner that never resolves. "There is no photograph of this
+ * aircraft" is the ordinary case for most of what a receiver hears, and the
+ * honest way to say it is to say nothing.
+ *
+ * The image carries its cached dimensions as attributes so the browser reserves
+ * the right box before any bytes arrive: the panel must not shift the page
+ * under a reader who has already started reading it.
+ */
+function AircraftPhotograph({
+  icao,
+  photo,
+  metadata,
+}: {
+  icao: string
+  photo: AircraftPhoto | null | undefined
+  metadata: AircraftMetadata | null | undefined
+}) {
+  /*
+   * A load failure is the one case the cache cannot rule out in advance: the
+   * row said `present`, and between that answer and the request the maintenance
+   * run evicted it. Dropping the panel is the same answer as never having had
+   * one.
+   */
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [icao])
+
+  if (!photo?.available || failed) return null
+
+  /*
+   * What the airframe is, not what the element is. "Photo" or "Aircraft
+   * photograph" tells a screen-reader user only that they are missing
+   * something; the registration and the type are the same identification a
+   * sighted reader gets from the image.
+   */
+  const described = [metadata?.registration, metadata?.description ?? metadata?.typeCode]
+    .filter(Boolean)
+    .join(', ')
+
+  return (
+    <section className="aircraft-profile-panel aircraft-photo-panel">
+      <img
+        className="aircraft-photo"
+        src={`/api/v1/aircraft/${encodeURIComponent(icao)}/photo`}
+        alt={described || `Aircraft ${icao.toUpperCase()}`}
+        {...(photo.width && photo.height
+          ? { width: photo.width, height: photo.height }
+          : {})}
+        onError={() => setFailed(true)}
+      />
+      {/* Part of the panel rather than a hover affordance: most licences that
+          allow redisplay require the credit to be visible, and a tooltip is
+          not visible to a touch screen or to a reader. */}
+      {photo.credit || photo.linkUrl ? (
+        <p className="aircraft-photo-credit">
+          {photo.linkUrl ? (
+            <a href={photo.linkUrl} target="_blank" rel="noreferrer noopener">
+              {photo.credit ?? 'View the original'}
+            </a>
+          ) : (
+            photo.credit
+          )}
+        </p>
+      ) : null}
+    </section>
   )
 }
 
@@ -156,6 +227,8 @@ export function AircraftProfilePage() {
           </dl>
         ) : null}
       </section>
+
+      <AircraftPhotograph icao={icao} photo={detail.photo} metadata={metadata} />
 
       <div className="aircraft-profile-columns">
         <section className="aircraft-profile-panel">

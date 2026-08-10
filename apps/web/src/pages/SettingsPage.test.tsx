@@ -9,6 +9,8 @@ const apiMock = vi.hoisted(() => ({
   status: vi.fn(),
   updateSettings: vi.fn(),
   refreshAirports: vi.fn(),
+  photoCacheSummary: vi.fn(),
+  clearPhotoCache: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({ api: apiMock }))
@@ -52,6 +54,11 @@ const defaultSettings: AppSettings = {
   routeLookupTimeoutMs: 4_000,
   routeLookupTtlHours: 336,
   routeLookupNegativeTtlHours: 72,
+  aircraftPhotosEnabled: false,
+  aircraftPhotoSourceUrl: '',
+  aircraftPhotoTtlDays: 30,
+  aircraftPhotoNegativeTtlDays: 7,
+  aircraftPhotoCacheEntries: 2_000,
 }
 
 beforeEach(() => {
@@ -69,6 +76,10 @@ beforeEach(() => {
     },
   })
   apiMock.updateSettings.mockReset()
+  apiMock.photoCacheSummary.mockReset()
+  apiMock.photoCacheSummary.mockResolvedValue({ photographs: 0, misses: 0, bytes: 0 })
+  apiMock.clearPhotoCache.mockReset()
+  apiMock.clearPhotoCache.mockResolvedValue({ cleared: 0 })
 })
 
 afterEach(() => {
@@ -356,5 +367,145 @@ describe('the airport dataset card', () => {
         expect.objectContaining({ airportRadiusNm: 120, airportMinimumRunwayFt: 3_281 }),
       ),
     )
+  })
+})
+
+describe('the aircraft photograph card', () => {
+  const withPhotos = (overrides: Partial<AppSettings> = {}) => {
+    apiMock.settings.mockResolvedValue({
+      settings: { ...defaultSettings, ...overrides },
+      updatedAt: null,
+    })
+    apiMock.updateSettings.mockImplementation(async (settings: AppSettings) => ({
+      settings,
+      updatedAt: '2026-08-10T15:00:00.000Z',
+    }))
+  }
+
+  /*
+   * The trap this card is most likely to fall into. `buildSettings` builds the
+   * payload field by field rather than merging over what was loaded, so a key
+   * with a form field and no line in that function is reverted by the next
+   * save — and nothing on screen says so. Five keys, five assertions.
+   */
+  it('preserves every photograph setting through a save', async () => {
+    withPhotos({
+      aircraftPhotosEnabled: true,
+      aircraftPhotoSourceUrl: 'https://photos.example/hex/{icao}',
+      aircraftPhotoTtlDays: 45,
+      aircraftPhotoNegativeTtlDays: 3,
+      aircraftPhotoCacheEntries: 500,
+    })
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Save settings' }).closest('form')!)
+
+    await waitFor(() => expect(apiMock.updateSettings).toHaveBeenCalledOnce())
+    expect(apiMock.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aircraftPhotosEnabled: true,
+        aircraftPhotoSourceUrl: 'https://photos.example/hex/{icao}',
+        aircraftPhotoTtlDays: 45,
+        aircraftPhotoNegativeTtlDays: 3,
+        aircraftPhotoCacheEntries: 500,
+      }),
+    )
+  })
+
+  it('saves what was edited in the card', async () => {
+    withPhotos()
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    await user.click(screen.getByRole('checkbox', { name: /Show aircraft photographs/ }))
+    // `{` opens a key descriptor for userEvent, so a literal one is doubled.
+    await user.type(
+      screen.getByRole('textbox', { name: /Photograph source URL/ }),
+      'https://photos.example/hex/{{icao}',
+    )
+    fireEvent.submit(screen.getByRole('button', { name: 'Save settings' }).closest('form')!)
+
+    await waitFor(() => expect(apiMock.updateSettings).toHaveBeenCalledOnce())
+    expect(apiMock.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aircraftPhotosEnabled: true,
+        aircraftPhotoSourceUrl: 'https://photos.example/hex/{icao}',
+      }),
+    )
+  })
+
+  /*
+   * The disclosure is the point of the card. It has to name the host the
+   * operator has actually configured, so that changing the source changes what
+   * they are told — a hard-coded vendor name would go quietly wrong.
+   */
+  it('names the configured host in the disclosure', async () => {
+    withPhotos({ aircraftPhotoSourceUrl: 'https://photos.example.test/hex/{icao}' })
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    expect(screen.getByText('photos.example.test')).toBeInTheDocument()
+    expect(
+      screen.getByText(/sends the ICAO address of each aircraft whose profile is opened/),
+    ).toBeInTheDocument()
+  })
+
+  it('follows the field rather than the saved setting as the URL is typed', async () => {
+    withPhotos()
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    expect(screen.getByText(/No photograph source is configured/)).toBeInTheDocument()
+    await user.type(
+      screen.getByRole('textbox', { name: /Photograph source URL/ }),
+      'https://elsewhere.test/hex/{{icao}',
+    )
+
+    expect(screen.getByText('elsewhere.test')).toBeInTheDocument()
+    expect(screen.queryByText(/No photograph source is configured/)).not.toBeInTheDocument()
+  })
+
+  it('reports what the cache holds and clears it on request', async () => {
+    withPhotos()
+    apiMock.photoCacheSummary.mockResolvedValue({
+      photographs: 412,
+      misses: 88,
+      bytes: 6_400_000,
+    })
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    expect(await screen.findByText(/412 photographs/)).toBeInTheDocument()
+    expect(screen.getByText(/88 aircraft recorded as having no photograph/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Clear cached photographs/ }))
+
+    await waitFor(() => expect(apiMock.clearPhotoCache).toHaveBeenCalledOnce())
+    expect(await screen.findByText('Nothing cached yet')).toBeInTheDocument()
+  })
+
+  it('has nothing to clear when the cache is empty', async () => {
+    withPhotos()
+    render(<SettingsPage />)
+    await screen.findByRole('textbox', { name: 'Receiver name' })
+
+    expect(await screen.findByText('Nothing cached yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Clear cached photographs/ })).toBeDisabled()
+  })
+
+  /* A server older than the photograph cache has no such endpoint, and Settings
+     still has to open — the operator may never turn this on. */
+  it('opens against a server that has no photograph cache', async () => {
+    withPhotos()
+    apiMock.photoCacheSummary.mockRejectedValue(new Error('Not found'))
+    render(<SettingsPage />)
+
+    expect(await screen.findByRole('textbox', { name: 'Receiver name' })).toBeInTheDocument()
+    expect(screen.getByText('Counting…')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

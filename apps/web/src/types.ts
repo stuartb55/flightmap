@@ -1,5 +1,8 @@
 import type { z } from 'zod'
 import { appSettingsResponseSchema } from '@flightmap/shared'
+import type { AircraftPhoto } from '@flightmap/shared'
+
+export type { AircraftPhoto }
 export type ReceiverHealth = 'online' | 'degraded' | 'offline' | 'connecting'
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 export type Altitude = number | 'ground' | null
@@ -131,6 +134,12 @@ export interface AircraftDetail {
    * ordinary, and most of what a receiver hears will never resolve.
    */
   route?: FlightRoute | null
+  /**
+   * Absent or null whenever there is no photograph to show: the feature is off,
+   * no source is configured, or nothing has been fetched for this airframe yet.
+   * `available` false means the same to the panel as null does — no panel.
+   */
+  photo?: AircraftPhoto | null
   summary: {
     firstSeenAt: string | null
     lastSeenAt: string | null

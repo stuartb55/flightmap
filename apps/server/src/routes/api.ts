@@ -139,6 +139,22 @@ export async function registerApiRoutes(
     }
   });
 
+  /*
+   * What the photograph cache is holding, so the Settings card can say what it
+   * is offering to throw away before it offers to. Read-only, and cheap enough
+   * to answer on every visit to Settings.
+   */
+  app.get("/api/v1/aircraft/photos/summary", async () => photoStore.summary());
+
+  /*
+   * Empties it. A mutation, so it needs a matching Origin like every other one.
+   * Nothing is lost that cannot be fetched again, which is why this is a button
+   * rather than a confirmation dialog.
+   */
+  app.delete("/api/v1/aircraft/photos", async () => ({
+    cleared: await photoStore.clear()
+  }));
+
   app.patch("/api/v1/settings", async (request) => {
     const response = await settings.update(request.body ?? {});
     await applyRuntimeSettings();
@@ -197,9 +213,15 @@ export async function registerApiRoutes(
    * browser in touch with a third party on every view, and would show nothing
    * at all on a receiver with no internet access.
    *
-   * A strong ETag and a long max-age because the URL's content is stable for a
-   * month: the browser re-requests only after the freshness window, and gets a
-   * 304 unless the photograph has actually been refetched.
+   * `no-cache` rather than a max-age, for the reason the airports endpoint
+   * gives: the URL carries no content hash, so a freshness window is a window
+   * in which an operator who has just cleared the cache or changed the source
+   * is served the old photograph out of their own browser — and the Clear
+   * button appears to have done nothing for a day.
+   *
+   * The strong ETag is what does the work instead. The bytes transfer once and
+   * every later view is a conditional request answered with 304 and no body,
+   * which on the LAN this runs on costs a couple of hundred bytes.
    */
   app.get("/api/v1/aircraft/:icao/photo", async (request, reply) => {
     const { icao } = icaoParamsSchema.parse(request.params);
@@ -215,7 +237,7 @@ export async function registerApiRoutes(
         }
       });
     }
-    reply.header("cache-control", "public, max-age=86400");
+    reply.header("cache-control", "public, no-cache");
     reply.header("etag", photo.etag);
     if (request.headers["if-none-match"] === photo.etag) {
       return reply.code(304).send();

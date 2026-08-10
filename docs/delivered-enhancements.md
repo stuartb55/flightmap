@@ -844,6 +844,9 @@ branch names and pull request titles.
 The two tier-3 bets were each split into independently shippable items. What is
 here has shipped; the rest is still in [`../plan.md`](../plan.md).
 
+Aircraft photographs — bet 20 — is complete: item 26 built the cache and item 27
+the surface and the disclosure.
+
 ### 26. Aircraft photograph cache and fetch service — **M**
 
 - [x] Implement
@@ -944,3 +947,54 @@ steps do, which means a migration column rather than a new table.
 - `docs/photos.md` states the configured source, the terms the operator recorded
   for it, and the storage budget; `docs/disk-sizing.md` gains the photo cache as
   a named line item.
+
+### 27. Photographs on the aircraft profile — **S**
+
+- [x] Implement
+
+**Problem.** Item 26 builds a cache nothing reads, and leaves the feature
+switchable only by someone with database access. This item is the surface and the
+disclosure.
+
+**Approach.**
+
+*Profile only.* A new panel on `AircraftProfilePage.tsx`, above the identity
+panel (`:161`). The `<img>` points at `/api/v1/aircraft/:icao/photo`, carries
+explicit `width`/`height` from the cached dimensions so the panel does not shift
+as it loads, and has an `alt` describing the airframe — registration and type
+where known, ICAO address otherwise — never "photo". A photograph the cache does
+not have renders no panel at all, not an empty frame and not a spinner that never
+resolves. The credit line names the photographer and links back, `rel="noreferrer
+noopener"`, and is part of the panel rather than a hover affordance.
+
+*A Settings card that tells the truth.* A new card modelled on `AirportData`
+(`SettingsPage.tsx:280`) and its download flow (`:424`): the enable switch, the
+source URL, the TTL and cache-size fields, a cached-count and cached-bytes
+summary, and a "Clear cached photographs" button. Above the controls, in prose
+and not in a tooltip: enabling this sends the ICAO address of each aircraft whose
+profile is opened to *the configured host, named*, and nothing else leaves this
+network. Deriving the host from the configured URL rather than hard-coding a name
+is the point — a changed URL changes the sentence.
+
+*Every new operator-editable key goes into `buildSettings`.* Five keys, five form
+fields, or the form's next save reverts them. Add the regression test that saves
+the form and asserts the photo settings survive the round trip; this trap is
+cheap to fall into and invisible until someone else saves Settings.
+
+**Files.** `apps/web/src/pages/AircraftProfilePage.tsx`,
+`apps/web/src/pages/SettingsPage.tsx`, `apps/web/src/lib/api.ts`,
+`apps/web/src/styles/profile.css` and `settings.css`,
+`apps/server/src/routes/api.ts` (cache summary
+and clear endpoints), tests alongside each.
+
+**Acceptance.**
+- With photographs disabled — the default — the profile is byte-identical to
+  today and the Settings card explains what enabling would do.
+- The panel holds its space: no layout shift measurable between the profile
+  rendering and the image arriving.
+- An airframe with no photograph shows no panel, no error, and no empty region.
+- The disclosure names the host actually configured, and changes when it changes.
+- The photographer credit and the link are present whenever an image is.
+- Saving Settings preserves every photo key; asserted by a round-trip test.
+- The e2e axe pass stays clean in both themes with the panel present and absent,
+  and the credit link is keyboard reachable with a visible focus ring.

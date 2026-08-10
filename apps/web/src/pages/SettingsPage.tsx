@@ -2,12 +2,14 @@ import {
   Database,
   DownloadCloud,
   HardDrive,
+  Image as ImageIcon,
   MapPinned,
   Plane,
   RadioTower,
   Route,
   Save,
   Server,
+  Trash2,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { applyRuntimeConfig } from '../config'
@@ -43,7 +45,11 @@ import {
   useSightingThreshold,
   type SightingThreshold,
 } from '../lib/sighting-preferences'
-import type { AirportImportRequest, AirportImportSummary } from '@flightmap/shared'
+import type {
+  AirportImportRequest,
+  AirportImportSummary,
+  PhotoCacheSummary,
+} from '@flightmap/shared'
 import type { AppSettings, AppSettingsResponse, SystemStatus } from '../types'
 
 const MEBIBYTE = 1_048_576
@@ -102,6 +108,18 @@ function buildSettings(data: FormData): AppSettings {
     routeLookupTimeoutMs: requiredNumber(data, 'routeLookupTimeoutSeconds') * 1_000,
     routeLookupTtlHours: requiredNumber(data, 'routeLookupTtlHours'),
     routeLookupNegativeTtlHours: requiredNumber(data, 'routeLookupNegativeTtlHours'),
+    /*
+     * Every key with a form field has to be listed here. The settings object is
+     * built field by field rather than merged over what was loaded, so a key
+     * with an input and no line below is silently reverted by the next save —
+     * invisible until someone else saves Settings for an unrelated reason.
+     * `SettingsPage.test.tsx` asserts these five survive a round trip.
+     */
+    aircraftPhotosEnabled: data.get('aircraftPhotosEnabled') === 'on',
+    aircraftPhotoSourceUrl: String(data.get('aircraftPhotoSourceUrl') ?? ''),
+    aircraftPhotoTtlDays: requiredNumber(data, 'aircraftPhotoTtlDays'),
+    aircraftPhotoNegativeTtlDays: requiredNumber(data, 'aircraftPhotoNegativeTtlDays'),
+    aircraftPhotoCacheEntries: requiredNumber(data, 'aircraftPhotoCacheEntries'),
   }
 }
 
@@ -296,6 +314,168 @@ function plural(count: number, noun: string): string {
 }
 
 /**
+ * The host a configured URL actually reaches, for the disclosure to name.
+ *
+ * Derived rather than written down, which is the whole point: an operator who
+ * changes the source changes the sentence that tells them where the addresses
+ * go. Returns null for an empty or unparseable URL, where the sentence has no
+ * host to name and says so differently.
+ */
+export function photoSourceHost(url: string): string | null {
+  try {
+    return new URL(url).host || null
+  } catch {
+    return null
+  }
+}
+
+interface PhotoCacheState {
+  summary: PhotoCacheSummary | null
+  clearing: boolean
+  failure: string | null
+}
+
+/**
+ * Aircraft photographs: the switch, the source, and what it costs.
+ *
+ * The disclosure above the controls is the part that matters. This is the only
+ * feature that tells a third party which aircraft someone is looking at, so
+ * saying so is not a footnote — it is the information an operator needs in
+ * order to decide, and it names the host they have actually configured rather
+ * than a vendor written into the code.
+ */
+function AircraftPhotos({
+  settings,
+  state,
+  onClear,
+}: {
+  settings: AppSettings
+  state: PhotoCacheState
+  onClear: () => void
+}) {
+  // Tracks the field rather than the saved setting, so the disclosure answers
+  // for the URL on screen — including one typed and not yet saved.
+  const [sourceUrl, setSourceUrl] = useState(settings.aircraftPhotoSourceUrl ?? '')
+  const host = photoSourceHost(sourceUrl)
+  const { summary, clearing, failure } = state
+  const cached = summary ? summary.photographs + summary.misses : 0
+
+  return (
+    <>
+      <p className="settings-disclosure">
+        {host ? (
+          <>
+            Turning this on sends the ICAO address of each aircraft whose profile
+            is opened to <strong>{host}</strong>, once per aircraft per cache
+            period. Nothing else leaves this network: the photographs are stored
+            here and served from this receiver, so no viewer's browser contacts{' '}
+            {host} at all.
+          </>
+        ) : (
+          <>
+            No photograph source is configured, so nothing is fetched. Once a URL
+            is set, this sentence names the host it reaches.
+          </>
+        )}
+      </p>
+
+      <label className="settings-toggle">
+        <span>
+          <strong>Show aircraft photographs</strong>
+          <small>
+            Off by default. Read the source&rsquo;s licence terms before turning
+            this on — photographs are usually licensed by the photographer
+            rather than by the service.
+          </small>
+        </span>
+        <input
+          name="aircraftPhotosEnabled"
+          type="checkbox"
+          defaultChecked={settings.aircraftPhotosEnabled ?? false}
+        />
+      </label>
+
+      <Field label="Photograph source URL" hint="{icao} is replaced with the ICAO address; empty disables it">
+        <input
+          name="aircraftPhotoSourceUrl"
+          type="url"
+          value={sourceUrl}
+          onChange={(event) => setSourceUrl(event.target.value)}
+        />
+      </Field>
+
+      <div className="settings-field-grid">
+        <Field label="Keep a photograph for" hint="Days">
+          <input
+            name="aircraftPhotoTtlDays"
+            type="number"
+            min={1}
+            max={365}
+            defaultValue={settings.aircraftPhotoTtlDays ?? 30}
+            required
+          />
+        </Field>
+        <Field label="Keep a miss for" hint="Days — most airframes have no photograph">
+          <input
+            name="aircraftPhotoNegativeTtlDays"
+            type="number"
+            min={1}
+            max={365}
+            defaultValue={settings.aircraftPhotoNegativeTtlDays ?? 7}
+            required
+          />
+        </Field>
+        <Field label="Cache size" hint="Aircraft; the least recently seen go first">
+          <input
+            name="aircraftPhotoCacheEntries"
+            type="number"
+            min={0}
+            max={100_000}
+            defaultValue={settings.aircraftPhotoCacheEntries ?? 2_000}
+            required
+          />
+        </Field>
+      </div>
+
+      <div className="settings-dataset-state" aria-live="polite">
+        <ImageIcon size={20} aria-hidden="true" />
+        <span>
+          <small>Cached on this receiver</small>
+          <strong>
+            {summary
+              ? cached
+                ? `${plural(summary.photographs, 'photograph')} · ${formatBytes(summary.bytes)}`
+                : 'Nothing cached yet'
+              : 'Counting…'}
+          </strong>
+          <small>
+            {/* Not `plural`: "aircraft" is the same word either way, and the
+                helper would make it "aircrafts". */}
+            {summary && summary.misses
+              ? `${summary.misses.toLocaleString('en-GB')} aircraft recorded as having no photograph`
+              : 'Photographs are fetched when a profile is opened.'}
+          </small>
+        </span>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onClear}
+          disabled={clearing || !cached}
+        >
+          <Trash2 size={15} />
+          {clearing ? 'Clearing…' : 'Clear cached photographs'}
+        </button>
+      </div>
+      {failure ? (
+        <p className="settings-dataset-error" role="alert">
+          {failure}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+/**
  * The airport dataset, built here rather than on a command line.
  *
  * The download is a separate action from saving the form: it can take a few
@@ -458,6 +638,50 @@ export function SettingsPage() {
     result: null,
     failure: null,
   })
+  const [photoCache, setPhotoCache] = useState<PhotoCacheState>({
+    summary: null,
+    clearing: false,
+    failure: null,
+  })
+
+  /*
+   * Read once when Settings opens rather than polled: the card reports what the
+   * cache holds so an operator can decide whether to clear it, and a count that
+   * is a minute stale does not change that decision.
+   */
+  useEffect(() => {
+    const controller = new AbortController()
+    void api
+      .photoCacheSummary(controller.signal)
+      .then((summary) => setPhotoCache((current) => ({ ...current, summary })))
+      .catch(() => {
+        // A server older than the photograph cache has no such endpoint, and
+        // Settings must still open. The card reports nothing rather than an
+        // error about a feature the operator may never turn on.
+      })
+    return () => controller.abort()
+  }, [retryKey])
+
+  async function clearPhotoCache() {
+    setPhotoCache((current) => ({ ...current, clearing: true, failure: null }))
+    try {
+      await api.clearPhotoCache()
+      setPhotoCache({
+        summary: { photographs: 0, misses: 0, bytes: 0 },
+        clearing: false,
+        failure: null,
+      })
+    } catch (reason) {
+      setPhotoCache((current) => ({
+        ...current,
+        clearing: false,
+        failure:
+          reason instanceof Error
+            ? reason.message
+            : 'The cached photographs could not be cleared',
+      }))
+    }
+  }
 
   async function downloadAirports(form: HTMLFormElement) {
     setAirportImport({ running: true, result: null, failure: null })
@@ -808,6 +1032,19 @@ export function SettingsPage() {
                 <input name="routeLookupNegativeTtlHours" type="number" min={1} max={8_760} defaultValue={settings.routeLookupNegativeTtlHours} required />
               </Field>
             </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<ImageIcon size={20} />}
+            eyebrow="LOOKUP DATA"
+            title="Aircraft photographs"
+            description="A photograph of the airframe on its profile, fetched once and then served from this receiver."
+          >
+            <AircraftPhotos
+              settings={settings}
+              state={photoCache}
+              onClear={() => void clearPhotoCache()}
+            />
           </SettingsCard>
 
           <div className="settings-save-bar">

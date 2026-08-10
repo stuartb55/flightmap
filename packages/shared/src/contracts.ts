@@ -365,6 +365,13 @@ export const aircraftPhotoSchema = z.object({
   height: z.number().nullable()
 });
 
+/** What the Settings card reports about the photograph cache. */
+export const photoCacheSummarySchema = z.object({
+  photographs: z.number().int().nonnegative(),
+  misses: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative()
+});
+
 export const aircraftDetailResponseSchema = z.object({
   aircraft: liveAircraftSchema.nullable(),
   metadata: aircraftMetadataSchema.nullable(),
@@ -1369,6 +1376,7 @@ export type AircraftDetailResponse = z.infer<
 export type FlightRoute = z.infer<typeof flightRouteSchema>;
 export type RouteAirport = z.infer<typeof routeAirportSchema>;
 export type AircraftPhoto = z.infer<typeof aircraftPhotoSchema>;
+export type PhotoCacheSummary = z.infer<typeof photoCacheSummarySchema>;
 export type SessionsResponse = z.infer<typeof sessionsResponseSchema>;
 export type TrackResponse = z.infer<typeof trackResponseSchema>;
 export type AircraftActivityPoint = z.infer<typeof aircraftActivityPointSchema>;
