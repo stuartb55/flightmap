@@ -1,5 +1,5 @@
-import { Activity, BarChart3, Bell, Clock3, Map, RadioTower, Settings2 } from 'lucide-react'
-import { type ReactNode, useEffect, useRef } from 'react'
+import { Activity, BarChart3, Bell, Clock3, Map, MoreHorizontal, RadioTower, Settings2 } from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from '../lib/router'
 import { useLiveStatus } from '../state/LiveContext'
 import { CommandPalette } from './CommandPalette'
@@ -14,9 +14,20 @@ const navigation = [
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ]
 
+/*
+ * A phone tab bar holds four labelled targets before the labels start
+ * abbreviating and the targets stop being 48px wide. These are the three the
+ * receiver is watched through — where things are, where they have been, and
+ * what wanted attention — and everything else lives behind More.
+ */
+const mobileTabs = ['/', '/history', '/alerts']
+const mobileNavigation = navigation.filter(({ to }) => mobileTabs.includes(to))
+const overflowNavigation = navigation.filter(({ to }) => !mobileTabs.includes(to))
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const mainRef = useRef<HTMLElement>(null)
+  const [showMore, setShowMore] = useState(false)
   const { alerts, receiver, connection } = useLiveStatus()
   const activeAlerts = alerts.filter((alert) => !alert.dismissedAt).length
   const receiverState =
@@ -36,6 +47,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       : navigation.find((item) => item.to === pathname)?.label ?? 'Live'
     document.title = `${page} · Flightmap`
     mainRef.current?.focus({ preventScroll: true })
+    // Navigating anywhere answers what More was opened to ask.
+    setShowMore(false)
   }, [pathname])
 
   return (
@@ -82,9 +95,18 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
+      {showMore ? (
+        <button
+          className="mobile-more-backdrop"
+          type="button"
+          onClick={() => setShowMore(false)}
+          aria-label="Close more"
+        />
+      ) : null}
+
       <nav className="mobile-nav" aria-label="Primary">
-        {navigation.map(({ to, label, icon: Icon, end }) => (
-          <NavLink key={to} to={to} end={end} className="mobile-nav-item">
+        {mobileNavigation.map(({ to, label, icon: Icon, end }) => (
+          <NavLink key={to} to={to} end={end} className="mobile-nav-item" onClick={() => setShowMore(false)}>
             <span className="mobile-icon-wrap">
               <Icon size={20} strokeWidth={1.8} />
               {label === 'Alerts' && activeAlerts > 0 ? <span className="mobile-badge" /> : null}
@@ -92,7 +114,30 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>{label}</span>
           </NavLink>
         ))}
+        {/* The three pages a receiver is not watched through minute to minute.
+            Marked active while one of them is open, so the bar still says
+            where you are. */}
+        <button
+          type="button"
+          className={`mobile-nav-item ${showMore || overflowNavigation.some((item) => item.to === pathname) ? 'active' : ''}`}
+          aria-expanded={showMore}
+          onClick={() => setShowMore((value) => !value)}
+        >
+          <span className="mobile-icon-wrap">
+            <MoreHorizontal size={20} strokeWidth={1.8} />
+          </span>
+          <span>More</span>
+        </button>
       </nav>
+
+      <div className={`mobile-more-sheet ${showMore ? 'open' : ''}`} inert={!showMore}>
+        {overflowNavigation.map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} className="mobile-more-item" onClick={() => setShowMore(false)}>
+            <Icon size={19} strokeWidth={1.8} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </div>
 
       <CommandPalette />
     </div>

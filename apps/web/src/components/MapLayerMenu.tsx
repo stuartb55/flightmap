@@ -47,9 +47,15 @@ export function MapLayerMenu({
         className="map-layer-button"
         aria-expanded={open}
         aria-haspopup="dialog"
+        /* Stated rather than read off the label, which the layout drops where
+           the button has to share its row with the search field. */
+        aria-label="Layers"
         onClick={() => setOpen((current) => !current)}
       >
-        <Layers3 size={17} /> Layers
+        {/* The label goes when the control has to share its row with the
+            search field; the icon and the accessible name still say what it
+            is. */}
+        <Layers3 size={17} /> <span className="control-label">Layers</span>
       </button>
       {open ? (
         <div className="map-layer-menu" role="dialog" aria-label="Map layers">

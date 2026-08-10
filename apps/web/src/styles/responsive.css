@@ -80,9 +80,9 @@
   :root {
     --header-height: calc(64px + env(safe-area-inset-top));
     --mobile-nav-height: calc(68px + env(safe-area-inset-bottom));
-    /* Width of the map layer button plus the gap after it, so the saved-view
-       button beside it and the panels below both line up with one value. */
-    --map-layer-button-span: 107px;
+    /* The layer button sharing the search field's row, plus the gap before it:
+       what the field has to stop short of. */
+    --map-overlay-buttons: 51px;
     /* Where the first row of floating map controls starts. The immersive map
        runs under the status bar, so every overlay on that edge clears the
        inset from one value rather than each guessing at it. */
@@ -159,6 +159,9 @@
     display: none;
   }
 
+  /* Four targets, not six. At six the labels were 11px in a 65px column and
+     the icons had no room to be pointed at; four gives each a target wide
+     enough to hit and a pill behind the icon to say which one is current. */
   .mobile-nav {
     position: fixed;
     z-index: 110;
@@ -166,7 +169,7 @@
     bottom: 0;
     left: 0;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     height: var(--mobile-nav-height);
     padding: 4px max(5px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left));
     border-top: 1px solid var(--edge-8);
@@ -180,9 +183,14 @@
     align-items: center;
     justify-content: center;
     gap: 3px;
+    padding: 0;
     color: var(--ink-23);
+    border: 0;
+    background: transparent;
+    font-family: inherit;
     font-size: 11px;
     font-weight: 600;
+    cursor: pointer;
   }
 
   .mobile-nav-item.active {
@@ -193,17 +201,85 @@
     position: relative;
     display: grid;
     place-items: center;
+    width: 52px;
+    height: 26px;
+    border-radius: 13px;
+    transition: background 140ms ease;
+  }
+
+  .mobile-nav-item.active .mobile-icon-wrap {
+    background: rgb(var(--accent-rgb) / 0.14);
   }
 
   .mobile-badge {
     position: absolute;
-    top: -2px;
-    right: -3px;
+    top: 1px;
+    right: 12px;
     width: 6px;
     height: 6px;
     border: 1px solid var(--edge-2);
     border-radius: 50%;
     background: var(--red);
+  }
+
+  /* What the fifth and sixth tabs became. It opens off the bar rather than as
+     a page of its own, because three links do not need one. */
+  .mobile-more-backdrop {
+    position: fixed;
+    z-index: 108;
+    inset: 0;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: var(--veil-3);
+  }
+
+  .mobile-more-sheet {
+    position: fixed;
+    z-index: 109;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(var(--mobile-nav-height) + 8px);
+    left: max(8px, env(safe-area-inset-left));
+    display: grid;
+    gap: 2px;
+    padding: 7px;
+    border: 1px solid var(--line-bright);
+    border-radius: 15px;
+    background: var(--veil-21);
+    box-shadow: 0 -14px 40px rgb(var(--shadow-rgb) / 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    /* Out of the layout's reach as well as out of sight while it is closed:
+       transparent alone leaves three links a press can still land on, and a
+       reader can still be walked onto. */
+    visibility: hidden;
+    transition: transform 180ms ease, opacity 140ms ease, visibility 180ms;
+    backdrop-filter: blur(16px);
+  }
+
+  .mobile-more-sheet.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .mobile-more-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 0 13px;
+    color: var(--muted-bright);
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .mobile-more-item.active {
+    color: var(--accent-bright);
+    background: rgb(var(--accent-rgb) / 0.1);
   }
 
   /* Banners and the action bar are laid out in a column with the map rather
@@ -274,10 +350,12 @@
   }
 
   /* The key is collapsed to a chip by default: at this width the expanded
-     legend covered a third of the map and ran under the action buttons. */
+     legend covered a third of the map and ran under the action buttons. It
+     rides on top of the sheet's current stop rather than on the bottom of the
+     map, which the sheet covers at every stop but the peek. */
   .map-legend {
     right: 10px;
-    bottom: 10px;
+    bottom: calc(var(--live-sheet-cover, 0px) + 10px);
     width: auto;
     max-width: calc(100% - 20px);
     padding: 0;
@@ -336,6 +414,8 @@
      width keeps it clear of the map key chip however tall it grows. */
   .maplibregl-ctrl-bottom-left {
     max-width: 62%;
+    /* Lifted with the map key, for the same reason. */
+    bottom: var(--live-sheet-cover, 0px);
   }
 
   /* The detail sheet's own header carries the callsign, the altitude and a way
@@ -372,11 +452,12 @@
     transform: none;
   }
 
-  /* The layer and saved-view buttons used to sit one above the other, so each
-     panel opened across the other button and, with both open, across each
-     other. Side by side they share one row and both panels open clear of it,
-     full width and scrolling internally. Only one can be open: each closes on
-     a press outside itself. */
+  /* The layer and saved-view buttons sit one beside the other, each opening a
+     panel full width below the row and scrolling internally. Only one can be
+     open: each closes on a press outside itself. On the Live map the row also
+     carries the search field, so the buttons take the right-hand end of it and
+     drop their labels; the History map keeps them on the left, where it has no
+     search field competing for the row. */
   .map-layer-control {
     top: var(--map-overlay-top);
     left: max(10px, env(safe-area-inset-left));
@@ -385,18 +466,37 @@
 
   .map-saved-views {
     top: var(--map-overlay-top);
-    left: calc(max(10px, env(safe-area-inset-left)) + var(--map-layer-button-span));
+    left: calc(max(10px, env(safe-area-inset-left)) + 107px);
     z-index: 63;
     max-width: none;
   }
 
-  /* Two buttons already fill this row, so the chips drop below them, pulled
-     back to the same map edge the panels open from and stopping short of the
-     map action buttons on the opposite edge. */
+  .live-page .map-layer-control {
+    right: max(10px, env(safe-area-inset-right));
+    left: auto;
+  }
+
+  .live-page .map-layer-button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 13px;
+    backdrop-filter: blur(12px);
+  }
+
+  /* The row belongs to the search field at this width; the icon and the
+     accessible name each still say what the button is. */
+  .live-page .map-layer-button .control-label {
+    display: none;
+  }
+
   .map-saved-views .saved-view-pins {
     position: absolute;
     top: calc(100% + 8px);
-    left: calc(-1 * var(--map-layer-button-span));
+    left: -107px;
     width: calc(100vw - 74px);
   }
 
@@ -405,102 +505,127 @@
     position: absolute;
     top: calc(100% + 7px);
     right: auto;
+    left: 0;
     width: calc(100vw - 20px);
     max-width: calc(100vw - 20px);
-    /* Leaves room for the button row above and the action buttons below, plus
-       a banner if one is showing. */
+    /* Leaves room for the button row above and the sheet below, plus a banner
+       if one is showing. */
     max-height: calc(100dvh - var(--header-height) - var(--mobile-nav-height) - 200px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
-  .map-layer-menu {
-    left: 0;
+  /* Pulled back across the layer button so the panel starts at the same map
+     edge the layer panel does. */
+  .map-saved-views .saved-view-menu {
+    left: -107px;
   }
 
-  /* Pulled back across the layer button so the panel starts at the same map
-     edge as the layer panel does. */
-  .map-saved-views .saved-view-menu {
-    left: calc(-1 * var(--map-layer-button-span));
+  /* The Live map's button is at the other end of the row, so its panel opens
+     back the other way. */
+  .live-page .map-layer-menu {
+    right: 0;
+    left: auto;
   }
 
   .saved-view-list {
     max-height: none;
   }
 
-  /* Floated over the map's top-right rather than holding a strip below it.
-     The layer button owns the opposite corner of the same row, so the pair
-     shrink their labels away before either would run into it. */
-  .mobile-map-actions {
+  /* Search leads the row the aircraft and filter buttons used to hold. The two
+     map controls beside it drop to 44px squares so the field gets everything
+     that is left, which is what makes it read as the page's primary way in
+     rather than as one more chip over the map. */
+  .map-search {
     position: absolute;
     z-index: 25;
     top: var(--map-overlay-top);
-    right: max(10px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    right: calc(max(10px, env(safe-area-inset-right)) + var(--map-overlay-buttons));
     display: flex;
-    gap: 7px;
-    max-width: calc(100% - var(--map-layer-button-span) - 20px);
-  }
-
-  .mobile-map-actions button {
-    display: flex;
-    flex: 0 1 auto;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-width: 44px;
+    gap: 9px;
     height: 44px;
-    padding: 0 11px;
-    overflow: hidden;
-    color: var(--ink-7);
+    padding: 0 13px;
     border: 1px solid var(--edge-10);
-    border-radius: 9px;
+    border-radius: 13px;
     background: var(--veil-22);
     box-shadow: var(--shadow);
-    font-size: 13px;
-    font-weight: 700;
-    white-space: nowrap;
     backdrop-filter: blur(12px);
   }
 
-  .mobile-map-actions button > svg {
+  .map-search > svg {
     flex: 0 0 auto;
+    color: var(--ink-22);
   }
 
-  .mobile-map-actions .action-count {
-    display: grid;
-    flex: 0 0 auto;
-    place-items: center;
-    min-width: 22px;
-    height: 22px;
-    padding: 0 4px;
-    color: var(--accent);
-    border-radius: 10px;
-    background: rgb(var(--accent-rgb) / 0.1);
+  .map-search input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    color: var(--text);
+    border: 0;
+    background: transparent;
     font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-    font-size: 12px;
+    font-size: 13px;
   }
 
-  /* The receiver state the hidden header used to carry. Only the dot, because
-     the header had already dropped the name at this width. */
-  .map-receiver-state {
+  .map-search input::placeholder {
+    color: var(--ink-30);
+  }
+
+  .map-search input:focus {
+    outline: none;
+  }
+
+  .map-search:focus-within {
+    border-color: rgb(var(--accent-rgb) / 0.45);
+  }
+
+  .map-search > button {
     display: grid;
     flex: 0 0 auto;
     place-items: center;
-    width: 44px;
-    height: 44px;
-    border: 1px solid var(--edge-10);
-    border-radius: 9px;
-    background: var(--veil-22);
-    box-shadow: var(--shadow);
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: var(--muted);
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  /* Below the search row: the receiver state the hidden header used to carry,
+     saying what it is hearing as well as whether it is alive. The count moved
+     here from the aircraft button, which the sheet made redundant. */
+  .map-receiver-state {
+    position: absolute;
+    z-index: 19;
+    top: calc(var(--map-overlay-top) + var(--map-overlay-row));
+    left: max(10px, env(safe-area-inset-left));
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: calc(100% - 130px);
+    height: 30px;
+    padding: 0 11px;
+    border: 1px solid rgb(var(--line-bright-rgb) / 0.7);
+    border-radius: 15px;
+    background: var(--veil-10);
     backdrop-filter: blur(12px);
   }
 
-  /* Labels are the first thing to go when the row runs out of room: the icon,
-     the count and the accessible name each still say what the button is. */
-  @media (max-width: 400px) {
-    .mobile-map-actions .action-label {
-      display: none;
-    }
+  .map-receiver-copy {
+    overflow: hidden;
+    color: var(--ink-15);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .mobile-sheet-backdrop {
@@ -540,107 +665,128 @@
     transform: translateY(0);
   }
 
-  .sheet-handle {
-    flex: 0 0 auto;
-    align-self: center;
-    width: 37px;
-    height: 4px;
-    margin-top: 8px;
-    border-radius: 3px;
-    background: var(--edge-11);
-  }
-
-  .mobile-list-sheet {
-    height: min(88%, 720px);
-    max-height: none;
-  }
-
-  .mobile-list-sheet .aircraft-panel-header {
-    min-height: 64px;
-    padding: 10px 14px 8px;
-  }
-
-  .mobile-list-sheet .aircraft-panel-header h2 {
-    font-size: 21px;
-  }
-
-  .mobile-list-sheet .aircraft-table-wrap {
-    min-height: 0;
-    overscroll-behavior: contain;
-  }
-
-  .mobile-search {
-    flex: 0 0 auto;
-    margin: 0 13px 10px;
-  }
-
   .mobile-filter-sheet {
     max-height: 86%;
     overflow-y: auto;
   }
 
-  /* A sheet in two stops. Collapsed it shows the hero and nothing else, which
-     is what the map itself cannot say — who this is, and where to go next —
-     and leaves the map the majority of the screen. It stops above the action
-     row rather than at the bottom edge so the aircraft list and the filters
-     stay reachable while an aircraft is selected. */
+  /*
+   * The page's second half rather than a panel summoned over it. The list used
+   * to be a modal you opened, looked at, and dismissed to get the map back,
+   * which meant the two things this page is for were never on screen at once.
+   * The sheet is always there instead, in three stops: a peek that names what
+   * is overhead, a half that adds the list, and a full that gives the sheet the
+   * screen and leaves the map as context above it.
+   *
+   * The selected aircraft and the list are the same sheet showing different
+   * things, so both are sized and positioned by the rules below.
+   */
+  .live-sheet,
   .detail-panel {
     position: absolute;
     /* Over the map's own overlays — the layer and saved-view controls sit at
-       63 and 64 — but under the modal list and filter sheets at 69. */
+       63 and 64 — but under the modal filter sheet at 69. */
     z-index: 65;
     right: 0;
     bottom: 0;
     left: 0;
+    display: flex;
+    flex-direction: column;
     width: auto;
-    height: auto;
-    /* Sized to the hero, but never past the point where the map stops being
-       the thing on screen — a short phone gives the hero a scrollbar instead.
-       What the map can spare is measured from the map itself rather than the
-       page, so banners taking their own rows above it come out of the sheet's
-       allowance and not out of the map: 150px of map, or a clear majority of
-       it where the map is too short to give 150px away. */
+    overflow: hidden;
+    border: 1px solid var(--line-bright);
+    border-bottom: 0;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -18px 45px rgb(var(--shadow-rgb) / 0.46);
+  }
+
+  .live-sheet {
+    background:
+      linear-gradient(135deg, rgb(var(--accent-rgb) / 0.07), transparent 55%),
+      var(--surface-18);
+  }
+
+  /*
+   * The peek is sized to its own content — the heading and the strip of
+   * nearest aircraft, or a selected aircraft's identity and readings — but
+   * never past the point where the map stops being the thing on screen. What
+   * the map can spare is measured from the map itself rather than from the
+   * page, so banners taking their own rows above it come out of the sheet's
+   * allowance and not out of the map: 150px of map, or a clear majority of it
+   * where the map is too short to give 150px away.
+   */
+  .live-page.sheet-peek .live-sheet,
+  .live-page.sheet-peek .detail-panel {
     --sheet-cap: max(
       calc(var(--map-stage-height, 100%) * 0.45),
       calc(var(--map-stage-height, 100%) - 150px)
     );
+    height: auto;
     max-height: min(48%, 360px, var(--sheet-cap));
-    border: 1px solid var(--line-bright);
-    border-bottom: 0;
-    border-radius: 15px 15px 0 0;
-    box-shadow: 0 -18px 45px rgb(var(--shadow-rgb) / 0.46);
+    overscroll-behavior: contain;
+  }
+
+  .live-page.sheet-half .live-sheet,
+  .live-page.sheet-half .detail-panel {
+    height: min(52%, 430px);
+  }
+
+  .live-page.sheet-full .live-sheet,
+  .live-page.sheet-full .detail-panel {
+    height: 78%;
   }
 
   /* An emergency or a lost position is the one thing worth as much as the
      identity itself, so it survives the collapse. */
-  .detail-panel:not(.expanded) > :not(.detail-sheet-handle):not(.detail-hero):not(.inline-alert) {
+  .live-page.sheet-peek
+    .detail-panel
+    > :not(.detail-sheet-handle):not(.detail-hero):not(.inline-alert) {
     display: none;
   }
 
-  .detail-panel.expanded {
-    height: 78%;
-    max-height: none;
+  /*
+   * At the peek the hero is the four readings under a name; the route and the
+   * links belong to the stops that have room to be read rather than glanced
+   * at. Ordering them below the readings is the difference between a peek that
+   * answers "what is it doing" and one that answers it two lines down.
+   */
+  .detail-hero {
+    display: flex;
+    flex-direction: column;
+    padding-top: 4px;
   }
 
-  /* The handle stays put while the hero scrolls under it, so the way back to a
-     full-height map is never scrolled off a short screen. */
-  .detail-panel:not(.expanded) {
-    overscroll-behavior: contain;
+  .detail-hero .panel-title-row {
+    order: 1;
+  }
+
+  .detail-hero .detail-hero-stats {
+    order: 2;
+  }
+
+  .detail-hero .detail-route {
+    order: 3;
+  }
+
+  .detail-hero .aircraft-workflow-links {
+    order: 4;
+  }
+
+  .live-page.sheet-peek .detail-hero .detail-route,
+  .live-page.sheet-peek .detail-hero .aircraft-workflow-links {
+    display: none;
   }
 
   .detail-sheet-handle {
-    position: sticky;
-    z-index: 1;
-    top: 0;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 100%;
     min-height: 26px;
-    padding: 9px 0 4px;
+    padding: 9px 0 5px;
     border: 0;
-    /* Matches the hero it sits on, which scrolls under it on a short screen. */
-    background: var(--surface-18);
+    background: transparent;
     cursor: pointer;
   }
 
@@ -655,28 +801,98 @@
     background: var(--accent-bright);
   }
 
-  .detail-hero {
-    padding-top: 4px;
-  }
-
-  /* The sheet is dragged between its stops from the two parts that are always
-     on screen, so the browser must not claim the vertical gesture for a scroll
-     first. Swiping the hero down collapses rather than scrolls, which is what
-     the gesture means on a sheet; the record below it scrolls as usual. */
+  /* The sheet is dragged between its stops from the parts that are on screen
+     at every stop, so the browser must not claim the vertical gesture for a
+     scroll first. Swiping the header down drops a stop, which is what the
+     gesture means on a sheet; the body below it scrolls as usual. */
   .detail-sheet-handle,
-  .detail-hero {
+  .detail-hero,
+  .live-sheet-heading {
     touch-action: none;
   }
 
-  /* Expanded, the sheet reaches over the map's own chrome. Leaving a row of
-     buttons half-buried under its edge read as a rendering fault, and none of
-     them can be used against a map this small anyway. */
-  .live-page.detail-expanded .map-controls,
-  .live-page.detail-expanded .map-legend,
-  .live-page.detail-expanded .map-layer-control {
+  /* The detail panel scrolls as a whole; the list sheet holds its header still
+     and scrolls only the rows under it. */
+  .detail-panel {
+    overflow-y: auto;
+  }
+
+  /* Beside the map the panel is a narrow column and the readings stack; as a
+     full-width sheet there is room for two across, which halves how far the
+     six of them run down the screen. */
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* At the full stop the sheet reaches over the map's own chrome. Leaving a
+     row of buttons half-buried under its edge read as a rendering fault, and
+     none of them can be used against a map this small anyway. */
+  .live-page.sheet-full .map-controls,
+  .live-page.sheet-full .map-legend,
+  .live-page.sheet-full .map-layer-control,
+  .live-page.sheet-full .map-saved-views {
     display: none;
   }
 
+  /* Search stays — it is the way out of a full sheet as much as a way into the
+     map — and takes the width the two buttons were holding. */
+  .live-page.sheet-full .map-search {
+    right: max(10px, env(safe-area-inset-right));
+  }
+
+  /* The name of what the strip below it is: what the receiver can hear right
+     now, nearest first. */
+  .live-sheet-heading {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 14px 9px;
+  }
+
+  .live-sheet-heading .eyebrow {
+    color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .live-sheet-order {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 8px;
+    color: var(--muted-bright);
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .live-sheet-order.active {
+    color: var(--accent-bright);
+  }
+
+  .live-sheet-order .action-count {
+    display: grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    color: var(--accent);
+    border-radius: 9px;
+    background: rgb(var(--accent-rgb) / 0.12);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 11px;
+  }
 
   /* The mobile sheet already passes its own reduced column set; this keeps the
      desktop table equally narrow if it is ever shown at this width. */
@@ -1065,20 +1281,85 @@
     white-space: nowrap;
   }
 
+  /*
+   * A stream, not a stack of cards. Nine separate rounded boxes with shadows
+   * and 44px icon tiles came to about two alerts a screen, and the icon was
+   * saying what the coloured word beside it already said. One container, a
+   * hairline between entries, and the severity moved to a rail down the edge
+   * gets four or five on screen with the same information in them — and the
+   * rails line up, so a screen of alerts can be read for its shape before any
+   * of it is read for its words.
+   */
   .alert-list {
     overflow: visible;
-    padding: 10px;
+    padding: 0 10px 14px;
+  }
+
+  .alert-day {
+    margin-bottom: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-12);
+  }
+
+  .alert-day-label {
+    margin: 0;
+    padding: 10px 14px 8px;
+    color: var(--ink-27);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
   }
 
   .alert-card {
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 9px;
-    padding: 11px;
+    grid-template-columns: 3px minmax(0, 1fr);
+    /* Named rather than left implicit so the rail's `1 / -1` has an explicit
+       last line to run to; against an implicit grid it spans nothing. */
+    grid-template-rows: auto auto;
+    gap: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-top: 1px solid rgb(var(--line-soft-rgb) / 0.72);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
+  .alert-card.alert-critical,
+  .alert-card.alert-warning {
+    background: transparent;
+  }
+
+  /* The icon tile becomes the rail: the severity is the only thing it was
+     carrying that the heading beside it did not. */
   .alert-card-icon {
-    width: 42px;
-    height: 42px;
+    /* Down the whole entry, not just the row the heading is on. */
+    grid-row: 1 / -1;
+    width: 3px;
+    height: auto;
+    border-radius: 0;
+    background: var(--blue);
+  }
+
+  .alert-card-icon > svg {
+    display: none;
+  }
+
+  .alert-critical .alert-card-icon {
+    background: var(--red);
+  }
+
+  .alert-warning .alert-card-icon {
+    background: var(--amber);
+  }
+
+  .alert-card-body {
+    padding: 11px 14px;
   }
 
   .alert-card-heading {
@@ -1086,10 +1367,64 @@
     gap: 4px 9px;
   }
 
+  /* Severity-coloured, matching the rail, so the two agree at a glance. */
+  .alert-critical .alert-kind {
+    color: var(--red);
+  }
+
+  .alert-warning .alert-kind {
+    color: var(--amber);
+  }
+
+  .alert-card .alert-kind {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .alert-time {
+    margin-left: auto;
+  }
+
+  .alert-date {
+    display: none;
+  }
+
+  .alert-card h2 {
+    margin: 4px 0 3px;
+    font-size: 15px;
+    line-height: 1.3;
+  }
+
+  .alert-card p {
+    font-size: 13px;
+  }
+
+  /* The callsign reads as the chip it is: the one part of an alert that is a
+     handle onto something else. */
+  .alert-aircraft {
+    display: inline-flex;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 15px;
+    background: var(--surface-20);
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  }
+
+  .alert-aircraft > svg {
+    display: none;
+  }
+
+  .alert-aircraft strong {
+    color: var(--ink-11);
+    font-size: 12px;
+  }
+
   .alert-actions {
     grid-column: 2;
     flex-direction: row;
     align-items: center;
+    padding: 0 14px 11px;
   }
 
   .alert-rules {
@@ -1170,8 +1505,10 @@
     display: none;
   }
 
-  .mobile-nav-item {
-    font-size: 10px;
+  /* Four tabs have the room six did not, so the labels keep their size all the
+     way down and only the pill behind the icon gives any width back. */
+  .mobile-icon-wrap {
+    width: 46px;
   }
 
   .insight-custom-range {
@@ -1218,10 +1555,6 @@
 
   .replay-topline .replay-track-count {
     display: none;
-  }
-
-  .metric-grid {
-    grid-template-columns: 1fr;
   }
 
   .aircraft-table th:first-child {

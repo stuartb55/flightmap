@@ -117,9 +117,18 @@ export function SavedViewsControl({
 
   return (
     <div className={`saved-view-control ${className}`} ref={controlRef}>
-      <button type="button" className="saved-view-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        <Bookmark size={16} /> Saved views
-        {surfaceViews.length ? <span>{surfaceViews.length}</span> : null}
+      <button
+        type="button"
+        className="saved-view-button"
+        aria-expanded={open}
+        /* Stated rather than read off the label and the count, both of which
+           the layout drops where the button shares its row with the search. */
+        aria-label={surfaceViews.length ? `Saved views, ${surfaceViews.length} saved` : 'Saved views'}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {/* Dropped where the control shares its row with the search field. */}
+        <Bookmark size={16} /> <span className="control-label">Saved views</span>
+        {surfaceViews.length ? <span className="saved-view-count">{surfaceViews.length}</span> : null}
       </button>
       {pinned.length ? (
         <ul className="saved-view-pins" aria-label={`Pinned ${surface} views`}>

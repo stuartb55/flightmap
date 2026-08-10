@@ -42,14 +42,27 @@ test('loads live data and supports primary navigation', async ({ page }) => {
   await openFlightmap(page)
   await expect(page.getByRole('main')).toBeVisible()
 
+  /*
+   * A phone tab bar holds four targets, so the three pages a receiver is not
+   * watched through minute to minute are behind More. The header nav on wider
+   * layouts carries all six, and this walks whichever of the two the viewport
+   * has.
+   */
+  const openNavigation = async () => {
+    const more = page.locator('.mobile-nav').getByRole('button', { name: 'More' })
+    if (await more.isVisible()) await more.click()
+  }
+
   await page.getByRole('link', { name: 'History' }).first().click()
   await expect(page).toHaveTitle('History · Flightmap')
   await expect(page.getByRole('heading', { name: 'Flight history' })).toBeVisible()
 
+  await openNavigation()
   await page.getByRole('link', { name: 'System' }).first().click()
   await expect(page).toHaveTitle('System · Flightmap')
   await expect(page.getByRole('heading', { name: 'System' })).toBeVisible({ timeout: 15_000 })
 
+  await openNavigation()
   await page.getByRole('link', { name: 'Settings' }).first().click()
   await expect(page).toHaveTitle('Settings · Flightmap')
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 15_000 })
@@ -952,8 +965,8 @@ test('shows retained data through a WebSocket interruption and reconnects', asyn
 
 test('keeps mobile panels and controls inside the usable viewport', async ({ page }) => {
   /*
-   * By some way the longest test here: the list sheet, the detail sheet at both
-   * of its stops, two drag gestures, the expand and collapse controls, and two
+   * By some way the longest test here: the sheet at all three of its stops with
+   * and without a selection, two drag gestures, the filters it opens, and two
    * further pages. It runs in about twenty seconds on its own, which leaves
    * nothing spare against the thirty-second default once the other project is
    * competing for the same machine.
@@ -962,102 +975,116 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   await page.setViewportSize({ width: 320, height: 568 })
   await openFlightmap(page)
 
-  await page.locator('.mobile-map-actions').getByRole('button', { name: /Aircraft/ }).click()
-  const listSheet = page.locator('.mobile-list-sheet')
-  await expect(listSheet).toHaveClass(/open/)
-  await expect(page.getByRole('dialog', { name: 'Live aircraft list' })).toBeVisible()
-  await expect.poll(() => page.locator('.live-page').evaluate((element) => element.scrollTop)).toBe(0)
-  await expect.poll(async () => {
-    const box = await listSheet.boundingBox()
-    return box ? box.y + box.height : Number.POSITIVE_INFINITY
-  }).toBeLessThanOrEqual(500.5)
+  /*
+   * The sheet is the page rather than something summoned over it, so it is
+   * already there, at the stop that names what is overhead and leaves the map
+   * the rest of the screen.
+   */
+  const sheet = page.locator('.live-sheet')
+  await expect(sheet).toBeVisible()
+  await expect(sheet.getByText('Overhead now')).toBeVisible()
+  await expect(sheet.locator('.sheet-nearest-card').first()).toBeVisible({ timeout: 15_000 })
+  await expect(sheet.locator('.sheet-rows')).toBeHidden()
 
-  const liveLayout = await page.evaluate(() => {
-    const sheet = document.querySelector('.mobile-list-sheet')!.getBoundingClientRect()
-    const list = document.querySelector('.mobile-list-sheet .aircraft-table-wrap')!.getBoundingClientRect()
+  const peek = await page.evaluate(() => {
+    const box = document.querySelector('.live-sheet')!.getBoundingClientRect()
     const navigation = document.querySelector('.mobile-nav')!.getBoundingClientRect()
     const legend = document.querySelector('.map-legend')!.getBoundingClientRect()
-    const actions = document.querySelector('.mobile-map-actions')!.getBoundingClientRect()
+    const search = document.querySelector('.map-search')!.getBoundingClientRect()
     const stage = document.querySelector('.map-stage')!.getBoundingClientRect()
+    const live = document.querySelector('.live-page')!.getBoundingClientRect()
     return {
-      sheetTop: sheet.top,
-      sheetBottom: sheet.bottom,
-      sheetHeight: sheet.height,
-      listHeight: list.height,
+      sheetTop: box.top,
+      sheetBottom: box.bottom,
+      sheetHeight: box.height,
       navigationTop: navigation.top,
       legendLeft: legend.left,
       legendRight: legend.right,
+      legendBottom: legend.bottom,
+      searchLeft: search.left,
+      searchRight: search.right,
       // Against the map rather than the viewport: a banner takes its own row
       // above the map and moves everything in it down the page.
-      actionsInset: actions.top - stage.top,
+      searchInset: search.top - stage.top,
+      pageHeight: live.height,
     }
   })
   /*
-   * The sheet used to have to clear the header. There is no header on the map
-   * at this width, so the two things worth asserting are that the row of
-   * floating controls sits at the top of the map — which is where the strip
-   * below it went — and that the sheet still leaves enough of the backdrop to
-   * dismiss it by pressing outside.
+   * Search leads the row of floating controls at the top of the map, the sheet
+   * runs to the bottom of the page above the tab bar, and the map key rides on
+   * top of the sheet rather than under it.
    */
-  expect(liveLayout.actionsInset).toBeLessThan(60)
-  expect(liveLayout.sheetTop).toBeGreaterThan(40)
-  expect(liveLayout.sheetBottom).toBeLessThanOrEqual(liveLayout.navigationTop)
-  expect(liveLayout.sheetHeight).toBeGreaterThan(350)
-  expect(liveLayout.listHeight).toBeGreaterThan(220)
-  expect(liveLayout.legendLeft).toBeGreaterThanOrEqual(0)
-  expect(liveLayout.legendRight).toBeLessThanOrEqual(320)
+  expect(peek.searchInset).toBeLessThan(60)
+  expect(peek.searchLeft).toBeGreaterThanOrEqual(0)
+  expect(peek.searchRight).toBeLessThanOrEqual(320)
+  expect(peek.sheetHeight).toBeLessThan(peek.pageHeight * 0.5)
+  expect(peek.sheetBottom).toBeGreaterThanOrEqual(peek.navigationTop - 0.5)
+  expect(peek.legendLeft).toBeGreaterThanOrEqual(0)
+  expect(peek.legendRight).toBeLessThanOrEqual(320)
+  expect(peek.legendBottom).toBeLessThanOrEqual(peek.sheetTop + 0.5)
+
+  // The next stop up is what the list is behind, and it is reached by dragging
+  // the sheet as well as by tapping the handle.
+  await dragVertically(page, sheet.locator('.live-sheet-heading'), -170)
+  await expect(sheet.locator('.sheet-rows')).toBeVisible()
+  const half = await page.evaluate(
+    () => document.querySelector('.live-sheet')!.getBoundingClientRect().top,
+  )
+  expect(half).toBeLessThan(peek.sheetTop)
+
+  // Filters are reached from the sheet's own header, which names the ordering
+  // the rows below it are in.
+  await sheet.getByRole('button', { name: /Nearest first/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Aircraft filters' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Aircraft filters' })).toBeHidden()
 
   /*
-   * The detail sheet opens at its collapsed stop, which is the whole point of
-   * it on a phone: it names the aircraft and offers somewhere to go next while
-   * leaving the map the larger share of the page, above the action row rather
-   * than over it. The corner card the wide layout draws would only repeat what
-   * the sheet's own header says, so this width does without it.
+   * Picking an aircraft turns the same sheet into that aircraft, back at the
+   * peek: the point of the sheet is that working through traffic never buries
+   * the map. The corner card the wide layout draws would only repeat what the
+   * sheet's own header says, so this width does without it.
    */
-  await selectLiveAircraft(page, '.mobile-list-sheet', 'FLT0001')
+  await page.locator('.map-search').getByLabel('Search aircraft').fill('FLT0001')
+  const row = sheet.locator('.sheet-row').filter({ hasText: 'FLT0001' }).first()
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await row.click()
+
   const detailSheet = page.locator('.detail-panel')
   await expect(detailSheet).toBeVisible()
   await expect(detailSheet.getByRole('heading', { name: 'FLT0001' })).toBeVisible()
   await expect(page.locator('.selected-map-card')).toBeHidden()
+  await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
 
   const collapsed = await page.evaluate(() => {
-    const sheet = document.querySelector('.detail-panel')!.getBoundingClientRect()
+    const box = document.querySelector('.detail-panel')!.getBoundingClientRect()
     const stage = document.querySelector('.map-stage')!.getBoundingClientRect()
     const live = document.querySelector('.live-page')!.getBoundingClientRect()
-    const actions = document.querySelector('.mobile-map-actions')!.getBoundingClientRect()
     return {
-      sheetTop: sheet.top,
-      sheetHeight: sheet.height,
+      sheetTop: box.top,
+      sheetHeight: box.height,
       pageHeight: live.height,
       // A banner takes its own row above the map, so measure the band the
       // sheet leaves rather than a share of a stage whose height varies.
-      mapVisible: sheet.top - stage.top,
-      sheetBottom: sheet.bottom,
+      mapVisible: box.top - stage.top,
+      sheetBottom: box.bottom,
       pageBottom: live.bottom,
-      actionsInset: actions.top - stage.top,
     }
   })
   expect(collapsed.sheetHeight).toBeLessThan(collapsed.pageHeight * 0.5)
   expect(collapsed.mapVisible).toBeGreaterThan(140)
-  /*
-   * The action buttons float over the top of the map rather than holding a
-   * strip below it, so the sheet now runs to the bottom of the page instead of
-   * stopping above them. They stay clear of it — and so stay reachable while an
-   * aircraft is selected — by being at the other end of the map entirely.
-   */
   expect(collapsed.sheetBottom).toBeGreaterThanOrEqual(collapsed.pageBottom - 0.5)
-  expect(collapsed.actionsInset).toBeLessThan(60)
-  await expect(page.locator('.mobile-map-actions').getByRole('button', { name: /Filters/ })).toBeVisible()
 
-  // Collapsed, the sheet answers what the map cannot, without an expand.
+  // At the peek the sheet answers what the map cannot, without an expand.
   for (const reading of ['Altitude', 'Speed', 'Track', 'Range']) {
     await expect(detailSheet.getByRole('term').filter({ hasText: reading })).toBeVisible()
   }
   await expect(detailSheet.getByRole('button', { name: 'Add to watchlist' })).toBeVisible()
 
-  // The other stop: the full record, at the cost of the map. It is reached by
-  // dragging the sheet as well as by tapping the handle, and a swipe that
-  // begins on the star is a swipe rather than a watchlist toggle.
+  /*
+   * The stops above it: the full record, at the cost of the map. A swipe that
+   * begins on the star is a swipe rather than a watchlist toggle.
+   */
   const star = detailSheet.getByRole('button', { name: 'Add to watchlist' })
   await dragVertically(page, star, -170)
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
@@ -1069,16 +1096,32 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   await dragVertically(page, detailSheet.locator('.detail-hero-stats'), 170)
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
 
-  await page.getByRole('button', { name: 'Expand details' }).click()
+  // The handle walks the same three stops and wraps at the top, so it never
+  // stops answering.
+  await page.getByRole('button', { name: 'Show more of the list' }).click()
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeVisible()
-  const expandedTop = await page.evaluate(
+  await page.getByRole('button', { name: 'Show the full list' }).click()
+  const full = await page.evaluate(
     () => document.querySelector('.detail-panel')!.getBoundingClientRect().top,
   )
-  expect(expandedTop).toBeLessThan(collapsed.sheetTop)
-  await page.getByRole('button', { name: 'Collapse details' }).click()
+  expect(full).toBeLessThan(swipedTop)
+  await page.getByRole('button', { name: 'Collapse the sheet' }).click()
   await expect(detailSheet.getByRole('heading', { name: 'Live telemetry' })).toBeHidden()
 
-  await page.getByRole('link', { name: 'History' }).last().click()
+  /*
+   * Four tabs, not six. The three pages a receiver is not watched through
+   * minute to minute are behind More, which is where History has to be reached
+   * from — the tab bar itself is the only nav at this width.
+   */
+  await expect(page.locator('.mobile-nav > *')).toHaveCount(4)
+  await page.locator('.mobile-nav').getByRole('button', { name: 'More' }).click()
+  const more = page.locator('.mobile-more-sheet')
+  await expect(more.getByRole('link', { name: 'Settings' })).toBeVisible()
+  await more.getByRole('link', { name: 'Insights' }).click()
+  await expect(page).toHaveTitle('Insights · Flightmap')
+  await expect(more).not.toHaveClass(/open/)
+
+  await page.locator('.mobile-nav').getByRole('link', { name: 'History' }).click()
   await expect(page).toHaveTitle('History · Flightmap')
   const historyLayout = await page.locator('.history-page').evaluate((element) => ({
     clientHeight: element.clientHeight,
@@ -1086,7 +1129,7 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   }))
   expect(historyLayout.scrollHeight).toBe(historyLayout.clientHeight)
 
-  await page.getByRole('link', { name: 'Alerts' }).last().click()
+  await page.locator('.mobile-nav').getByRole('link', { name: 'Alerts' }).click()
   await expect(page).toHaveTitle('Alerts · Flightmap')
   const toolbarLayout = await page.locator('.alerts-toolbar').evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -1097,4 +1140,20 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
   expect(toolbarLayout.scrollWidth).toBe(toolbarLayout.clientWidth)
   expect(toolbarLayout.left).toBeGreaterThanOrEqual(0)
   expect(toolbarLayout.right).toBeLessThanOrEqual(320)
+
+  /*
+   * Alerts read as a stream at this width: one bordered run per day, each entry
+   * carrying a severity rail down its edge in place of the icon tile that cost
+   * a card's worth of width to say the same thing.
+   */
+  const entry = page.locator('.alert-card').first()
+  await expect(entry).toBeVisible({ timeout: 15_000 })
+  const rail = await entry.locator('.alert-card-icon').evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const card = element.parentElement!.getBoundingClientRect()
+    return { width: box.width, height: box.height, cardHeight: card.height }
+  })
+  expect(rail.width).toBeLessThan(6)
+  // Short by the hairline between entries, which the rail sits inside of.
+  expect(rail.height).toBeGreaterThan(rail.cardHeight - 2)
 })

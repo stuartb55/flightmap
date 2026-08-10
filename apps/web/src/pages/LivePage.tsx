@@ -8,7 +8,6 @@ import {
 import {
   AlertTriangle,
   ChevronLeft,
-  Filter,
   List,
   PanelLeftClose,
   Plane,
@@ -21,6 +20,7 @@ import type { MapViewport, SavedViewConfiguration } from '@flightmap/shared'
 import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
+import { LiveSheetTraffic } from '../components/LiveSheetTraffic'
 import { ColumnChooser } from '../components/ColumnChooser'
 import { isFormTarget, isPlainKey } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
@@ -33,6 +33,7 @@ import {
   writeFiltersToParams,
   type AircraftFilters as AircraftFilterState,
   type AircraftSort,
+  type AircraftSortKey,
   type SelectionMove,
 } from '../lib/aircraft-filter'
 import { shareUrl, viewportFromParams } from '../lib/map-snapshot'
@@ -44,18 +45,46 @@ import { useNewSightingCutoff } from '../lib/sighting-preferences'
 import { useAirports } from '../lib/use-airports'
 import { useSearchParams } from '../lib/router'
 import { useModalFocus } from '../lib/use-modal-focus'
+import { nextStopLabel, useSheetStops } from '../lib/use-sheet-stops'
 import { useAppCommands } from '../lib/app-commands'
 import { useDefaultSavedView } from '../lib/saved-views'
-import { mobileColumns, useAircraftColumns } from '../lib/table-columns'
+import { useAircraftColumns } from '../lib/table-columns'
 import { defaultMapDisplay, useCoverageCells, useMapDisplay, useMapLayers } from '../lib/map-preferences'
 import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
 import type { AlertEvent, TrackResponse } from '../types'
 
-type MobilePanel = 'list' | 'filters' | null
+/*
+ * The aircraft list used to be a panel summoned over the map alongside the
+ * filters. It is now the sheet the page is built around and is always on
+ * screen, so the filters are the only thing left that opens as a modal.
+ */
+type MobilePanel = 'filters' | null
 const FILTER_STORAGE_KEY = 'flightmap.aircraft-filters.v1'
 
 export function emergencyBannerAlert(alerts: AlertEvent[]): AlertEvent | undefined {
   return alerts.find((alert) => alert.type === 'emergency' && !alert.dismissedAt)
+}
+
+const sortDescriptions: Record<AircraftSortKey, readonly [ascending: string, descending: string]> = {
+  identity: ['A to Z', 'Z to A'],
+  altitude: ['Lowest first', 'Highest first'],
+  distance: ['Nearest first', 'Farthest first'],
+  speed: ['Slowest first', 'Fastest first'],
+  freshness: ['Newest first', 'Oldest first'],
+  verticalRate: ['Descending first', 'Climbing first'],
+  track: ['Track ascending', 'Track descending'],
+  squawk: ['Squawk ascending', 'Squawk descending'],
+  operator: ['Operator A to Z', 'Operator Z to A'],
+  typeCode: ['Type A to Z', 'Type Z to A'],
+}
+
+/**
+ * What the sheet's list is currently ordered by, in the words the reader would
+ * use. The sheet header carries this rather than a column of sort arrows,
+ * because at this width there are no columns to put them on.
+ */
+export function sortDescription(sort: AircraftSort): string {
+  return sortDescriptions[sort.key][sort.direction === 'asc' ? 0 : 1]
 }
 
 function storedFilters(): AircraftFilterState {
@@ -113,20 +142,29 @@ export function LivePage() {
   const [dismissingBanner, setDismissingBanner] = useState(false)
   const [mapLayers, setMapLayers] = useMapLayers()
   const [mapDisplay, setMapDisplay] = useMapDisplay()
-  const [detailExpanded, setDetailExpanded] = useState(false)
   const [mapBottomInset, setMapBottomInset] = useState(0)
   const coverage = useCoverageCells(mapLayers.coverage)
   const mapRef = useRef<RadarMapHandle>(null)
   const mapStageRef = useRef<HTMLElement>(null)
   const detailPanelRef = useRef<HTMLElement>(null)
+  const liveSheetRef = useRef<HTMLElement>(null)
   const livePageRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Both search fields exist at every width; only one of them is laid out.
+  const mapSearchRef = useRef<HTMLInputElement>(null)
   const filtersDialogRef = useRef<HTMLElement>(null)
-  const mobileListRef = useRef<HTMLElement>(null)
   const mobileFiltersRef = useRef<HTMLElement>(null)
 
+  /*
+   * One sheet in three stops rather than two panels that take turns. The list
+   * and a selected aircraft are two things the same sheet can be showing, so
+   * one stop governs both and the grab handle means the same thing whichever
+   * of the two is on screen.
+   */
+  const sheet = useSheetStops('peek')
+  const { stop: sheetStop, setStop: setSheetStop } = sheet
+
   useModalFocus(showFilters, filtersDialogRef, () => setShowFilters(false))
-  useModalFocus(mobilePanel === 'list', mobileListRef, () => setMobilePanel(null))
   useModalFocus(mobilePanel === 'filters', mobileFiltersRef, () => setMobilePanel(null))
 
   useEffect(() => {
@@ -145,11 +183,11 @@ export function LivePage() {
   const selected = selectedIcao ? aircraftList.find((item) => item.icao === selectedIcao) ?? null : null
   const hasDetail = selected != null
 
-  // Each aircraft opens at the collapsed stop: the point of the sheet is that
+  // Each aircraft opens at the peek stop: the point of the sheet is that
   // picking through traffic never buries the map.
   useEffect(() => {
-    setDetailExpanded(false)
-  }, [selectedIcao])
+    setSheetStop('peek')
+  }, [selectedIcao, setSheetStop])
 
   /*
    * How much of the map the detail panel covers, measured rather than derived
@@ -165,7 +203,9 @@ export function LivePage() {
    */
   useEffect(() => {
     const stage = mapStageRef.current
-    const panel = detailPanelRef.current
+    // Whichever of the two the sheet is currently showing. Only one of them is
+    // ever laid out, so the one that is covering the map is the one to measure.
+    const panel = detailPanelRef.current ?? liveSheetRef.current
     if (!stage || !panel) {
       setMapBottomInset(0)
       return
@@ -175,16 +215,19 @@ export function LivePage() {
       const panelBox = panel.getBoundingClientRect()
       livePageRef.current?.style.setProperty('--map-stage-height', `${Math.round(stageBox.height)}px`)
       const overlapsAcross = panelBox.left < stageBox.right - 1 && panelBox.right > stageBox.left + 1
-      setMapBottomInset(
-        overlapsAcross ? Math.max(0, Math.round(stageBox.bottom - panelBox.top)) : 0,
-      )
+      const covered = overlapsAcross ? Math.max(0, Math.round(stageBox.bottom - panelBox.top)) : 0
+      setMapBottomInset(covered)
+      // The map key and the basemap attribution ride on top of the sheet's
+      // current stop rather than on the bottom of the map, which the sheet
+      // covers at every stop but the peek.
+      livePageRef.current?.style.setProperty('--live-sheet-cover', `${covered}px`)
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(stage)
     observer.observe(panel)
     return () => observer.disconnect()
-  }, [detailExpanded, hasDetail])
+  }, [sheetStop, hasDetail])
   const filtered = useOrderedAircraft(aircraftList, filters, sort, newSince)
   const sources = useMemo(
     () =>
@@ -429,7 +472,12 @@ export function LivePage() {
       if (event.key === '/') {
         event.preventDefault()
         setListCollapsed(false)
-        searchInputRef.current?.focus()
+        // The field floating over the map where the layout has one, otherwise
+        // the list panel's own. `offsetParent` is null for whichever of the two
+        // the breakpoint has taken out of the layout, which tells them apart
+        // without this having to know the breakpoint.
+        const field = mapSearchRef.current?.offsetParent ? mapSearchRef.current : searchInputRef.current
+        field?.focus()
       } else if (event.key.toLowerCase() === 'a') {
         event.preventDefault()
         setListCollapsed(false)
@@ -459,9 +507,7 @@ export function LivePage() {
   return (
     <div
       ref={livePageRef}
-      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''} ${
-        selected && detailExpanded ? 'detail-expanded' : ''
-      }`}
+      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''} sheet-${sheetStop}`}
     >
       {bannerAlert ? (
         <div
@@ -631,40 +677,40 @@ export function LivePage() {
         />
         {trackError || coverage.error ? <p className="map-data-warning" role="status">{trackError ?? coverage.error}</p> : null}
 
-        {/* The list and the filters used to hold a bar of their own below the
-            map. Floating them over it returns that strip to the map without
-            putting either out of reach, and they stay above the detail sheet
-            so a selected aircraft never buries the way back to the list. */}
-        <div className="mobile-map-actions">
-          {/* The receiver state the hidden header used to carry. It rides in
-              the same row as the actions so it cannot land on them, and it is
-              hidden with them on layouts that still have a header. */}
-          <div className="map-receiver-state" title={receiver?.lastSnapshotAt ?? 'Waiting for receiver'}>
-            <span className={`status-dot status-${receiverState}`} aria-hidden="true" />
-            <span className="visually-hidden">{`Receiver ${receiverState}`}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobilePanel(mobilePanel === 'list' ? null : 'list')}
-            aria-expanded={mobilePanel === 'list'}
-            /* Named here as well as in the label, which the narrowest screens
-               hide to keep the row clear of the layer button. */
-            aria-label={`Aircraft list, ${filtered.length} shown`}
-          >
-            <List size={18} />
-            <span className="action-label">Aircraft</span>
-            <span className="action-count">{filtered.length}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobilePanel(mobilePanel === 'filters' ? null : 'filters')}
-            aria-expanded={mobilePanel === 'filters'}
-            aria-label={filterCount ? `Filters, ${filterCount} active` : 'Filters'}
-          >
-            <Filter size={18} />
-            <span className="action-label">Filters</span>
-            {filterCount ? <span className="action-count">{filterCount}</span> : null}
-          </button>
+        {/* Search led the redesign for the same reason it leads a maps app:
+            the two things this page is opened for are "what is that overhead"
+            and "where is this one aircraft", and only the second had no way in
+            short of scrolling a list. It floats over the map on its own row,
+            where the aircraft and filter buttons it replaces used to sit. */}
+        <label className="map-search">
+          <Search size={16} aria-hidden="true" />
+          <input
+            ref={mapSearchRef}
+            value={filters.query}
+            onChange={(event) => setFilters({ ...filters, query: event.target.value })}
+            placeholder="Callsign, reg or type"
+            aria-label="Search aircraft"
+          />
+          {filters.query ? (
+            <button
+              type="button"
+              onClick={() => setFilters({ ...filters, query: '' })}
+              aria-label="Clear search"
+            >
+              <X size={15} />
+            </button>
+          ) : null}
+        </label>
+
+        {/* The receiver state the hidden header used to carry, now saying what
+            it is hearing as well as whether it is alive — the count the
+            aircraft button used to hold. */}
+        <div className="map-receiver-state" title={receiver?.lastSnapshotAt ?? 'Waiting for receiver'}>
+          <span className={`status-dot status-${receiverState}`} aria-hidden="true" />
+          <span className="map-receiver-copy">
+            {receiver?.name ?? 'Receiver'} · {filtered.length} tracked
+          </span>
+          <span className="visually-hidden">{`Receiver ${receiverState}`}</span>
         </div>
 
         {selected ? (
@@ -680,16 +726,67 @@ export function LivePage() {
         ) : null}
       </section>
 
+      {/*
+        The sheet is the page's second half rather than something summoned over
+        it, and it is only ever showing one of two things: the traffic list, or
+        the aircraft picked out of it. Both hang off one stop, so the grab
+        handle means the same thing either way.
+      */}
       {selected ? (
         <AircraftDetailPanel
           aircraft={selected}
           newSince={newSince}
           onClose={closeDetails}
           panelRef={detailPanelRef}
-          expanded={detailExpanded}
-          onToggleExpanded={() => setDetailExpanded((value) => !value)}
+          sheet={sheet}
         />
-      ) : null}
+      ) : (
+        <aside ref={liveSheetRef} className="live-sheet" aria-label="Live aircraft">
+          <button
+            className="detail-sheet-handle"
+            type="button"
+            onClick={sheet.cycle}
+            {...sheet.gestureProps}
+          >
+            <span className="detail-sheet-grip" aria-hidden="true" />
+            <span className="visually-hidden">{nextStopLabel(sheetStop)}</span>
+          </button>
+          <div className="live-sheet-heading" {...sheet.gestureProps}>
+            <span className="eyebrow">Overhead now</span>
+            {/* The list has no column headers to hang sort arrows off at this
+                width, so the ordering names itself and doubles as the way into
+                the filters that decide what is being ordered. */}
+            <button
+              type="button"
+              className={`live-sheet-order ${filterCount ? 'active' : ''}`}
+              onClick={() => setMobilePanel(mobilePanel === 'filters' ? null : 'filters')}
+              aria-expanded={mobilePanel === 'filters'}
+              aria-label={
+                filterCount
+                  ? `${sortDescription(sort)}, ${filterCount} filter${filterCount === 1 ? '' : 's'} active. Open filters`
+                  : `${sortDescription(sort)}. Open filters`
+              }
+            >
+              <SlidersHorizontal size={14} aria-hidden="true" />
+              <span>{sortDescription(sort)}</span>
+              {filterCount ? <span className="action-count">{filterCount}</span> : null}
+            </button>
+          </div>
+          <LiveSheetTraffic
+            aircraft={filtered}
+            selectedIcao={selectedIcao}
+            onSelect={selectAircraft}
+            newSince={newSince}
+            loading={!hasSnapshot}
+            emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
+            emptyDescription={
+              aircraftList.length
+                ? 'Try widening the current filters.'
+                : 'The latest receiver snapshot contains no current aircraft.'
+            }
+          />
+        </aside>
+      )}
 
       {mobilePanel ? (
         <button
@@ -699,55 +796,6 @@ export function LivePage() {
           aria-label="Close panel"
         />
       ) : null}
-      <aside
-        ref={mobileListRef}
-        className={`mobile-sheet mobile-list-sheet ${mobilePanel === 'list' ? 'open' : ''}`}
-        role="dialog"
-        aria-modal={mobilePanel === 'list'}
-        aria-label="Live aircraft list"
-        aria-hidden={mobilePanel !== 'list'}
-        inert={mobilePanel !== 'list'}
-      >
-        <div className="sheet-handle" />
-        <div className="aircraft-panel-header">
-          <div><h2>{filtered.length} aircraft</h2></div>
-          <button className="icon-button" type="button" onClick={() => setMobilePanel(null)} aria-label="Close aircraft list"><X size={18} /></button>
-        </div>
-        <label className="quick-search mobile-search">
-          <Search size={15} />
-          <input
-            value={filters.query}
-            onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-            placeholder="Search aircraft"
-            aria-label="Search aircraft"
-          />
-          {filters.query ? (
-            <button
-              type="button"
-              onClick={() => setFilters({ ...filters, query: '' })}
-              aria-label="Clear search"
-            >
-              <X size={14} />
-            </button>
-          ) : null}
-        </label>
-        <AircraftTable
-          aircraft={filtered}
-          selectedIcao={selectedIcao}
-          sort={sort}
-          onSort={setSort}
-          onSelect={selectAircraft}
-          newSince={newSince}
-          columns={mobileColumns}
-          loading={!hasSnapshot}
-          emptyTitle={aircraftList.length ? 'No aircraft match' : 'No aircraft reported'}
-          emptyDescription={
-            aircraftList.length
-              ? 'Try widening the current filters.'
-              : 'The latest receiver snapshot contains no current aircraft.'
-          }
-        />
-      </aside>
       <aside
         ref={mobileFiltersRef}
         className={`mobile-sheet mobile-filter-sheet ${mobilePanel === 'filters' ? 'open' : ''}`}
