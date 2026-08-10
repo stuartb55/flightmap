@@ -4,7 +4,8 @@ import type { CustomAlertRule } from '@flightmap/shared'
 import type { WatchlistEntry } from '../types'
 import { api } from '../lib/api'
 import { Router } from '../lib/router'
-import { AlertsPage } from './AlertsPage'
+import type { AlertEvent } from '../types'
+import { AlertsPage, groupByDay } from './AlertsPage'
 
 const dispatch = vi.fn()
 
@@ -115,5 +116,41 @@ describe('AlertsPage watchlist editing', () => {
 
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Enabled' })).toBeChecked())
     expect(screen.getByRole('alert')).toHaveTextContent('Receiver database unavailable')
+  })
+})
+
+describe('groupByDay', () => {
+  const event = (createdAt: string, id: string): AlertEvent => ({
+    id,
+    type: 'watchlist',
+    createdAt,
+    icao: '406b90',
+    callsign: 'EZY42KD',
+    title: 'Watchlist aircraft detected',
+    message: 'Watchlisted aircraft is active',
+    dismissedAt: null,
+    severity: 'info',
+  })
+
+  /* The stream reads top to bottom in the order the list arrived in, so the
+     headings have to appear in that order rather than in date order. */
+  it('groups consecutive alerts under the day they happened on', () => {
+    const now = new Date()
+    const yesterday = new Date(now.getTime() - 86_400_000)
+    const older = new Date(now.getTime() - 5 * 86_400_000)
+    const groups = groupByDay([
+      event(now.toISOString(), 'a'),
+      event(now.toISOString(), 'b'),
+      event(yesterday.toISOString(), 'c'),
+      event(older.toISOString(), 'd'),
+    ])
+
+    expect(groups.map(([label]) => label).slice(0, 2)).toEqual(['Today', 'Yesterday'])
+    expect(groups.map(([, entries]) => entries.length)).toEqual([2, 1, 1])
+    expect(groups).toHaveLength(3)
+  })
+
+  it('returns nothing to caption when there are no alerts', () => {
+    expect(groupByDay([])).toEqual([])
   })
 })

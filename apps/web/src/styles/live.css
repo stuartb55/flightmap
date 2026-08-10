@@ -812,7 +812,7 @@
   border-color: rgb(var(--accent-rgb) / 0.38);
 }
 
-.saved-view-button > span {
+.saved-view-count {
   min-width: 21px;
   padding: 1px 5px;
   border-radius: 8px;
@@ -2443,6 +2443,267 @@ input[aria-invalid='true'] {
 .empty-state span,
 .empty-state p {
   margin: 5px 0 0;
+  color: var(--ink-26);
+  font-size: 13px;
+}
+
+/*
+ * The Live sheet's own contents. The sheet exists only where the map has the
+ * whole screen to itself and the list has nowhere else to be — beside the map
+ * the aircraft panel and the detail column already say all of this — so it is
+ * out of the layout entirely until responsive.css lays it out.
+ */
+.live-sheet {
+  display: none;
+}
+
+/* Both belong to the layout where the map has the screen to itself: beside the
+   map the aircraft panel carries its own search field and the header carries
+   the receiver state. */
+.map-search,
+.map-receiver-state {
+  display: none;
+}
+
+/*
+ * The nearest few, as cards wide enough to be read at a glance from the peek
+ * stop. This is the answer to "what is that overhead", which is most of why
+ * the page gets opened, and it is the one thing that should never need a
+ * scroll to reach.
+ */
+.sheet-nearest {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sheet-nearest::-webkit-scrollbar {
+  display: none;
+}
+
+.sheet-nearest-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  width: 150px;
+  min-height: 92px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-20);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-nearest-card.selected {
+  border-color: rgb(var(--accent-rgb) / 0.4);
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.sheet-nearest-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.sheet-nearest-identity i {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.sheet-nearest-identity strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-nearest-type {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-nearest-range {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.sheet-nearest-range strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-nearest-range span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 11px;
+}
+
+/* The whole filtered list, below the strip, for the stops tall enough to hold
+   it. This is the only part of the sheet that scrolls. */
+.sheet-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.sheet-rows::-webkit-scrollbar {
+  display: none;
+}
+
+/* Nothing but the peek's own header fits at the peek stop, and the rows are
+   what the next stop up is for. */
+.live-page.sheet-peek .sheet-rows {
+  display: none;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--line-soft-rgb) / 0.72);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-row.selected {
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.sheet-row-tile {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+/* Rotated to the ground track, so the row and the marker on the map are
+   recognisably the same aircraft pointing the same way. */
+.sheet-row-glyph {
+  display: block;
+}
+
+.sheet-row-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sheet-row-name strong {
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-row-badge {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.sheet-row-badge.watched {
+  color: var(--hue-15);
+}
+
+.sheet-row-badge.new {
+  color: var(--hue-30);
+}
+
+.sheet-row-identity small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-row-readings {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.sheet-row-readings strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Coloured by the altitude ramp the map paints markers with: the row says how
+   high without spending a word on it. */
+.sheet-row-readings small {
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sheet-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 110px;
+  padding: 20px 24px;
+  text-align: center;
+}
+
+.sheet-empty strong {
+  color: var(--muted-bright);
+  font-size: 15px;
+}
+
+.sheet-empty p {
+  margin: 0;
   color: var(--ink-26);
   font-size: 13px;
 }

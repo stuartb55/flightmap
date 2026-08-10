@@ -53,6 +53,26 @@ const alertPresentation = {
   },
 } as const
 
+/**
+ * Alerts read as a stream of events rather than a flat pile of cards, and a
+ * stream needs to say when. The day is a heading over the run rather than a
+ * date repeated on every entry, which leaves each entry carrying only the
+ * clock time — the part that differs.
+ */
+export function groupByDay(alerts: AlertEvent[]): [label: string, entries: AlertEvent[]][] {
+  const today = formatDate(new Date().toISOString())
+  const yesterday = formatDate(new Date(Date.now() - 86_400_000).toISOString())
+  const groups = new Map<string, AlertEvent[]>()
+  for (const alert of alerts) {
+    const date = formatDate(alert.createdAt)
+    const label = date === today ? 'Today' : date === yesterday ? 'Yesterday' : date
+    const existing = groups.get(label)
+    if (existing) existing.push(alert)
+    else groups.set(label, [alert])
+  }
+  return [...groups]
+}
+
 function AlertCard({
   alert,
   live,
@@ -74,7 +94,11 @@ function AlertCard({
       <div className="alert-card-body">
         <div className="alert-card-heading">
           <span className="alert-kind">{presentation.label}</span>
-          <span className="alert-time">{formatDate(alert.createdAt)} · {formatTime(alert.createdAt)}</span>
+          <span className="alert-time">
+            {/* Dropped where a day heading above the run already says it. */}
+            <span className="alert-date">{formatDate(alert.createdAt)} · </span>
+            {formatTime(alert.createdAt)}
+          </span>
         </div>
         <h2>{alert.title}</h2>
         <p>{alert.message}</p>
@@ -422,14 +446,19 @@ export function AlertsPage() {
         {loading && !alerts.length ? (
           Array.from({ length: 3 }, (_, index) => <div className="alert-card-skeleton" key={index} />)
         ) : filtered.length ? (
-          filtered.map((alert) => (
-            <AlertCard
-              key={alert.id}
-              alert={alert}
-              live={liveIcaos.has(alert.icao)}
-              pending={pending.has(alert.id)}
-              onDismiss={() => void dismiss(alert)}
-            />
+          groupByDay(filtered).map(([day, entries]) => (
+            <section className="alert-day" key={day} aria-label={day}>
+              <h2 className="alert-day-label">{day}</h2>
+              {entries.map((alert) => (
+                <AlertCard
+                  key={alert.id}
+                  alert={alert}
+                  live={liveIcaos.has(alert.icao)}
+                  pending={pending.has(alert.id)}
+                  onDismiss={() => void dismiss(alert)}
+                />
+              ))}
+            </section>
           ))
         ) : (
           <div className="empty-state large">

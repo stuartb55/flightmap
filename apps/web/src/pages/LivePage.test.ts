@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AlertEvent } from '../types'
-import { emergencyBannerAlert } from './LivePage'
+import type { AircraftSortKey } from '../lib/aircraft-filter'
+import { emergencyBannerAlert, sortDescription } from './LivePage'
 
 function alert(overrides: Partial<AlertEvent> = {}): AlertEvent {
   return {
@@ -35,5 +36,27 @@ describe('emergencyBannerAlert', () => {
         emergency,
       ]),
     ).toBe(emergency)
+  })
+})
+
+describe('sortDescription', () => {
+  it('names the ordering in the words a reader would use', () => {
+    expect(sortDescription({ key: 'distance', direction: 'asc' })).toBe('Nearest first')
+    expect(sortDescription({ key: 'distance', direction: 'desc' })).toBe('Farthest first')
+    expect(sortDescription({ key: 'altitude', direction: 'desc' })).toBe('Highest first')
+    expect(sortDescription({ key: 'freshness', direction: 'asc' })).toBe('Newest first')
+  })
+
+  /* The sheet's header is the only thing at this width saying which way the
+     rows are ordered, so every sort the table offers has to have an answer. */
+  it('has a description for every column the table can sort by', () => {
+    const keys: AircraftSortKey[] = [
+      'identity', 'altitude', 'distance', 'speed', 'freshness',
+      'verticalRate', 'track', 'squawk', 'operator', 'typeCode',
+    ]
+    for (const key of keys) {
+      expect(sortDescription({ key, direction: 'asc' })).toBeTruthy()
+      expect(sortDescription({ key, direction: 'desc' })).toBeTruthy()
+    }
   })
 })

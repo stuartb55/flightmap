@@ -1,13 +1,5 @@
 import { airlineOperatorFromCallsign } from '@flightmap/shared'
-import {
-  type FormEvent,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type FormEvent, type RefObject, useEffect, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -36,6 +28,7 @@ import {
 } from '../lib/format'
 import { useUnitPreferences } from '../lib/unit-preferences'
 import { isNewSighting } from '../lib/sighting-preferences'
+import { nextStopLabel, type SheetStopControls } from '../lib/use-sheet-stops'
 import { useLiveDispatch } from '../state/LiveContext'
 import type { Aircraft, AircraftDetail, RouteAirport } from '../types'
 
@@ -45,74 +38,15 @@ interface Props {
   /** Cutoff from the sighting preference; null when the marker is off. */
   newSince?: number | null
   /**
-   * Supplied where the panel is a bottom sheet over the map rather than a
-   * column beside it. Collapsed, it shows only the hero, so the map keeps most
-   * of a phone screen; the grab handle switches between the two.
+   * Supplied where the panel is the page's bottom sheet rather than a column
+   * beside the map. At the peek stop it shows the identity and the four
+   * readings and nothing else, so the map keeps most of a phone screen; the
+   * grab handle moves it up. Absent beside the map, where the panel is always
+   * its full height.
    */
-  expanded?: boolean
-  onToggleExpanded?: () => void
+  sheet?: SheetStopControls
   /** Set on the sheet so the map can measure how much of itself is covered. */
   panelRef?: RefObject<HTMLElement | null>
-}
-
-/** Far enough that a swipe cannot be mistaken for a tap on what it started on. */
-const SWIPE_THRESHOLD_PX = 40
-/** Where a press stops being a press and starts being a drag. */
-const DRAG_START_PX = 8
-
-/**
- * Lets the sheet be dragged between its two stops rather than only tapped on
- * the grab handle, which is a small target for the gesture people already
- * expect. Attached to the handle and the hero — the parts of the sheet that
- * are always on screen whichever stop it is at.
- */
-function useSheetSwipe(expanded: boolean, onToggleExpanded?: () => void) {
-  const origin = useRef<{ y: number; pointerId: number; captured?: boolean } | null>(null)
-  const swiped = useRef(false)
-
-  return {
-    onPointerDown: (event: ReactPointerEvent) => {
-      if (event.pointerType === 'mouse' && event.button !== 0) return
-      // Text entry keeps its own drag; everything else here is draggable, so a
-      // swipe that happens to begin on the star or a link still moves the sheet.
-      if ((event.target as HTMLElement).closest('input, textarea, select')) return
-      origin.current = { y: event.clientY, pointerId: event.pointerId }
-      swiped.current = false
-    },
-    onPointerMove: (event: ReactPointerEvent) => {
-      const start = origin.current
-      if (!start || start.pointerId !== event.pointerId || start.captured) return
-      if (Math.abs(event.clientY - start.y) < DRAG_START_PX) return
-      // An upward swipe ends over the map, so the gesture has to be followed
-      // off the element it started on to be seen through to its end. Capture
-      // waits for the drag to declare itself, because it also redirects the
-      // click — a press that never moves has to reach the button under it.
-      start.captured = true
-      event.currentTarget.setPointerCapture(event.pointerId)
-    },
-    onPointerUp: (event: ReactPointerEvent) => {
-      const start = origin.current
-      origin.current = null
-      if (!start || start.pointerId !== event.pointerId) return
-      const delta = event.clientY - start.y
-      if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return
-      swiped.current = true
-      const wantsExpanded = delta < 0
-      if (wantsExpanded !== expanded) onToggleExpanded?.()
-    },
-    onPointerCancel: () => {
-      origin.current = null
-    },
-    // A swipe still ends in a click on whatever it started on; the sheet has
-    // already answered the gesture, so that click is not also a tap. Anything
-    // stale is cleared by the next press, which always precedes its own click.
-    onClickCapture: (event: ReactMouseEvent) => {
-      if (!swiped.current) return
-      swiped.current = false
-      event.stopPropagation()
-      event.preventDefault()
-    },
-  }
 }
 
 /**
@@ -161,8 +95,7 @@ export function AircraftDetailPanel({
   aircraft,
   onClose,
   newSince = null,
-  expanded = false,
-  onToggleExpanded,
+  sheet,
   panelRef,
 }: Props) {
   useUnitPreferences()
@@ -277,7 +210,6 @@ export function AircraftDetailPanel({
      resolved says nothing the callsign above it has not already said. */
   const route = detail?.route?.origin || detail?.route?.destination ? detail.route : null
   const positionAvailable = aircraft.latitude != null && aircraft.longitude != null
-  const swipe = useSheetSwipe(expanded, onToggleExpanded)
   const climbing = aircraft.verticalRate == null || Math.abs(aircraft.verticalRate) < 64
     ? null
     : aircraft.verticalRate > 0
@@ -285,24 +217,23 @@ export function AircraftDetailPanel({
   return (
     <aside
       ref={panelRef}
-      className={`detail-panel ${expanded ? 'expanded' : ''}`}
+      className="detail-panel"
       aria-label={`${aircraftLabel(aircraft)} aircraft details`}
     >
-      {onToggleExpanded ? (
+      {sheet ? (
         <button
           className="detail-sheet-handle"
           type="button"
-          onClick={onToggleExpanded}
-          aria-expanded={expanded}
-          {...swipe}
+          onClick={sheet.cycle}
+          {...sheet.gestureProps}
         >
           <span className="detail-sheet-grip" aria-hidden="true" />
-          <span className="visually-hidden">{expanded ? 'Collapse details' : 'Expand details'}</span>
+          <span className="visually-hidden">{nextStopLabel(sheet.stop)}</span>
         </button>
       ) : null}
       <div
         className={`detail-hero ${aircraft.hasActiveAlert ? 'detail-hero-alert' : ''}`}
-        {...(onToggleExpanded ? swipe : {})}
+        {...(sheet ? sheet.gestureProps : {})}
       >
         <div className="panel-title-row">
           <span className="aircraft-category-icon" aria-hidden="true">

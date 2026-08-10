@@ -142,6 +142,24 @@
   padding: 16px 22px 28px;
 }
 
+/* Alerts are a stream of events, so they are grouped by the day they happened
+   on and each entry carries only the clock time. Beside the map the grouping
+   is a quiet heading over the run; on a phone it captions a bordered block. */
+.alert-day-label {
+  max-width: 900px;
+  margin: 0 auto 7px;
+  color: var(--ink-27);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.alert-day + .alert-day .alert-day-label {
+  margin-top: 16px;
+}
+
 .alert-card {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) auto;

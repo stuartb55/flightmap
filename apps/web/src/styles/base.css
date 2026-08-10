@@ -503,7 +503,9 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.mobile-nav {
+.mobile-nav,
+.mobile-more-sheet,
+.mobile-more-backdrop {
   display: none;
 }
 
