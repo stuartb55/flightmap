@@ -3,6 +3,7 @@ import pino from "pino";
 import { loadConfig } from "./config.js";
 import { Database } from "./db/database.js";
 import { FlightRepository } from "./db/repository.js";
+import { PhotoRepository } from "./db/photo-repository.js";
 import { ReceiverCollector } from "./ingestion/collector.js";
 import { LiveHub } from "./realtime/live-hub.js";
 import { MaintenanceService } from "./services/maintenance.js";
@@ -10,6 +11,7 @@ import { InsightBackfillService } from "./services/insight-backfill.js";
 import { MetadataService } from "./services/metadata.js";
 import { AirportImportService } from "./services/airports.js";
 import { RouteLookup } from "./services/routes.js";
+import { AircraftPhotoService } from "./services/aircraft-photos.js";
 import { StatusService } from "./services/status.js";
 import { AppSettingsService } from "./settings.js";
 
@@ -48,10 +50,13 @@ const collector = new ReceiverCollector(
   hub,
   logger
 );
+const photoStore = new PhotoRepository(database);
 const maintenance = new MaintenanceService(
   database,
   config,
-  logger
+  logger,
+  photoStore,
+  () => config.aircraftPhotoCacheEntries
 );
 const insightBackfill = new InsightBackfillService(database, logger);
 const metadata = new MetadataService(database, config, logger);
@@ -60,6 +65,10 @@ const status = new StatusService(config, repository, collector.state);
    route lookup on or off takes effect on the next selection instead of on the
    next restart. */
 const routes = new RouteLookup(database, () => config, logger);
+/* Reads the settings on every call for the same reason: turning photographs on
+   or changing the source takes effect on the next profile view rather than on
+   the next restart. */
+const photos = new AircraftPhotoService(photoStore, () => config, logger);
 const airportImport = new AirportImportService(
   settings,
   config,
@@ -90,6 +99,8 @@ const app = await buildApp({
     settings,
     airportImport,
     routes,
+    photos,
+    photoStore,
     applyRuntimeSettings,
     bootstrapped: () => settings.isLoaded()
   },

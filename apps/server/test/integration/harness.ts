@@ -52,7 +52,8 @@ const applicationTables = [
   "saved_views",
   "receiver_samples",
   "collector_checkpoint",
-  "maintenance_log"
+  "maintenance_log",
+  "aircraft_photos"
 ];
 
 export async function resetDatabase(database: Database): Promise<void> {

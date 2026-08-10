@@ -105,10 +105,33 @@ const settingsShape = {
   routeLookupTimeoutMs: z.number().int().min(500).max(30_000),
   routeLookupTtlHours: z.number().int().min(1).max(8_760),
   routeLookupNegativeTtlHours: z.number().int().min(1).max(8_760),
+  /**
+   * Where aircraft photographs come from, and how long they are kept.
+   *
+   * Shipped empty, like `metadataUrl` and `airportDataUrl` before it: this
+   * application cannot verify anyone's licence terms, so pretending to by
+   * naming a vendor in code buys nothing. What it can do is refuse to fetch
+   * anything until an operator configures a URL and refuse to ship pointing at
+   * a third party by default. Which source a deployment uses, and whether its
+   * terms permit redisplay and caching, is recorded by that operator in
+   * `docs/photos.md`.
+   *
+   * Empty is a meaningful value here and not a URL, so this is a union rather
+   * than `httpUrlSchema` — validated as http or https only once it is set.
+   *
+   * The download's own safety limits are fixed in `services/aircraft-photos.ts`
+   * for the reason the airport import gives: nobody should have to reason
+   * about a byte cap.
+   */
+  aircraftPhotoSourceUrl: z.union([z.literal(""), httpUrlSchema]),
+  aircraftPhotoTtlDays: z.number().int().min(1).max(365),
+  aircraftPhotoNegativeTtlDays: z.number().int().min(1).max(365),
+  aircraftPhotoCacheEntries: z.number().int().min(0).max(100_000),
   collectorEnabled: z.boolean(),
   maintenanceEnabled: z.boolean(),
   metadataUpdatesEnabled: z.boolean(),
-  routeLookupEnabled: z.boolean()
+  routeLookupEnabled: z.boolean(),
+  aircraftPhotosEnabled: z.boolean()
 };
 
 /**
@@ -196,10 +219,29 @@ export const defaultAppSettings: AppSettings = Object.freeze({
   routeLookupTimeoutMs: 4_000,
   routeLookupTtlHours: 24 * 14,
   routeLookupNegativeTtlHours: 24 * 3,
+  /*
+   * Empty, not a vendor. The route lookup above names one because adsbdb
+   * publishes terms this project can point at; nothing comparable exists for
+   * photographs, where the licence attaches to each image and to the
+   * photographer rather than to the API. An operator who wants photographs
+   * chooses a source, records its terms in `docs/photos.md`, and puts the URL
+   * here — with `{icao}` substituted. Until then nothing is fetched, which is
+   * also what the empty string means to the service.
+   */
+  aircraftPhotoSourceUrl: "",
+  aircraftPhotoTtlDays: 30,
+  aircraftPhotoNegativeTtlDays: 7,
+  /*
+   * At the 200 kB per-image cap this is a 400 MB worst case against the 40 GB
+   * floor in `docs/disk-sizing.md`, and a realistic case a good deal smaller —
+   * a thumbnail from a photo API is tens of kilobytes.
+   */
+  aircraftPhotoCacheEntries: 2_000,
   collectorEnabled: true,
   maintenanceEnabled: true,
   metadataUpdatesEnabled: true,
-  routeLookupEnabled: false
+  routeLookupEnabled: false,
+  aircraftPhotosEnabled: false
 });
 
 export type SettingsResponse = {

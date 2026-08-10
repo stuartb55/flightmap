@@ -96,6 +96,13 @@ function dependencies() {
     routes: {
       lookup: vi.fn().mockResolvedValue(null)
     },
+    // Photographs off, which is the default an installation ships with.
+    photos: {
+      status: vi.fn().mockResolvedValue(null)
+    },
+    photoStore: {
+      image: vi.fn().mockResolvedValue(undefined)
+    },
     applyRuntimeSettings: vi.fn().mockResolvedValue(undefined)
   };
 }
@@ -499,6 +506,110 @@ describe("structured route errors", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().route).toBeNull();
+    await server.close();
+  });
+
+  /*
+   * The detail response reports what is cached and nothing more. A fetch this
+   * request triggered lands afterwards, which is what keeps a third party off
+   * the critical path of opening a profile.
+   */
+  it("reports a cached photograph on the aircraft detail", async () => {
+    const deps = dependencies();
+    deps.photos.status = vi.fn().mockResolvedValue({
+      available: true,
+      credit: "A Photographer",
+      linkUrl: "https://photos.test/photo/1",
+      width: 640,
+      height: 427
+    });
+    const server = await app(deps);
+
+    const response = await server.inject("/api/v1/aircraft/abc123");
+
+    expect(deps.photos.status).toHaveBeenCalledWith("abc123");
+    expect(response.json()).toMatchObject({
+      photo: { available: true, credit: "A Photographer" }
+    });
+    await server.close();
+  });
+
+  it("serves the aircraft detail with no photograph on a default installation", async () => {
+    const deps = dependencies();
+    const server = await app(deps);
+
+    const response = await server.inject("/api/v1/aircraft/abc123");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().photo).toBeNull();
+    await server.close();
+  });
+
+  /*
+   * Served from this origin rather than linked to, which is the point of
+   * caching bytes: the only host that learns which airframes are being looked
+   * at is the one an operator configured.
+   */
+  it("serves a cached photograph with a strong ETag and a long freshness window", async () => {
+    const deps = dependencies();
+    const image = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    deps.photoStore.image = vi.fn().mockResolvedValue({
+      image,
+      contentType: "image/png",
+      etag: '"cq-1x2y3"'
+    });
+    const server = await app(deps);
+
+    const response = await server.inject("/api/v1/aircraft/abc123/photo");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.headers.etag).toBe('"cq-1x2y3"');
+    expect(response.headers["cache-control"]).toBe("public, max-age=86400");
+    expect(response.rawPayload.equals(image)).toBe(true);
+    await server.close();
+  });
+
+  it("answers a conditional request for an unchanged photograph with 304", async () => {
+    const deps = dependencies();
+    deps.photoStore.image = vi.fn().mockResolvedValue({
+      image: Buffer.from([0x89, 0x50]),
+      contentType: "image/png",
+      etag: '"cq-1x2y3"'
+    });
+    const server = await app(deps);
+
+    const response = await server.inject({
+      url: "/api/v1/aircraft/abc123/photo",
+      headers: { "if-none-match": '"cq-1x2y3"' }
+    });
+
+    expect(response.statusCode).toBe(304);
+    expect(response.rawPayload).toHaveLength(0);
+    await server.close();
+  });
+
+  /* Nothing fetched yet, and no photograph of this airframe, are the same
+     answer to a client: show no panel. */
+  it("404s a photograph that is not cached", async () => {
+    const server = await app();
+
+    const response = await server.inject("/api/v1/aircraft/abc123/photo");
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({
+      error: { code: "PHOTO_NOT_FOUND" }
+    });
+    await server.close();
+  });
+
+  it("returns a stable validation error for a photograph of an invalid ICAO", async () => {
+    const server = await app();
+    const response = await server.inject("/api/v1/aircraft/not-an-icao/photo");
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: "VALIDATION_ERROR" }
+    });
     await server.close();
   });
 
