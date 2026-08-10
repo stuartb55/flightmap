@@ -596,38 +596,6 @@
     cursor: pointer;
   }
 
-  /* Below the search row: the receiver state the hidden header used to carry,
-     saying what it is hearing as well as whether it is alive. The count moved
-     here from the aircraft button, which the sheet made redundant. */
-  .map-receiver-state {
-    position: absolute;
-    z-index: 19;
-    top: calc(var(--map-overlay-top) + var(--map-overlay-row));
-    left: max(10px, env(safe-area-inset-left));
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    max-width: calc(100% - 130px);
-    height: 30px;
-    padding: 0 11px;
-    border: 1px solid rgb(var(--line-bright-rgb) / 0.7);
-    border-radius: 15px;
-    background: var(--veil-10);
-    backdrop-filter: blur(12px);
-  }
-
-  .map-receiver-copy {
-    overflow: hidden;
-    color: var(--ink-15);
-    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
   .mobile-sheet-backdrop {
     position: absolute;
     z-index: 69;
