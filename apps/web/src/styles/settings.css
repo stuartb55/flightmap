@@ -419,3 +419,26 @@
     justify-content: center;
   }
 }
+
+/*
+ * What enabling a card would actually do, said before the switch rather than
+ * beside it. This is the only feature that tells a third party which aircraft
+ * someone is looking at, and that belongs in prose an operator reads while
+ * deciding — not in a tooltip they reach only after deciding.
+ */
+.settings-disclosure {
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border: 1px solid rgb(var(--amber-rgb) / 0.24);
+  border-radius: 9px;
+  background: rgb(var(--amber-rgb) / 0.06);
+  color: var(--muted-bright);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-disclosure strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-weight: 600;
+}

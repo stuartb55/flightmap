@@ -46,7 +46,9 @@ in a form the profile does not produce, do not enable it.
 ## What is stored, and why
 
 The image itself is cached in PostgreSQL and served back from
-`GET /api/v1/aircraft/:icao/photo`, on this server's own origin. The alternative
+`GET /api/v1/aircraft/:icao/photo`, on this server's own origin, with a strong
+ETag and `no-cache` — so a browser holds one copy and revalidates rather than
+going on showing a photograph after the cache has been cleared. The alternative
 — storing the URL and letting each browser fetch it — was rejected for three
 reasons:
 
@@ -126,15 +128,28 @@ already has until maintenance drops them.
 | `aircraftPhotoNegativeTtlDays` | `7` | How long a miss or a failure is kept. |
 | `aircraftPhotoCacheEntries` | `2000` | How many rows the cache may hold. |
 
-These are server-managed: they are set through `PATCH /api/v1/settings` and have
-no field on the Settings page yet.
+They are edited on the Settings page, under **Aircraft photographs**. That card
+also reports how many photographs are cached and how much space they take, and
+has a button to clear the cache.
+
+Above the controls it names the host the configured URL actually reaches, so an
+operator can see where the addresses would go before turning the switch on —
+change the URL and the sentence changes with it.
+
+## Where a photograph appears
+
+The aircraft profile only, above the identity panel. The live detail panel is on
+the 1 Hz path and deliberately has none.
+
+The panel renders only when there is a photograph: an airframe the source has
+never had one for shows no panel, no empty frame and no spinner. The image
+carries its cached dimensions so the page does not shift as it loads, its `alt`
+describes the airframe rather than saying "photo", and the photographer's credit
+and link sit in the panel rather than behind a hover.
 
 ## Turning it off
 
-Set `aircraftPhotosEnabled` to `false`. Fetching stops immediately, including for
-anything already queued. Cached photographs are still served — to stop that as
-well, and to reclaim the space, drop the cache:
-
-```sh
-docker compose exec -T db psql -U flightmap -c 'TRUNCATE aircraft_photos'
-```
+Clear **Show aircraft photographs** in Settings. Fetching stops immediately,
+including for anything already queued. Cached photographs are still served, so
+use **Clear cached photographs** on the same card to remove them and reclaim the
+space.

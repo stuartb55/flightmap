@@ -3,6 +3,7 @@ import type {
   Aircraft,
   AircraftDetail,
   AircraftMetadata,
+  AircraftPhoto,
   AlertEvent,
   FlightRoute,
   HistoricalSummary,
@@ -223,6 +224,7 @@ export function adaptAircraftDetail(response: {
   recentSessions: WireSession[]
   alerts: WireAlert[]
   route?: FlightRoute | null
+  photo?: AircraftPhoto | null
 }): AircraftDetail {
   return {
     aircraft: response.aircraft ? adaptAircraft(response.aircraft) : null,
@@ -241,6 +243,9 @@ export function adaptAircraftDetail(response: {
     // Already in the shape the panel wants, and absent whenever there is
     // nothing to show — lookup off, no callsign, or no such route.
     route: response.route ?? null,
+    // Likewise: photographs off, no source configured, or nothing fetched for
+    // this airframe yet. The panel renders only when there is one.
+    photo: response.photo ?? null,
   }
 }
 

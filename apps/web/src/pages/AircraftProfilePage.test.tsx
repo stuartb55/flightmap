@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from '../lib/router'
@@ -130,5 +130,132 @@ describe('AircraftProfilePage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Aircraft not found' })).toBeInTheDocument()
     expect(screen.getByText('Aircraft 406b90 was not found')).toBeInTheDocument()
+  })
+})
+
+describe('the aircraft photograph panel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMock.aircraftActivity.mockResolvedValue(activity)
+  })
+
+  const photo = {
+    available: true,
+    credit: 'A Photographer',
+    linkUrl: 'https://photos.example/photo/1',
+    width: 640,
+    height: 427,
+  }
+
+  const image = () => screen.queryByRole('img', { name: /G-EZTH/ })
+
+  /*
+   * The default. Item 26 ships photographs off, so the overwhelmingly common
+   * profile is one with no photograph at all — and it has to look exactly as it
+   * did before this existed.
+   */
+  it('renders no panel at all when photographs are switched off', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo: null }))
+    renderProfile()
+
+    await screen.findByRole('heading', { name: 'EZY42KD' })
+    expect(image()).not.toBeInTheDocument()
+    expect(document.querySelector('.aircraft-photo-panel')).toBeNull()
+  })
+
+  /* A server older than the photograph cache sends no field at all. */
+  it('renders no panel when the server does not send the field', async () => {
+    apiMock.aircraft.mockResolvedValue(detail())
+    renderProfile()
+
+    await screen.findByRole('heading', { name: 'EZY42KD' })
+    expect(document.querySelector('.aircraft-photo-panel')).toBeNull()
+  })
+
+  /* Not an empty frame, and not a spinner that never resolves: an airframe the
+     source has no photograph of is the ordinary case. */
+  it('renders no panel for an airframe with no photograph', async () => {
+    apiMock.aircraft.mockResolvedValue(
+      detail({ photo: { ...photo, available: false } }),
+    )
+    renderProfile()
+
+    await screen.findByRole('heading', { name: 'EZY42KD' })
+    expect(document.querySelector('.aircraft-photo-panel')).toBeNull()
+  })
+
+  it('shows the photograph served from this receiver', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo }))
+    renderProfile()
+
+    const rendered = await screen.findByRole('img', { name: /G-EZTH/ })
+    expect(rendered).toHaveAttribute('src', '/api/v1/aircraft/406b90/photo')
+  })
+
+  /*
+   * The panel must not shift the page under someone already reading it, so the
+   * box is reserved from the cached dimensions before any bytes arrive.
+   */
+  it('reserves the image box from the cached dimensions', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo }))
+    renderProfile()
+
+    const rendered = await screen.findByRole('img', { name: /G-EZTH/ })
+    expect(rendered).toHaveAttribute('width', '640')
+    expect(rendered).toHaveAttribute('height', '427')
+  })
+
+  /*
+   * What the airframe is, not what the element is. "Photo" would tell a
+   * screen-reader user only that they are missing something.
+   */
+  it('describes the airframe rather than the element', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo }))
+    renderProfile()
+
+    const rendered = await screen.findByRole('img', { name: /G-EZTH/ })
+    expect(rendered).toHaveAttribute('alt', 'G-EZTH, Airbus A320')
+  })
+
+  it('falls back to the address when nothing identifies the airframe', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo, metadata: null }))
+    renderProfile()
+
+    expect(await screen.findByRole('img', { name: 'Aircraft 406B90' })).toBeInTheDocument()
+  })
+
+  /* Most licences that permit redisplay require a visible credit, and a
+     tooltip is not visible to a touch screen or to a reader. */
+  it('credits the photographer and links back safely', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo }))
+    renderProfile()
+
+    const link = await screen.findByRole('link', { name: 'A Photographer' })
+    expect(link).toHaveAttribute('href', 'https://photos.example/photo/1')
+    expect(link).toHaveAttribute('rel', 'noreferrer noopener')
+  })
+
+  it('still credits when the source gave a link and no photographer', async () => {
+    apiMock.aircraft.mockResolvedValue(
+      detail({ photo: { ...photo, credit: null } }),
+    )
+    renderProfile()
+
+    expect(await screen.findByRole('link', { name: 'View the original' })).toBeInTheDocument()
+  })
+
+  /*
+   * The one case the cache cannot rule out in advance: the row said `present`,
+   * and maintenance evicted it between that answer and the request. Dropping
+   * the panel is the same answer as never having had one.
+   */
+  it('drops the panel when the image turns out not to be there', async () => {
+    apiMock.aircraft.mockResolvedValue(detail({ photo }))
+    renderProfile()
+
+    const rendered = await screen.findByRole('img', { name: /G-EZTH/ })
+    fireEvent.error(rendered)
+
+    await waitFor(() => expect(document.querySelector('.aircraft-photo-panel')).toBeNull())
   })
 })

@@ -47,6 +47,15 @@ export type PhotoEviction = {
   evicted: number;
 };
 
+/** What the Settings card reports about the cache it is offering to clear. */
+export type PhotoCacheSummary = {
+  /** Rows holding an image. */
+  photographs: number;
+  /** Rows recording that there is no photograph, or that a fetch failed. */
+  misses: number;
+  bytes: number;
+};
+
 type StateRow = {
   status: PhotoStatus;
   expired: boolean;
@@ -167,6 +176,42 @@ export class PhotoRepository {
         record.ttlSeconds
       ]
     );
+  }
+
+  /**
+   * What the cache is holding, for the Settings card to report before it
+   * offers to throw it away. Counted rather than estimated: the number an
+   * operator is deciding against has to be the real one.
+   */
+  async summary(): Promise<PhotoCacheSummary> {
+    const result = await this.database.pool.query<{
+      photographs: string;
+      misses: string;
+      bytes: string;
+    }>(
+      `SELECT count(*) FILTER (WHERE status = 'present') AS photographs,
+              count(*) FILTER (WHERE status <> 'present') AS misses,
+              coalesce(sum(bytes), 0) AS bytes
+         FROM aircraft_photos`
+    );
+    const row = result.rows[0];
+    return {
+      photographs: Number(row?.photographs ?? 0),
+      misses: Number(row?.misses ?? 0),
+      bytes: Number(row?.bytes ?? 0)
+    };
+  }
+
+  /**
+   * Empties the cache.
+   *
+   * The misses go with the photographs. Someone clearing the cache has usually
+   * changed the source, and keeping the old source's "there is no photograph of
+   * this" answers would suppress the new one's for a week.
+   */
+  async clear(): Promise<number> {
+    const result = await this.database.pool.query("DELETE FROM aircraft_photos");
+    return result.rowCount ?? 0;
   }
 
   /**

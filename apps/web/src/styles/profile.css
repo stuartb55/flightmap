@@ -214,3 +214,40 @@
   .custom-rule-manager form { grid-template-columns: 1fr; }
   .custom-rule-manager .rule-name, .custom-rule-actions { grid-column: auto; }
 }
+
+/*
+ * The airframe, photographed. The panel is the image and its credit and
+ * nothing else — no heading, because the picture says what it is more directly
+ * than a word above it would.
+ *
+ * `aspect-ratio` is taken from the `width` and `height` attributes the panel
+ * sets from the cached dimensions, so the browser reserves the right box
+ * before any bytes arrive and the page does not shift under a reader who has
+ * already started reading.
+ */
+.aircraft-photo-panel { padding: 0; overflow: hidden; }
+
+.aircraft-photo {
+  display: block;
+  /* Its own size, scaled down to fit and never up: a thumbnail stretched to
+     panel width is a blurred aircraft, and the point of the panel is to be
+     able to see which one it is. Centred, so a small one does not sit in a
+     corner of a wide panel. */
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  margin-inline: auto;
+  background: var(--surface-9);
+}
+
+.aircraft-photo-credit {
+  margin: 0;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-photo-credit a { color: var(--muted-bright); text-decoration: underline; }
+.aircraft-photo-credit a:hover { color: var(--accent-bright); }

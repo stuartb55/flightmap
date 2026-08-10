@@ -32,97 +32,6 @@ titles. Numbers 8, 11, 18 and 19 belonged to items dropped before implementation
 
 ## Tier 3 — Larger bets, scoped
 
-### 20. Aircraft photographs — **M** → items 26 and 27
-
-Item 26 has shipped; its specification is in
-[`docs/delivered-enhancements.md`](docs/delivered-enhancements.md). Item 27 below
-is what remains.
-
-The single most-requested feature in comparable apps, and the one that breaks the
-offline-first rule: it requires a runtime external API. Every other data source
-in the app is either local or refreshed by an operator-run import.
-
-**How the scoping questions were settled.**
-
-*Which source, and on what licence terms.* Not chosen in code. The source is a
-deployment setting shipped empty, exactly like `metadataUrl` and
-`airportDataUrl` already are (`settings.ts:84`, `:75`). The app cannot verify
-anyone's terms, so pretending to by hard-coding a vendor buys nothing; what it
-can do is refuse to fetch anything until an operator configures a URL and refuse
-to ship pointing at a third party by default. Which source a deployment uses, and
-whether its terms permit redisplay and caching, is recorded by that operator in
-`docs/photos.md`. The shipped adapter expects the shape the common public
-ICAO-hex photo APIs return: a JSON body carrying an image URL, a photographer
-credit, and a link back.
-
-*Storage budget and eviction.* Bytes are cached, not URLs — see item 26 for why —
-with a per-image cap and a cache-entry cap, worst case a few hundred megabytes
-against the 40 GB floor in `docs/disk-sizing.md`. Eviction is least-recently-
-served, in the existing maintenance run.
-
-*Where a photograph appears.* The aircraft profile only. The detail panel is on
-the 1 Hz path and the answer there is no — not "carefully". Revisit as a separate
-item if the profile version proves itself.
-
-*A receiver with no internet access.* Supported and unchanged: nothing is fetched
-unless enabled, a cached photograph still renders offline, and a missing one
-renders as an absent panel, not an error.
-
----
-
-### 27. Photographs on the aircraft profile — **S**
-
-- [ ] Implement
-
-**Problem.** Item 26 builds a cache nothing reads, and leaves the feature
-switchable only by someone with database access. This item is the surface and the
-disclosure.
-
-**Approach.**
-
-*Profile only.* A new panel on `AircraftProfilePage.tsx`, above the identity
-panel (`:161`). The `<img>` points at `/api/v1/aircraft/:icao/photo`, carries
-explicit `width`/`height` from the cached dimensions so the panel does not shift
-as it loads, and has an `alt` describing the airframe — registration and type
-where known, ICAO address otherwise — never "photo". A photograph the cache does
-not have renders no panel at all, not an empty frame and not a spinner that never
-resolves. The credit line names the photographer and links back, `rel="noreferrer
-noopener"`, and is part of the panel rather than a hover affordance.
-
-*A Settings card that tells the truth.* A new card modelled on `AirportData`
-(`SettingsPage.tsx:280`) and its download flow (`:424`): the enable switch, the
-source URL, the TTL and cache-size fields, a cached-count and cached-bytes
-summary, and a "Clear cached photographs" button. Above the controls, in prose
-and not in a tooltip: enabling this sends the ICAO address of each aircraft whose
-profile is opened to *the configured host, named*, and nothing else leaves this
-network. Deriving the host from the configured URL rather than hard-coding a name
-is the point — a changed URL changes the sentence.
-
-*Every new operator-editable key goes into `buildSettings`.* Five keys, five form
-fields, or the form's next save reverts them. Add the regression test that saves
-the form and asserts the photo settings survive the round trip; this trap is
-cheap to fall into and invisible until someone else saves Settings.
-
-**Files.** `apps/web/src/pages/AircraftProfilePage.tsx`,
-`apps/web/src/pages/SettingsPage.tsx`, `apps/web/src/lib/api.ts`,
-`apps/web/src/styles/profile.css` and `settings.css`,
-`apps/server/src/routes/api.ts` (cache summary
-and clear endpoints), tests alongside each.
-
-**Acceptance.**
-- With photographs disabled — the default — the profile is byte-identical to
-  today and the Settings card explains what enabling would do.
-- The panel holds its space: no layout shift measurable between the profile
-  rendering and the image arriving.
-- An airframe with no photograph shows no panel, no error, and no empty region.
-- The disclosure names the host actually configured, and changes when it changes.
-- The photographer credit and the link are present whenever an image is.
-- Saving Settings preserves every photo key; asserted by a round-trip test.
-- The e2e axe pass stays clean in both themes with the panel present and absent,
-  and the credit link is keyboard reachable with a visible focus ring.
-
----
-
 ### 21. Route inference — **L** → items 28, 29 and 30
 
 Origin/destination is not in the ADS-B payload and cannot be derived from the
@@ -401,18 +310,19 @@ history flow.
 
 ## What to decide next
 
-Whether tier 3 is wanted at all. The scoping is done and the items are ready, but
-both bets trade away a property the app currently holds — offline-first for items
-26 and 27, "everything shown is observed" for items 28 to 30 — and that is a
-product decision, not a scheduling one.
+Whether route inference is wanted. Aircraft photographs — the other tier-3 bet —
+has shipped, and shipped the way both were scoped to: off by default, with the
+disclosure written before the feature is reachable, and reversible by a switch.
+That is the pattern items 28 to 30 would follow.
 
-Both are built so the trade is opt-in and reversible: shipped off, with the
-disclosure written before the feature is reachable. That lowers the stakes of
-saying yes; it does not remove the decision, because a default-off feature nobody
-turns on is still work.
+The trade they ask for is a different one, and larger. Photographs gave up
+offline-first for a decoration an operator opts into; route inference gives up
+"everything shown is observed" for a claim about where an aircraft is going,
+shown next to figures the receiver actually heard. Marking inferences as
+inferences is in the scoping, but the two kinds of statement end up on the same
+panel either way.
 
-If only one is wanted, items 26 and 27 are the smaller, more certain win. If
-neither is, say so and close this document — the delivered record in
+If it is not wanted, say so and close this document — the delivered record in
 `docs/delivered-enhancements.md` stands on its own.
 
 ## Cross-cutting requirements
