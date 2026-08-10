@@ -15,5 +15,6 @@ backups/
 *.dump.sha256
 playwright-report/
 test-results/
+.playwright-mcp/
 .idea/
 .vscode/

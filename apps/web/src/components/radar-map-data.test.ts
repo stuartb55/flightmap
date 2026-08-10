@@ -12,11 +12,13 @@ import {
   replayPointAtTime,
   resolveStyleImageAlias,
   rulerData,
+  trackData,
 } from './radar-map-data'
 import { altitudeBands } from '../lib/altitude-bands'
+import { trackColour } from '../lib/track-colour'
 import { aviationUnits, metricUnits } from '../lib/unit-preferences'
 import { aircraft } from '../test/fixtures'
-import type { TrackPoint } from '../types'
+import type { SessionSummary, TrackPoint, TrackResponse } from '../types'
 
 describe('track interpolation', () => {
   const points: TrackPoint[] = [
@@ -209,6 +211,99 @@ describe('greatCircle', () => {
 
   it('reports no distance between a point and itself', () => {
     expect(greatCircle([-2, 53], [-2, 53]).distanceNm).toBe(0)
+  })
+})
+
+/*
+ * A track used to be drawn as one feature per sample pair, and the source's
+ * tiler drops a line whose whole length is under the tile tolerance. Segments
+ * of one flight are all about as long as each other, so they went at once —
+ * measured, every one of a 355 kt track's 1,400 segments at zoom 6 — and the
+ * track disappeared while the aircraft flying it stayed on screen. Runs are
+ * what keeps a line long enough to survive that, so their shape is the
+ * contract worth holding.
+ */
+describe('trackData', () => {
+  const point = (overrides: Partial<TrackPoint> & Pick<TrackPoint, 'latitude'>): TrackPoint => ({
+    recordedAt: '2026-07-29T12:00:00.000Z',
+    longitude: -2,
+    altitudeFt: 10_000,
+    groundSpeedKt: 300,
+    trackDegrees: 90,
+    ...overrides,
+  })
+  const session: SessionSummary = {
+    id: 'session-1',
+    icao: '400001',
+    callsigns: ['FLT0001'],
+    registration: null,
+    typeCode: null,
+    operator: null,
+    startedAt: '2026-07-29T11:59:00.000Z',
+    endedAt: null,
+    sampleCount: 4,
+    minimumAltitudeFt: null,
+    maximumAltitudeFt: null,
+    maximumSpeedKt: null,
+    closestDistanceNm: null,
+    hasDetailedTrack: true,
+    alertKinds: [],
+  }
+  const trackOf = (points: TrackPoint[]): TrackResponse => ({
+    session,
+    resolution: '1s',
+    points,
+    events: [],
+    truncated: false,
+  })
+  const runs = (points: TrackPoint[]) =>
+    trackData([trackOf(points)], 'altitude', 'dark').features
+
+  it('joins samples of one colour into a single line', () => {
+    const result = runs([
+      point({ latitude: 53 }),
+      point({ latitude: 53.1 }),
+      point({ latitude: 53.2 }),
+      point({ latitude: 53.3 }),
+    ])
+    expect(result).toHaveLength(1)
+    expect(result[0]!.geometry.coordinates).toEqual([
+      [-2, 53],
+      [-2, 53.1],
+      [-2, 53.2],
+      [-2, 53.3],
+    ])
+    expect(result[0]!.properties).toMatchObject({ sessionId: 'session-1', icao: '400001' })
+  })
+
+  it('breaks at a colour change and repeats the joining sample, so the line has no seam', () => {
+    const result = runs([
+      point({ latitude: 53, altitudeFt: 1_000 }),
+      point({ latitude: 53.1, altitudeFt: 1_000 }),
+      point({ latitude: 53.2, altitudeFt: 38_000 }),
+      point({ latitude: 53.3, altitudeFt: 38_000 }),
+    ])
+    expect(result).toHaveLength(2)
+    expect(result[0]!.geometry.coordinates).toEqual([[-2, 53], [-2, 53.1]])
+    expect(result[1]!.geometry.coordinates).toEqual([[-2, 53.1], [-2, 53.2], [-2, 53.3]])
+    expect(result[0]!.properties!.colour).not.toBe(result[1]!.properties!.colour)
+  })
+
+  it('takes the colour of the sample a run arrives at', () => {
+    const climb = runs([
+      point({ latitude: 53, altitudeFt: 1_000 }),
+      point({ latitude: 53.1, altitudeFt: 38_000 }),
+    ])
+    expect(climb).toHaveLength(1)
+    expect(climb[0]!.properties!.colour).toBe(
+      trackColour('altitude', point({ latitude: 53.1, altitudeFt: 38_000 }), 'dark'),
+    )
+  })
+
+  it('draws nothing for a track that cannot make a line', () => {
+    expect(runs([])).toHaveLength(0)
+    expect(runs([point({ latitude: 53 })])).toHaveLength(0)
+    expect(trackData([], 'altitude', 'dark').features).toHaveLength(0)
   })
 })
 
