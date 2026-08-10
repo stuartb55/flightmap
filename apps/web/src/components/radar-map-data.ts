@@ -459,6 +459,24 @@ export function receiverData(receiver?: Receiver | null): FeatureCollection<Poin
   }
 }
 
+/**
+ * A track as one line per run of samples sharing a colour, in the same "a span
+ * takes the colour of the point it arrives at" sense as `colourSpans`. Runs
+ * overlap by their joining sample, so a change of colour has no seam.
+ *
+ * Emitting a feature per sample pair instead — which this did — made a track
+ * vanish outright once it was zoomed far enough out. The source's tiler drops
+ * any line whose whole length falls under the tile's simplification tolerance,
+ * and because every segment is about as long as the next they all cross that
+ * threshold at the same zoom, taking the track with them.
+ *
+ * Measured against geojson-vt with the options `GeoJSONSource` passes it, the
+ * cutoff is roughly 29,350 / 2^zoom metres of projected length. A one-second
+ * sample at 355 kt survives intact at zoom 7 and all 1,400 segments disappear
+ * at zoom 6; a slower aircraft reaches it a zoom or two earlier. A run is
+ * measured over its whole length instead, so it lives or dies as the path it
+ * describes, and one feature replaces fourteen hundred either way.
+ */
 export function trackData(
   tracks: TrackResponse[],
   colourMode: TrackColourMode,
@@ -466,26 +484,44 @@ export function trackData(
 ): FeatureCollection<LineString> {
   const features: Feature<LineString>[] = []
   for (const track of tracks) {
+    let coordinates: Array<[number, number]> = []
+    let runColour: string | null = null
+    const flush = () => {
+      if (coordinates.length > 1 && runColour !== null) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            sessionId: track.session.id,
+            icao: track.session.icao,
+            colour: runColour,
+          },
+          geometry: { type: 'LineString', coordinates },
+        })
+      }
+      coordinates = []
+      runColour = null
+    }
     for (let index = 1; index < track.points.length; index += 1) {
       const previous = track.points[index - 1]
       const point = track.points[index]
-      if (!previous || !point) continue
-      features.push({
-        type: 'Feature',
-        properties: {
-          sessionId: track.session.id,
-          icao: track.session.icao,
-          colour: trackColour(colourMode, point, theme),
-        },
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [previous.longitude, previous.latitude],
-            [point.longitude, point.latitude],
-          ],
-        },
-      })
+      /*
+       * Unreachable on a dense array — this is `noUncheckedIndexedAccess`
+       * being satisfied, not gap handling. A break in reception is a gap in
+       * time, not in the array, and a run still draws straight across one.
+       */
+      if (!previous || !point) {
+        flush()
+        continue
+      }
+      const colour = trackColour(colourMode, point, theme)
+      if (colour !== runColour) {
+        flush()
+        coordinates = [[previous.longitude, previous.latitude]]
+        runColour = colour
+      }
+      coordinates.push([point.longitude, point.latitude])
     }
+    flush()
   }
   return { type: 'FeatureCollection', features }
 }

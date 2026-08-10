@@ -567,8 +567,22 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         },
       })
 
+      /*
+       * `tolerance: 0` on both trail sources. The default drops any line whose
+       * whole length falls under a tile's simplification tolerance rather than
+       * coarsening it, and a trail is a few minutes of flight that can
+       * legitimately be short — a holding aircraft leaves one metres long.
+       *
+       * On the history source it does something else, now that `trackData`
+       * emits runs that are too long to be dropped: it keeps the shape of the
+       * line at low zoom, where the default would thin a 69 nm track to about
+       * four points. That is simplification working as intended, so this is a
+       * deliberate trade of tile size for fidelity, and it is bounded — the
+       * server caps a track at 20,000 samples.
+       */
       map.addSource(ALL_TRAILS_SOURCE, {
         type: 'geojson',
+        tolerance: 0,
         data: allTrailsData(trailsRef.current, themeRef.current),
       })
       map.addLayer({
@@ -586,6 +600,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
       map.addSource(TRACK_SOURCE, {
         type: 'geojson',
+        tolerance: 0,
         data: trackData(tracksRef.current, trackColourModeRef.current, themeRef.current),
       })
       map.addLayer({
