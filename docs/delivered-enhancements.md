@@ -1,11 +1,11 @@
 # Delivered UX enhancements — phases 1 to 3
 
 The delivered phases of the post-v1 user-experience backlog: tiers 0, 1 and 2 in
-full.
+full, and the parts of tier 3 that have shipped since.
 Items are kept here in their original form as the record of what was specified
 and accepted; the code is the reference for how it behaves today.
 
-What remains — the two tier-3 bets — lives in [`../plan.md`](../plan.md). The original v1 build
+What remains of the two tier-3 bets lives in [`../plan.md`](../plan.md). The original v1 build
 specification is [`v1-build-plan.md`](v1-build-plan.md).
 
 Effort key: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3–5 days.
@@ -836,3 +836,111 @@ onboarding, in-app help, and multi-receiver support); the first three of those i
 commit `cf7caf3` and item 18 in `33f3230`. The gaps in the
 numbering are deliberate: the surviving numbers are stable identifiers used in
 branch names and pull request titles.
+
+---
+
+## Tier 3 — Larger bets, scoped
+
+The two tier-3 bets were each split into independently shippable items. What is
+here has shipped; the rest is still in [`../plan.md`](../plan.md).
+
+### 26. Aircraft photograph cache and fetch service — **M**
+
+- [x] Implement
+
+**Problem.** There is no photograph anywhere in the app, and adding one means the
+first runtime dependency on a third-party API in a codebase built to have none.
+The whole item is about containing that: off by default, fetched once per
+airframe, served from our own origin thereafter, and silent when it fails.
+
+**Approach.** Four decisions carry it.
+
+*Cache the bytes, not the link.* A hotlinked URL puts every viewer's browser in
+touch with the third party rather than just the server, breaks on an offline
+receiver even for a photograph already seen, and rots on the upstream's schedule.
+Store the image in `bytea` and serve it from `GET /api/v1/aircraft/:icao/photo`
+with a strong `ETag` and a long `max-age`, the same shape as the airports
+endpoint (`api.ts:96`). This is also what makes the disclosure in item 27 true:
+the only host that learns which airframes are being viewed is the configured one,
+and only once per airframe.
+
+*Never on the 1 Hz path.* Nothing joins `aircraft_photos` into the snapshot query
+(`live-repository.ts`) and nothing is fetched on a live tick. A fetch is
+triggered only by a profile request for an airframe with no unexpired row, runs
+in a service with one request in flight at a time and a bounded queue, and the
+profile response never waits on it — the image endpoint 404s until the row lands
+and the client re-requests on the next view.
+
+*A miss is a row.* An airframe the source has no photograph for gets a
+`status = 'absent'` row with a shorter expiry, or every view of a common
+unphotographed airframe re-asks upstream forever. A transport failure gets
+`status = 'failed'` with a shorter expiry again, so a temporary outage does not
+poison the cache for a month.
+
+*Reuse the download hardening that already exists.* `services/airports.ts` fixes
+a maximum download size and a timeout in code rather than in settings, on the
+argument that no operator can judge a sensible byte cap and a wrong one turns a
+hostile URL into a memory problem. Same reasoning, same pattern, smaller numbers:
+a per-image cap of 200 kB, a 10 second timeout, and a rejection of any response
+whose content type is not `image/jpeg`, `image/png` or `image/webp` — sniffed
+from the bytes, not trusted from the header.
+
+*Storage.* New migration `016_aircraft_photos.sql`:
+
+```
+aircraft_photos (
+  icao char(6) PRIMARY KEY,
+  status text NOT NULL CHECK (status IN ('present', 'absent', 'failed')),
+  image bytea, content_type text, bytes integer, width integer, height integer,
+  credit text, link_url text, source_url text,
+  fetched_at timestamptz NOT NULL, expires_at timestamptz NOT NULL,
+  last_served_at timestamptz NOT NULL DEFAULT now()
+)
+```
+
+with indexes on `expires_at` and `last_served_at`. The row is keyed on ICAO
+address, not registration, because that is what the live path has.
+
+*Settings.* New keys on `settingsShape` (`settings.ts:41`), all server-managed
+until item 27 gives them a form: `aircraftPhotosEnabled` (default `false`),
+`aircraftPhotoSourceUrl` (default `""`, and therefore not `httpUrlSchema` — a
+union with the empty string, validated as http/https when non-empty),
+`aircraftPhotoTtlDays` (30), `aircraftPhotoNegativeTtlDays` (7),
+`aircraftPhotoCacheEntries` (2,000). Note the split that already exists in the
+web client: `apps/web/src/types.ts:248`–`:256` marks server-managed keys optional
+and `buildSettings` (`SettingsPage.tsx:59`) omits them, which is safe because the
+endpoint is `PATCH` against `appSettingsPatchSchema` (`api.ts:124`). A key with no
+form field is therefore fine; a key with a form field must be added to
+`buildSettings` or saving the form silently reverts it.
+
+*Eviction.* A new step in `MaintenanceService.run` (`maintenance.ts:63`), beside
+the existing retention steps and inside the same advisory lock: delete expired
+rows, then delete least-recently-served rows beyond `aircraftPhotoCacheEntries`.
+Record the counts in `maintenance_log` (`001_initial.sql:248`) the way the other
+steps do, which means a migration column rather than a new table.
+
+**Files.** New `apps/server/src/db/migrations/016_aircraft_photos.sql`, new
+`apps/server/src/services/aircraft-photos.ts`, new
+`apps/server/src/db/photo-repository.ts`, `apps/server/src/settings.ts`,
+`apps/server/src/routes/api.ts`, `apps/server/src/services/maintenance.ts`,
+`packages/shared/src/contracts.ts` (photo status response),
+`apps/web/src/types.ts`, new `docs/photos.md`, `docs/disk-sizing.md`.
+
+**Acceptance.**
+- A default installation makes no outbound request to any photo host, ever;
+  asserted by a test that boots with defaults, exercises a profile view, and
+  fails on any fetch to an unconfigured host.
+- With the feature enabled and a stubbed upstream, viewing the same airframe
+  repeatedly produces exactly one upstream request per TTL; the second view is
+  served from PostgreSQL and the third from the browser cache via `ETag`.
+- An upstream that is slow, 404s, 500s, returns HTML, or returns a 10 MB file
+  produces an `absent` or `failed` row and never an unbounded read.
+- With the network unplugged, an airframe with a cached photograph still renders
+  it, and one without renders nothing and logs nothing at error level.
+- `live-repository.ts` gains no join and `npm run test:load` is unchanged at
+  1,000 aircraft.
+- After a maintenance run the cache holds no expired rows and no more than the
+  configured entry count; eviction is least-recently-served.
+- `docs/photos.md` states the configured source, the terms the operator recorded
+  for it, and the storage budget; `docs/disk-sizing.md` gains the photo cache as
+  a named line item.

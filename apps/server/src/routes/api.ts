@@ -25,6 +25,8 @@ import type { FlightRepository } from "../db/repository.js";
 import type { ReceiverCollector } from "../ingestion/collector.js";
 import type { LiveHub } from "../realtime/live-hub.js";
 import { AirportImportError, type AirportImportService } from "../services/airports.js";
+import type { AircraftPhotoService } from "../services/aircraft-photos.js";
+import type { PhotoRepository } from "../db/photo-repository.js";
 import type { RouteLookup } from "../services/routes.js";
 import type { StatusService } from "../services/status.js";
 import type { AppSettingsService } from "../settings.js";
@@ -47,6 +49,8 @@ export type ApiDependencies = {
   settings: AppSettingsService;
   airportImport: AirportImportService;
   routes: RouteLookup;
+  photos: AircraftPhotoService;
+  photoStore: PhotoRepository;
   applyRuntimeSettings: () => Promise<void>;
   /** False until boot-time settings have loaded; `/health/ready` reports
    *  `not_ready` rather than the process exiting on a database blip. */
@@ -65,6 +69,8 @@ export async function registerApiRoutes(
     settings,
     airportImport,
     routes,
+    photos,
+    photoStore,
     applyRuntimeSettings,
     bootstrapped = () => true
   } = dependencies;
@@ -164,12 +170,57 @@ export async function registerApiRoutes(
       });
     }
     /*
-     * Resolved here rather than in the live snapshot: a route needs a third
+     * Both resolved here rather than in the live snapshot: each needs a third
      * party, and the snapshot is rebuilt for every aircraft in range on a timer.
-     * This runs once, when someone has asked about one aircraft. It never
-     * rejects — the panel opens with or without a route.
+     * These run once, when someone has asked about one aircraft. Neither
+     * rejects — the panel opens with or without either.
+     *
+     * The route waits for its lookup because a route is small, quick and the
+     * thing most readers opened the panel for. The photograph does not: the
+     * call reads what is cached and queues a fetch if there is nothing, so the
+     * response is never behind an image download. The client asks for the
+     * bytes separately once this says there are some.
      */
-    return { ...detail, route: await routes.lookup(detail.aircraft?.callsign ?? null) };
+    const [route, photo] = await Promise.all([
+      routes.lookup(detail.aircraft?.callsign ?? null),
+      photos.status(icao)
+    ]);
+    return { ...detail, route, photo };
+  });
+
+  /*
+   * The photograph itself, served from this origin rather than linked to.
+   *
+   * That is the whole point of caching bytes: the only host that learns which
+   * airframes are being looked at is the one an operator configured, and only
+   * once per airframe per time-to-live. A hotlink would put every viewer's
+   * browser in touch with a third party on every view, and would show nothing
+   * at all on a receiver with no internet access.
+   *
+   * A strong ETag and a long max-age because the URL's content is stable for a
+   * month: the browser re-requests only after the freshness window, and gets a
+   * 304 unless the photograph has actually been refetched.
+   */
+  app.get("/api/v1/aircraft/:icao/photo", async (request, reply) => {
+    const { icao } = icaoParamsSchema.parse(request.params);
+    const photo = await photoStore.image(icao);
+    // 404 rather than an error: nothing has been fetched for this airframe, or
+    // the source has no photograph of it. Both are ordinary, and the client
+    // shows no panel either way.
+    if (!photo) {
+      return reply.code(404).send({
+        error: {
+          code: "PHOTO_NOT_FOUND",
+          message: `No photograph is cached for aircraft ${icao}`
+        }
+      });
+    }
+    reply.header("cache-control", "public, max-age=86400");
+    reply.header("etag", photo.etag);
+    if (request.headers["if-none-match"] === photo.etag) {
+      return reply.code(304).send();
+    }
+    return reply.type(photo.contentType).send(photo.image);
   });
 
   app.get("/api/v1/aircraft/:icao/activity", async (request) => {

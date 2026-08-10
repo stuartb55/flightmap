@@ -60,6 +60,22 @@ supported way to reclaim it is to delete rows older than the oldest coverage
 window you intend to query, accepting that unique-aircraft counts before that
 date become zero.
 
+## The photograph cache
+
+`aircraft_photos` is the one table holding binary data rather than telemetry,
+and the only one bounded by a row count rather than by age. It is empty unless
+an operator has turned [aircraft photographs](photos.md) on.
+
+Its ceiling is `aircraftPhotoCacheEntries` × the 200 kB per-image cap, so the
+2,000-entry default is a **400 MB worst case** against the 40 GB floor above.
+Realistically it is a good deal less: a thumbnail from a photo API is tens of
+kilobytes, and the rows for airframes with no photograph carry no bytes at all.
+Lower the entry count to trade cache hits for space.
+
+Unlike the aggregates, this table is pruned on every maintenance run — expired
+rows first, then the least recently served beyond the cap — so it does not grow
+without bound.
+
 ## Measure database use
 
 The system page and `GET /api/v1/status` expose total database use and retained

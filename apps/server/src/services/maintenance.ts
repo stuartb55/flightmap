@@ -1,6 +1,7 @@
 import type pg from "pg";
 import type { Config } from "../config.js";
 import type { Database } from "../db/database.js";
+import type { PhotoRepository } from "../db/photo-repository.js";
 
 type Logger = {
   info: (object: unknown, message?: string) => void;
@@ -15,6 +16,8 @@ export type MaintenanceResult = {
   deletedAlerts: number;
   deletedReceiverSamples: number;
   deletedHourlyActivity: number;
+  expiredPhotos: number;
+  evictedPhotos: number;
   failedSteps: string[];
 };
 
@@ -52,6 +55,15 @@ export class MaintenanceService {
       "historyRetentionDays" | "sessionGapSeconds"
     >,
     private readonly logger: Logger,
+    /**
+     * The photograph cache, which is bounded by count as well as by age and so
+     * cannot be swept by the age-based helpers below. Absent where maintenance
+     * runs without one — the CLI, and every test that predates the cache — in
+     * which case the step is skipped rather than failing the run.
+     */
+    private readonly photos?: PhotoRepository,
+    /** How many photographs the cache may hold; read per run, not per boot. */
+    private readonly photoCacheEntries: () => number = () => 2_000,
   ) {}
 
   /**
@@ -68,6 +80,8 @@ export class MaintenanceService {
     let deletedAlerts = 0;
     let deletedReceiverSamples = 0;
     let deletedHourlyActivity = 0;
+    let expiredPhotos = 0;
+    let evictedPhotos = 0;
 
     await this.database.connect(async (client) => {
       const lock = await client.query<{ acquired: boolean }>(
@@ -164,20 +178,36 @@ export class MaintenanceService {
           );
         });
 
+        /*
+         * Inside the same lock as the retention steps, and after them: the
+         * photograph cache is the one table bounded by entry count rather than
+         * by age, so it needs its own pass. Expired rows go first because that
+         * usually brings the cache under its limit on its own, and only what is
+         * left over is thrown away while still good.
+         */
+        await step("evict_photos", async () => {
+          if (!this.photos) return;
+          const result = await this.photos.evict(this.photoCacheEntries());
+          expiredPhotos = result.expired;
+          evictedPhotos = result.evicted;
+        });
+
         await step("log", async () => {
           await client.query(
             `INSERT INTO maintenance_log (
                retention_days, dropped_partitions, deleted_sessions,
                deleted_alerts, deleted_receiver_samples,
-               deleted_hourly_activity
-             ) VALUES ($1, $2, $3, $4, $5, $6)`,
+               deleted_hourly_activity, expired_photos, evicted_photos
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [
               this.config.historyRetentionDays,
               droppedPartitions,
               deletedSessions,
               deletedAlerts,
               deletedReceiverSamples,
-              deletedHourlyActivity
+              deletedHourlyActivity,
+              expiredPhotos,
+              evictedPhotos
             ]
           );
         });
@@ -196,6 +226,8 @@ export class MaintenanceService {
       deletedAlerts,
       deletedReceiverSamples,
       deletedHourlyActivity,
+      expiredPhotos,
+      evictedPhotos,
       failedSteps
     };
     this.logger.info(
@@ -325,7 +357,15 @@ export class MaintenanceService {
 export function createMaintenanceService(
   database: Database,
   config: Pick<Config, "historyRetentionDays" | "sessionGapSeconds">,
-  logger: Logger
+  logger: Logger,
+  photos?: PhotoRepository,
+  photoCacheEntries?: () => number
 ): MaintenanceService {
-  return new MaintenanceService(database, config, logger);
+  return new MaintenanceService(
+    database,
+    config,
+    logger,
+    photos,
+    photoCacheEntries
+  );
 }

@@ -349,6 +349,22 @@ export const flightRouteSchema = z.object({
   resolvedAt: isoDateTimeSchema
 });
 
+/**
+ * What is known about an airframe's photograph, without the photograph.
+ *
+ * The bytes are served separately from `GET /api/v1/aircraft/:icao/photo`, so
+ * a detail response stays a small JSON body whatever is cached. `available` is
+ * the client's cue to request that URL at all: false covers an airframe the
+ * source has no photograph for as well as one whose fetch is still queued.
+ */
+export const aircraftPhotoSchema = z.object({
+  available: z.boolean(),
+  credit: z.string().nullable(),
+  linkUrl: z.string().nullable(),
+  width: z.number().nullable(),
+  height: z.number().nullable()
+});
+
 export const aircraftDetailResponseSchema = z.object({
   aircraft: liveAircraftSchema.nullable(),
   metadata: aircraftMetadataSchema.nullable(),
@@ -360,7 +376,14 @@ export const aircraftDetailResponseSchema = z.object({
    * lookup is switched off, the aircraft has no callsign to look up, and the
    * lookup ran and found nothing. None of them is an error.
    */
-  route: flightRouteSchema.nullable().optional()
+  route: flightRouteSchema.nullable().optional(),
+  /**
+   * Null the same way: photographs are switched off, no source is configured,
+   * or nothing has been fetched for this airframe yet. A fetch this request
+   * triggered lands afterwards and is picked up on the next view — the
+   * response never waits on a third party.
+   */
+  photo: aircraftPhotoSchema.nullable().optional()
 });
 
 export const sessionsResponseSchema = z.object({
@@ -566,6 +589,16 @@ export const appSettingsResponseSchema = z.object({
     routeLookupTimeoutMs: z.number(),
     routeLookupTtlHours: z.number(),
     routeLookupNegativeTtlHours: z.number(),
+    /**
+     * Server-managed until the profile gives them a form: a server older than
+     * the photo cache will not send them at all, so the client must not
+     * require them.
+     */
+    aircraftPhotoSourceUrl: z.string().optional(),
+    aircraftPhotoTtlDays: z.number().optional(),
+    aircraftPhotoNegativeTtlDays: z.number().optional(),
+    aircraftPhotoCacheEntries: z.number().optional(),
+    aircraftPhotosEnabled: z.boolean().optional(),
     collectorEnabled: z.boolean(),
     maintenanceEnabled: z.boolean(),
     metadataUpdatesEnabled: z.boolean(),
@@ -1335,6 +1368,7 @@ export type AircraftDetailResponse = z.infer<
 >;
 export type FlightRoute = z.infer<typeof flightRouteSchema>;
 export type RouteAirport = z.infer<typeof routeAirportSchema>;
+export type AircraftPhoto = z.infer<typeof aircraftPhotoSchema>;
 export type SessionsResponse = z.infer<typeof sessionsResponseSchema>;
 export type TrackResponse = z.infer<typeof trackResponseSchema>;
 export type AircraftActivityPoint = z.infer<typeof aircraftActivityPointSchema>;
