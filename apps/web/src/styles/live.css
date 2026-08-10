@@ -2457,11 +2457,9 @@ input[aria-invalid='true'] {
   display: none;
 }
 
-/* Both belong to the layout where the map has the screen to itself: beside the
-   map the aircraft panel carries its own search field and the header carries
-   the receiver state. */
-.map-search,
-.map-receiver-state {
+/* Belongs to the layout where the map has the screen to itself; beside the map
+   the aircraft panel carries its own search field. */
+.map-search {
   display: none;
 }
 

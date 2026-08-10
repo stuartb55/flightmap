@@ -114,10 +114,6 @@ export function LivePage() {
   const airports = useAirports()
   const { aircraftList, trails } = useLiveAircraft()
   const { receiver, connection, error, alerts, hasSnapshot } = useLiveStatus()
-  // Mirrors the header's own reading of the two states, so the dot the map
-  // shows in its place cannot disagree with the one the other pages show.
-  const receiverState =
-    connection === 'live' ? (receiver?.status ?? 'connecting') : connection === 'connecting' ? 'connecting' : connection
   const dispatch = useLiveDispatch()
   const [searchParams, setSearchParams] = useSearchParams()
   /*
@@ -701,17 +697,6 @@ export function LivePage() {
             </button>
           ) : null}
         </label>
-
-        {/* The receiver state the hidden header used to carry, now saying what
-            it is hearing as well as whether it is alive — the count the
-            aircraft button used to hold. */}
-        <div className="map-receiver-state" title={receiver?.lastSnapshotAt ?? 'Waiting for receiver'}>
-          <span className={`status-dot status-${receiverState}`} aria-hidden="true" />
-          <span className="map-receiver-copy">
-            {receiver?.name ?? 'Receiver'} · {filtered.length} tracked
-          </span>
-          <span className="visually-hidden">{`Receiver ${receiverState}`}</span>
-        </div>
 
         {selected ? (
           <div className="selected-map-card">
