@@ -4,6 +4,8 @@ import {
   useMemo,
   useRef,
   useState,
+  // Aliased: the page also installs a listener for the DOM event of that name.
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import {
   AlertTriangle,
@@ -21,6 +23,7 @@ import { AircraftDetailPanel } from '../components/AircraftDetailPanel'
 import { AircraftFilters } from '../components/AircraftFilters'
 import { AircraftTable } from '../components/AircraftTable'
 import { LiveSheetTraffic } from '../components/LiveSheetTraffic'
+import { MapSearchResults } from '../components/MapSearchResults'
 import { ColumnChooser } from '../components/ColumnChooser'
 import { isFormTarget, isPlainKey } from '../components/KeyboardShortcuts'
 import { RadarMap, type RadarMapHandle } from '../components/RadarMap'
@@ -30,6 +33,7 @@ import {
   defaultAircraftFilters,
   filtersFromParams,
   nextSelectionIndex,
+  searchAircraft,
   writeFiltersToParams,
   type AircraftFilters as AircraftFilterState,
   type AircraftSort,
@@ -148,6 +152,15 @@ export function LivePage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   // Both search fields exist at every width; only one of them is laid out.
   const mapSearchRef = useRef<HTMLInputElement>(null)
+  const mapSearchShellRef = useRef<HTMLDivElement>(null)
+  /*
+   * Results are opened by typing rather than by the query being non-empty: a
+   * shared link carries whatever the sender had searched for, and it should
+   * arrive as the view they framed rather than with a list over it. Selecting a
+   * result closes them for the same reason — the answer has been given.
+   */
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [activeResult, setActiveResult] = useState(0)
   const filtersDialogRef = useRef<HTMLElement>(null)
   const mobileFiltersRef = useRef<HTMLElement>(null)
 
@@ -225,6 +238,13 @@ export function LivePage() {
     return () => observer.disconnect()
   }, [sheetStop, hasDetail])
   const filtered = useOrderedAircraft(aircraftList, filters, sort, newSince)
+  const searchMatches = useMemo(
+    () => (searchOpen ? searchAircraft(aircraftList, filters.query) : []),
+    [aircraftList, filters.query, searchOpen],
+  )
+  // The list shrinks under the cursor as aircraft come and go, so the highlight
+  // is clamped at the point of use rather than chased with an effect.
+  const activeIndex = Math.min(activeResult, Math.max(0, searchMatches.length - 1))
   const sources = useMemo(
     () =>
       [...new Set(aircraftList.map((aircraft) => aircraft.source).filter((source): source is string => Boolean(source)))].sort(),
@@ -342,6 +362,37 @@ export function LivePage() {
     [setSearchParams],
   )
 
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    setActiveResult(0)
+  }, [])
+
+  /*
+   * Picking a result is what takes the map to the aircraft: the map recentres
+   * on a selection it did not already have comfortably on screen, so this needs
+   * to do no camera work of its own. The query stays in the field — it is still
+   * what was asked, and the sheet's list is still narrowed to it.
+   */
+  const selectSearchResult = useCallback(
+    (icao: string) => {
+      selectAircraft(icao)
+      closeSearch()
+      mapSearchRef.current?.blur()
+    },
+    [closeSearch, selectAircraft],
+  )
+
+  // A tap anywhere else is an answer of "not that one" rather than a request to
+  // keep the results over the map.
+  useEffect(() => {
+    if (!searchOpen) return
+    const dismiss = (event: PointerEvent) => {
+      if (!mapSearchShellRef.current?.contains(event.target as Node)) closeSearch()
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [closeSearch, searchOpen])
+
   // Stable so the keyboard listener below is not rebuilt on every render.
   const closeDetails = useCallback(() => {
     setSearchParams({ aircraft: null }, true)
@@ -445,6 +496,32 @@ export function LivePage() {
     })
   }, [])
 
+  /*
+   * The results are a listbox the field drives: the page-wide shortcuts below
+   * ignore anything typed into a form control, so the arrows and Enter have to
+   * be handled here to mean anything at all.
+   */
+  const searchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape' && searchOpen) {
+      // Every other Escape on this page stands aside for a text field, so
+      // dismissing the results here cannot also close the open aircraft.
+      closeSearch()
+      return
+    }
+    if (!searchOpen || !searchMatches.length) return
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveResult(Math.min(searchMatches.length - 1, activeIndex + 1))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveResult(Math.max(0, activeIndex - 1))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const match = searchMatches[activeIndex]
+      if (match) selectSearchResult(match.icao)
+    }
+  }
+
   const moveSelection = useCallback(
     (move: SelectionMove) => {
       const index = nextSelectionIndex(
@@ -503,7 +580,7 @@ export function LivePage() {
   return (
     <div
       ref={livePageRef}
-      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''} sheet-${sheetStop}`}
+      className={`live-page ${listCollapsed ? 'list-collapsed' : ''} ${selected ? 'has-detail' : ''} ${searchOpen ? 'searching' : ''} sheet-${sheetStop}`}
     >
       {bannerAlert ? (
         <div
@@ -678,25 +755,54 @@ export function LivePage() {
             and "where is this one aircraft", and only the second had no way in
             short of scrolling a list. It floats over the map on its own row,
             where the aircraft and filter buttons it replaces used to sit. */}
-        <label className="map-search">
-          <Search size={16} aria-hidden="true" />
-          <input
-            ref={mapSearchRef}
-            value={filters.query}
-            onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-            placeholder="Callsign, reg or type"
-            aria-label="Search aircraft"
-          />
-          {filters.query ? (
-            <button
-              type="button"
-              onClick={() => setFilters({ ...filters, query: '' })}
-              aria-label="Clear search"
-            >
-              <X size={15} />
-            </button>
+        <div ref={mapSearchShellRef} className="map-search-shell">
+          <label className="map-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              ref={mapSearchRef}
+              value={filters.query}
+              onChange={(event) => {
+                setFilters({ ...filters, query: event.target.value })
+                setSearchOpen(event.target.value.trim() !== '')
+                setActiveResult(0)
+              }}
+              onFocus={() => setSearchOpen(filters.query.trim() !== '')}
+              onKeyDown={searchKeyDown}
+              placeholder="Callsign, reg or type"
+              aria-label="Search aircraft"
+              role="combobox"
+              aria-expanded={searchOpen}
+              aria-controls="map-search-listbox"
+              aria-activedescendant={
+                searchOpen && searchMatches.length ? `map-search-result-${activeIndex}` : undefined
+              }
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+            {filters.query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilters({ ...filters, query: '' })
+                  closeSearch()
+                }}
+                aria-label="Clear search"
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+          </label>
+          {searchOpen ? (
+            <MapSearchResults
+              matches={searchMatches}
+              query={filters.query}
+              activeIndex={activeIndex}
+              onSelect={selectSearchResult}
+            />
           ) : null}
-        </label>
+        </div>
 
         {selected ? (
           <div className="selected-map-card">

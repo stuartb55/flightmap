@@ -9,6 +9,7 @@ import {
   nextSelectionIndex,
   orderAircraft,
   reorderIntervalMs,
+  searchAircraft,
   sortAircraft,
   writeFiltersToParams,
   type AircraftSort,
@@ -352,5 +353,51 @@ describe('filters carried by a shared link', () => {
 
   it('ignores a position it does not recognise', () => {
     expect(filtersFromParams(new URLSearchParams('?pos=sideways'))?.position).toBe('all')
+  })
+})
+
+describe('searching for one aircraft', () => {
+  const items = [
+    // As the receiver reports them: callsigns are padded to a fixed width.
+    aircraft({ icao: '400001', callsign: 'RUK2  ', typeCode: 'B738', distanceNm: 40 }),
+    aircraft({ icao: '400002', callsign: 'RUK2HK', typeCode: 'B738', distanceNm: 12 }),
+    aircraft({ icao: '400003', callsign: 'EZYRUK2X', typeCode: 'A320', distanceNm: 3 }),
+  ]
+
+  it('finds an aircraft by callsign, case and padding aside', () => {
+    expect(searchAircraft(items, 'ruk2hk').map((item) => item.icao)).toEqual(['400002'])
+  })
+
+  /*
+   * The whole point of the ranking: an exact callsign is the aircraft that was
+   * asked for even when two nearer ones also contain what was typed.
+   */
+  it('ranks an exact match, then a prefix, then a substring', () => {
+    expect(searchAircraft(items, 'RUK2').map((item) => item.icao)).toEqual([
+      '400001',
+      '400002',
+      '400003',
+    ])
+  })
+
+  it('breaks ties on range, so the nearest of equal matches leads', () => {
+    expect(searchAircraft(items, 'B738').map((item) => item.icao)).toEqual(['400002', '400001'])
+  })
+
+  it('is bounded, and empty for a query that names nothing', () => {
+    expect(searchAircraft(items, 'ruk2', 2)).toHaveLength(2)
+    expect(searchAircraft(items, '  ')).toEqual([])
+    expect(searchAircraft(items, 'ZZZZ')).toEqual([])
+  })
+
+  /*
+   * A search that could not see past the current filters would deny the
+   * existence of an aircraft plainly drawn on the map, which is the failure
+   * this search was written to end.
+   */
+  it('reaches aircraft the live filters would exclude', () => {
+    const hidden = [aircraft({ icao: '400004', callsign: 'RUK9', altitudeBaro: 2_000 })]
+    expect(filterAircraft(hidden, { ...defaultAircraftFilters, minimumAltitude: '30000' })).toEqual([])
+    expect(searchAircraft(hidden, 'RUK9')).toHaveLength(1)
   })
 })
