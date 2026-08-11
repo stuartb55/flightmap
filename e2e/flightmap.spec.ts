@@ -390,6 +390,7 @@ test('draws airports and credits their source once configured', async ({ page },
   await expect(page.locator('.maplibregl-ctrl-attrib-inner')).toContainText('OurAirports', {
     timeout: 20_000,
   })
+  await page.locator('.map-legend').getByRole('button', { name: 'Map key' }).click()
   await expect(page.locator('.map-legend-body')).toContainText('Airport')
 })
 
@@ -449,34 +450,59 @@ test('isolates an altitude band from the map legend', async ({ page }, testInfo)
     .toBe(everything)
 })
 
-test('pins a popup to the selected aircraft and dismisses it', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium', 'The pinned popup is a wide-screen affordance')
+/*
+ * Selecting an aircraft used to also pin a popup to it, which repeated the
+ * detail panel over the middle of the map and the track being looked at. The
+ * panel is now the only readout, so what has to hold is that the map still
+ * gives the selection up: by Escape, and by a click on empty water.
+ */
+test('leaves the map clear of the selected aircraft and gives the selection up', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The desktop detail panel is a wide-screen affordance')
   await openFlightmap(page)
   await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
-  const popup = page.locator('.map-popup-card')
-  await expect(popup).toBeVisible()
-  await expect(popup.getByRole('link', { name: 'Profile' })).toHaveAttribute(
+  const panel = page.locator('.detail-panel')
+  await expect(panel).toBeVisible()
+  await expect(page.locator('.map-stage .maplibregl-popup')).toHaveCount(0)
+  await expect(panel.getByRole('link', { name: 'Profile' })).toHaveAttribute(
     'href',
     '/aircraft/400001',
   )
-  const violations = await new AxeBuilder({ page }).include('.maplibregl-popup').analyze()
-  expect(violations.violations.filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
 
-  // The popup must not hold focus hostage: Escape reaches the page.
+  // The map must not hold focus hostage: Escape reaches the page.
   await page.keyboard.press('Escape')
-  await expect(popup).toBeHidden()
+  await expect(panel).toBeHidden()
   await expect(page).toHaveURL(/\/(\?.*)?$/)
-
-  await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
-  await popup.getByRole('button', { name: 'Close aircraft popup' }).click()
-  await expect(popup).toBeHidden()
 
   // Clicking the map itself, away from any aircraft, also clears the selection.
   await selectLiveAircraft(page, '.desktop-aircraft-panel', 'FLT0001')
   const canvas = (await page.locator('.map-stage .radar-map-canvas').boundingBox())!
   await page.mouse.click(canvas.x + 30, canvas.y + canvas.height * 0.75)
-  await expect(popup).toBeHidden()
-  await expect(page.locator('.detail-panel')).toBeHidden()
+  await expect(panel).toBeHidden()
+})
+
+/*
+ * The colour scale keeps its place over the map because it is also the
+ * altitude filter; the reference key behind it does not, and starts folded.
+ */
+test('keeps the map key folded away until it is asked for', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The permanently expanded key was a desktop problem')
+  await openFlightmap(page)
+  const legend = page.locator('.map-legend')
+  await expect(legend.locator('.map-altitude-scale')).toBeVisible()
+  const body = legend.locator('.map-legend-body')
+  await expect(body).toBeHidden()
+
+  const folded = (await legend.boundingBox())!
+  await legend.getByRole('button', { name: 'Map key' }).click()
+  await expect(body).toBeVisible()
+  await expect(body).toContainText('Rotorcraft')
+
+  // Folded, the key has to be the smaller of the two or it has bought nothing.
+  const open = (await legend.boundingBox())!
+  expect(folded.height).toBeLessThan(open.height / 2)
+
+  await legend.getByRole('button', { name: 'Map key' }).click()
+  await expect(body).toBeHidden()
 })
 
 test('measures distance and bearing with the ruler', async ({ page }, testInfo) => {

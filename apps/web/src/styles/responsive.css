@@ -108,12 +108,6 @@
     min-height: 100%;
   }
 
-  /* The bottom sheet and the map card already carry the selected aircraft here,
-     and a popup this size would cover most of a phone's map. */
-  .maplibregl-popup.map-aircraft-popup {
-    display: none;
-  }
-
   .app-header {
     grid-template-columns: 1fr auto;
     height: var(--header-height);
@@ -349,10 +343,11 @@
     width: auto;
   }
 
-  /* The key is collapsed to a chip by default: at this width the expanded
-     legend covered a third of the map and ran under the action buttons. It
-     rides on top of the sheet's current stop rather than on the bottom of the
-     map, which the sheet covers at every stop but the peek. */
+  /* Closed, the whole key folds into a chip — the colour scale included, which
+     wider layouts keep out on its own. At this width even the scale covered a
+     band of the map, and it rides on top of the sheet's current stop rather
+     than on the bottom of the map, which the sheet covers at every stop but
+     the peek. */
   .map-legend {
     right: 10px;
     bottom: calc(var(--live-sheet-cover, 0px) + 10px);
@@ -374,34 +369,25 @@
     backdrop-filter: blur(10px);
   }
 
-  .map-legend-toggle {
+  .map-legend:not(.open) > .map-altitude-scale {
+    display: none;
+  }
+
+  .map-legend:not(.open) .map-legend-toggle {
     display: inline-flex;
-    align-items: center;
-    gap: 6px;
+    width: auto;
     min-height: 36px;
+    margin-top: 0;
     padding: 0 11px;
+    gap: 6px;
     color: var(--ink-11);
     border: 1px solid rgb(var(--line-bright-rgb) / 0.72);
     border-radius: 8px;
     background: var(--veil-18);
     box-shadow: var(--shadow);
-    font-family: inherit;
     font-size: 12px;
     font-weight: 650;
-    cursor: pointer;
     backdrop-filter: blur(10px);
-  }
-
-  .map-legend.open .map-legend-toggle {
-    width: 100%;
-    margin-bottom: 8px;
-    color: var(--accent-bright);
-    border-color: rgb(var(--accent-rgb) / 0.4);
-    justify-content: center;
-  }
-
-  .map-legend:not(.open) .map-legend-body {
-    display: none;
   }
 
   .map-waypoint-key {

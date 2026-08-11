@@ -1004,96 +1004,6 @@
   left: 0;
 }
 
-/* Anchored to the aircraft itself, unlike the detail panel, which is why it
-   earns its place beside one. Narrow layouts hide it — see responsive.css. */
-.maplibregl-popup.map-aircraft-popup {
-  z-index: 4;
-  max-width: 272px;
-}
-
-.map-aircraft-popup .maplibregl-popup-content {
-  padding: 0;
-  border: 1px solid var(--line-bright);
-  border-radius: 9px;
-  background: var(--veil-15);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
-}
-
-.map-aircraft-popup .maplibregl-popup-tip {
-  border-top-color: var(--veil-15);
-  border-bottom-color: var(--veil-15);
-}
-
-.map-popup-card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 9px 11px 10px;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
-}
-
-.map-popup-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.map-popup-head button {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-  color: var(--muted);
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.map-popup-head button:hover {
-  color: var(--text);
-}
-
-.map-popup-card > small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.map-popup-card dl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px 10px;
-  margin: 6px 0 0;
-}
-
-.map-popup-card dt {
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.map-popup-card dd {
-  margin: 0;
-  color: var(--muted-bright);
-}
-
-.map-popup-links {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid rgb(var(--line-mid-rgb) / 0.6);
-}
-
-.map-popup-links a {
-  color: var(--accent);
-  font-size: 12px;
-}
-
 /* Bottom centre, clear of the alert banner that floats over the top of the map
    and of the legend in the opposite corner. */
 .map-ruler-readout {
@@ -1218,9 +1128,42 @@
   backdrop-filter: blur(10px);
 }
 
-/* Only the narrow layout collapses the legend, so the toggle stays hidden here. */
+/* A quiet strip under the scale rather than a button: it discloses reference
+   text, and anything heavier would read as the legend's main control. */
 .map-legend-toggle {
-  display: none;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 0 1px;
+  color: var(--muted);
+  border: 0;
+  border-top: 1px solid rgb(var(--line-mid-rgb) / 0.52);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.map-legend-toggle:hover {
+  color: var(--text);
+}
+
+.map-legend-toggle svg {
+  transition: transform 140ms ease;
+}
+
+.map-legend.open .map-legend-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* The border above the toggle is already the separator the sections need. */
+.map-legend-body > :first-child {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* One column per altitude band. The segments read as a scale left to right and,

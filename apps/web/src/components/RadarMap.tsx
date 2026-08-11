@@ -11,12 +11,10 @@ import type { CoverageCell, MapDisplayPreferences, MapLayerPreferences, MapViewp
 import * as maplibregl from 'maplibre-gl'
 import type { DataDrivenPropertyValueSpecification, Map as MapLibreMap } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { createPortal } from 'react-dom'
-import { Camera, Check, Focus, Info, Link2, LocateFixed, Maximize2, Minus, MoreHorizontal, Plus, Ruler, X } from 'lucide-react'
+import { Camera, Check, ChevronDown, Focus, Info, Link2, LocateFixed, Maximize2, Minus, MoreHorizontal, Plus, Ruler, X } from 'lucide-react'
 import { defaultReceiver, useMapStyleUrl, useRuntimeConfig } from '../config'
 import { useResolvedTheme } from '../lib/theme'
 import { altitudeBands, type AltitudeBand } from '../lib/altitude-bands'
-import { Link } from '../lib/router'
 import {
   aircraftShapes,
   shapeLabels,
@@ -61,7 +59,7 @@ interface Props {
   receiver?: Receiver | null
   selectedIcao?: string | null
   onSelectAircraft?: (icao: string) => void
-  /** Clicking empty map space, or dismissing the pinned popup. */
+  /** Clicking empty map space, or pressing Escape over the map. */
   onClearSelection?: () => void
   /** The altitude band the surrounding page is filtered to, if any. */
   altitudeBand?: string | null
@@ -237,9 +235,6 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
   const [shareStatus, setShareStatus] = useState<string | null>(null)
   const [shareLink, setShareLink] = useState<string | null>(null)
   const shareLinkRef = useRef<HTMLInputElement>(null)
-  const popupRef = useRef<maplibregl.Popup | null>(null)
-  const popupHostRef = useRef<HTMLDivElement | null>(null)
-  popupHostRef.current ??= typeof document === 'undefined' ? null : document.createElement('div')
   const legendBodyId = useId()
 
   aircraftRef.current = aircraft
@@ -894,7 +889,6 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
       lastViewportRef.current = getViewport() ?? lastViewportRef.current
       map.remove()
       mapRef.current = null
-      popupRef.current = null
       setMapReady(false)
     }
     // A style change replaces every layer, so the map is rebuilt rather than
@@ -1225,40 +1219,13 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
 
   const rulerMeasurement =
     rulerPoints.length === 2 ? greatCircle(rulerPoints[0]!, rulerPoints[1]!) : null
-  const pinned = selectedIcao ? aircraft.find((item) => item.icao === selectedIcao) ?? null : null
-  const pinnedLongitude = pinned?.longitude ?? null
-  const pinnedLatitude = pinned?.latitude ?? null
-
-  // A popup anchored to the aircraft, rather than a card in a corner, is the
-  // one place that answers "which of these is it?" without moving the camera.
-  useEffect(() => {
-    const map = mapRef.current
-    const host = popupHostRef.current
-    if (!mapReady || !map || !host) return
-    if (pinnedLongitude == null || pinnedLatitude == null) {
-      popupRef.current?.remove()
-      return
-    }
-    popupRef.current ??= new maplibregl.Popup({
-      closeButton: false,
-      closeOnClick: false,
-      // Taking focus on every 1 Hz reselection would fight the keyboard user
-      // walking the list.
-      focusAfterOpen: false,
-      offset: 20,
-      maxWidth: '272px',
-      className: 'map-aircraft-popup',
-    }).setDOMContent(host)
-    popupRef.current.setLngLat([pinnedLongitude, pinnedLatitude])
-    if (!popupRef.current.isOpen()) popupRef.current.addTo(map)
-  }, [mapReady, pinnedLatitude, pinnedLongitude])
 
   // One Escape handler for the map's own affordances, so their precedence is
-  // written down: a measurement unwinds before the popup closes. Anything with
-  // its own overlay semantics — a dialog, a text field — keeps its Escape.
+  // written down: a measurement unwinds before the selection clears. Anything
+  // with its own overlay semantics — a dialog, a text field — keeps its Escape.
   useEffect(() => {
-    const canClosePopup = Boolean(pinned) && Boolean(onClearSelection)
-    if (!rulerActive && !canClosePopup) return
+    const canClearSelection = Boolean(selectedIcao) && Boolean(onClearSelection)
+    if (!rulerActive && !canClearSelection) return
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       const target = event.target instanceof HTMLElement ? event.target : null
@@ -1272,7 +1239,7 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
     }
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
-  }, [onClearSelection, pinned, rulerActive, rulerPoints.length])
+  }, [onClearSelection, selectedIcao, rulerActive, rulerPoints.length])
 
   useEffect(() => {
     if (!selectedIcao) setFollowSelected(false)
@@ -1440,47 +1407,6 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           </button>
         </div>
       ) : null}
-      {popupHostRef.current && pinned
-        ? createPortal(
-            <div className="map-popup-card">
-              <div className="map-popup-head">
-                <strong>{aircraftLabel(pinned)}</strong>
-                {onClearSelection ? (
-                  <button type="button" onClick={onClearSelection} aria-label="Close aircraft popup">
-                    <X size={14} />
-                  </button>
-                ) : null}
-              </div>
-              <small>
-                {pinned.registration || pinned.icao.toUpperCase()}
-                {pinned.typeCode ? ` · ${pinned.typeCode}` : ''}
-              </small>
-              <dl>
-                <div>
-                  <dt>Baro altitude</dt>
-                  <dd>{pinned.altitudeBaro === 'ground' ? 'Ground' : pinned.altitudeBaro == null ? '—' : formatAltitude(pinned.altitudeBaro, units)}</dd>
-                </div>
-                <div>
-                  <dt>Ground speed</dt>
-                  <dd>{pinned.groundSpeed == null ? '—' : formatSpeed(pinned.groundSpeed, units)}</dd>
-                </div>
-                <div>
-                  <dt>Range</dt>
-                  <dd>{pinned.distanceNm == null ? '—' : formatDistance(pinned.distanceNm, units)}</dd>
-                </div>
-                <div>
-                  <dt>Squawk</dt>
-                  <dd>{pinned.squawk ?? '—'}</dd>
-                </div>
-              </dl>
-              <div className="map-popup-links">
-                <Link to={`/aircraft/${encodeURIComponent(pinned.icao)}`}>Profile</Link>
-                <Link to={`/history?aircraft=${encodeURIComponent(pinned.icao)}`}>History</Link>
-              </div>
-            </div>,
-            popupHostRef.current,
-          )
-        : null}
       {onMapLayersChange ? (
         <MapLayerMenu
           layers={mapLayers}
@@ -1500,9 +1426,66 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
         const hovered = aircraft.find((item) => item.icao === hoveredIcao)
         return hovered ? <div className="map-hover-card"><strong>{aircraftLabel(hovered)}</strong><span>{hovered.registration || hovered.icao.toUpperCase()}</span><small>{hovered.altitudeBaro === 'ground' ? 'Ground' : hovered.altitudeBaro == null ? 'Altitude —' : formatAltitude(hovered.altitudeBaro, units)} · {hovered.groundSpeed == null ? 'Speed —' : formatSpeed(hovered.groundSpeed, units)}</small></div> : null
       })() : null}
-      {/* The narrow layout collapses the legend to its toggle so the key never
-          covers the map; wider viewports keep it permanently expanded. */}
+      {/* Only the colour scale earns permanent space over the map: it is what
+          the colours on screen currently mean and, where the page has an
+          altitude filter, the control for it. The shape and waypoint keys are
+          read once and then known, so they sit behind the toggle — expanded,
+          they covered a corner of the map and the track under it. The narrow
+          layout collapses the scale away with them. */}
       <div className={`map-legend ${legendOpen ? 'open' : ''}`} aria-label="Map legend">
+        {trackColourMode === 'altitude' ? (
+          <div
+            className="map-altitude-scale"
+            aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
+          >
+            {altitudeBands(theme).map((band) => {
+              const description = bandDescription(band, units)
+              return onAltitudeBandChange ? (
+                <button
+                  key={band.key}
+                  type="button"
+                  data-band={band.key}
+                  className={altitudeBand === band.key ? 'active' : ''}
+                  style={{ '--band': band.colour } as CSSProperties}
+                  aria-pressed={altitudeBand === band.key}
+                  aria-label={
+                    altitudeBand === band.key
+                      ? `Show every altitude again instead of only aircraft ${description}`
+                      : `Show only aircraft ${description}`
+                  }
+                  onClick={() => onAltitudeBandChange(band)}
+                >
+                  <i />
+                  {bandLabel(band, units)}
+                </button>
+              ) : (
+                <span key={band.key} style={{ '--band': band.colour } as CSSProperties} title={description}>
+                  <i />
+                  {bandLabel(band, units)}
+                </span>
+              )
+            })}
+          </div>
+        ) : (() => {
+          const ramp = trackColourModes(theme)[trackColourMode]
+          return (
+            <div
+              className="map-altitude-scale"
+              aria-label={`Track ${ramp.label.toLowerCase()} colour scale`}
+            >
+              {ramp.steps.map((step, index) => (
+                <span
+                  key={step.key}
+                  style={{ '--band': step.colour } as CSSProperties}
+                  title={ramp.description(step, ramp.steps[index + 1], units)}
+                >
+                  <i />
+                  {ramp.tick(step, units)}
+                </span>
+              ))}
+            </div>
+          )
+        })()}
         <button
           type="button"
           className="map-legend-toggle"
@@ -1510,66 +1493,10 @@ export const RadarMap = forwardRef<RadarMapHandle, Props>(function RadarMap(
           aria-controls={legendBodyId}
           onClick={() => setLegendOpen((value) => !value)}
         >
-          <Info size={14} aria-hidden="true" />
+          <ChevronDown size={13} aria-hidden="true" />
           Map key
         </button>
-        <div className="map-legend-body" id={legendBodyId}>
-          {/* The colour scale says what the colours on the map currently mean:
-              the altitude ramp, which on a page with an altitude filter is
-              also the control for it, or the ramp the tracks are coloured by. */}
-          {trackColourMode === 'altitude' ? (
-            <div
-              className="map-altitude-scale"
-              aria-label={`Altitude colour scale in ${unitLabels.altitude[units.altitude]}`}
-            >
-              {altitudeBands(theme).map((band) => {
-                const description = bandDescription(band, units)
-                return onAltitudeBandChange ? (
-                  <button
-                    key={band.key}
-                    type="button"
-                    data-band={band.key}
-                    className={altitudeBand === band.key ? 'active' : ''}
-                    style={{ '--band': band.colour } as CSSProperties}
-                    aria-pressed={altitudeBand === band.key}
-                    aria-label={
-                      altitudeBand === band.key
-                        ? `Show every altitude again instead of only aircraft ${description}`
-                        : `Show only aircraft ${description}`
-                    }
-                    onClick={() => onAltitudeBandChange(band)}
-                  >
-                    <i />
-                    {bandLabel(band, units)}
-                  </button>
-                ) : (
-                  <span key={band.key} style={{ '--band': band.colour } as CSSProperties} title={description}>
-                    <i />
-                    {bandLabel(band, units)}
-                  </span>
-                )
-              })}
-            </div>
-          ) : (() => {
-            const ramp = trackColourModes(theme)[trackColourMode]
-            return (
-              <div
-                className="map-altitude-scale"
-                aria-label={`Track ${ramp.label.toLowerCase()} colour scale`}
-              >
-                {ramp.steps.map((step, index) => (
-                  <span
-                    key={step.key}
-                    style={{ '--band': step.colour } as CSSProperties}
-                    title={ramp.description(step, ramp.steps[index + 1], units)}
-                  >
-                    <i />
-                    {ramp.tick(step, units)}
-                  </span>
-                ))}
-              </div>
-            )
-          })()}
+        <div className="map-legend-body" id={legendBodyId} hidden={!legendOpen}>
           <ul className="map-shape-key">
             {aircraftShapes.map((shape) => (
               <li key={shape}>
