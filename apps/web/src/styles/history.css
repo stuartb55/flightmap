@@ -645,14 +645,22 @@
 
 .replay-topline {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 12px;
 }
 
 .replay-topline > div:first-child {
   display: flex;
   align-items: baseline;
   gap: 9px;
+}
+
+.replay-topline-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .replay-topline strong {
@@ -771,16 +779,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin-left: auto;
   color: var(--muted-bright);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-}
-
-.export-units-note {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 11px;
 }
 
 /* One lane per selected session against the shared replay window, directly

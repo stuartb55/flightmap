@@ -780,8 +780,11 @@
   background: var(--surface-11);
 }
 
+/* The only note of its kind left: the history tray dropped its copy, so the
+   spacing it used to inherit from history.css is spelled out here. */
 .export-units-note {
   align-self: center;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 11px;
 }
