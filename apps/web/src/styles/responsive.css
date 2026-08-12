@@ -1145,6 +1145,21 @@
     padding: 8px;
   }
 
+  /* Stacked below the map there is a full phone width to play with, and a lone
+     chip was leaving most of it empty. Sharing the row out gives the export
+     links a target worth tapping; extra chips still scroll sideways. */
+  .selected-track-chips article {
+    min-width: 142px;
+    flex: 1 1 142px;
+  }
+
+  .track-export-links a,
+  .track-export-links button {
+    flex: 1;
+    padding: 6px 4px;
+    font-size: 10px;
+  }
+
   .selected-track-tray dl {
     gap: 8px;
     font-size: 11px;
@@ -1154,8 +1169,11 @@
     flex-wrap: wrap;
   }
 
-  .follow-toggle {
-    margin-left: 0;
+  /* The tray directly above this panel already names how many tracks are
+     selected, so on the stacked layout the count is only taking up the room
+     the follow switch needs. */
+  .replay-topline .replay-track-count {
+    display: none;
   }
 
   .speed-control {
@@ -1642,7 +1660,12 @@
     display: none;
   }
 
-  .replay-topline .replay-track-count {
+  /* On a phone the eyebrow labels are the least load-bearing thing in these
+     two headers — the chips and the transport controls below already say what
+     each panel is — and dropping them is what lets the colour, clear and
+     follow controls share one row instead of each wrapping onto its own. */
+  .selected-track-tray > header .eyebrow,
+  .replay-topline .eyebrow {
     display: none;
   }
 

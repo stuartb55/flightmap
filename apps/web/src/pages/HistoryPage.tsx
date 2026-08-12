@@ -1194,7 +1194,6 @@ export function HistoryPage() {
                   </article>
                 ))}
               </div>
-              <p className="export-units-note">Exports always use aviation units: feet, knots and nautical miles.</p>
               <dl>
                 <div><dt>Aircraft</dt><dd>{selectedMetrics.uniqueAircraft}</dd></div>
                 <div><dt>Displayed points</dt><dd>{selectedMetrics.samples.toLocaleString('en-GB')}</dd></div>
@@ -1227,9 +1226,19 @@ export function HistoryPage() {
                   <span className="eyebrow">REPLAY</span>
                   <strong>{formatDate(new Date(replayTime).toISOString())} · {formatTime(new Date(replayTime).toISOString())}</strong>
                 </div>
-                <div className="replay-track-count">
-                  <PlaneIcon />
-                  {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
+                {/* The follow switch sits on the headline row rather than under
+                    the transport controls: it is a mode, not a transport
+                    action, and the row it used to wrap onto cost the map a
+                    whole band of height on a phone. */}
+                <div className="replay-topline-end">
+                  <span className="replay-track-count">
+                    <PlaneIcon />
+                    {selectedTracks.length} track{selectedTracks.length === 1 ? '' : 's'}
+                  </span>
+                  <label className="follow-toggle">
+                    <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+                    <span>Follow aircraft</span>
+                  </label>
                 </div>
               </div>
               {/* Above the slider, on the slider's own axis. A single track
@@ -1304,10 +1313,6 @@ export function HistoryPage() {
                     </button>
                   ))}
                 </div>
-                <label className="follow-toggle">
-                  <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
-                  <span>Follow aircraft</span>
-                </label>
               </div>
             </div>
           ) : null}
