@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { api } from '../lib/api'
-import { formatDate, formatTime } from '../lib/format'
+import { formatDate, formatDateTimeInput, formatTime } from '../lib/format'
 import { Link } from '../lib/router'
 import { useLiveAircraft, useLiveDispatch, useLiveStatus } from '../state/LiveContext'
 import type { AlertEvent, AlertKind, WatchlistEntry } from '../types'
@@ -52,6 +52,38 @@ const alertPresentation = {
     description: 'Installation-wide identity, altitude, and receiver-distance conditions',
   },
 } as const
+
+/*
+ * The window an alert's history link opens, either side of the event. It is
+ * lopsided because the two sides are not doing the same job: sessions are
+ * matched on the moment they started and a session always starts before the
+ * alert it raises, so the lead is what decides whether the track is found at
+ * all and the trail only buys some context around it. Nothing bounds how long
+ * a session runs — the gap setting decides when the next one begins, not when
+ * this one ends — so the lead is a day rather than a guess at flight length.
+ */
+const ALERT_HISTORY_LEAD_MS = 24 * 60 * 60_000
+const ALERT_HISTORY_TRAIL_MS = 60 * 60_000
+
+/**
+ * History searches default to the last six hours, which is the right window for
+ * someone arriving at the page and the wrong one for someone arriving from an
+ * alert: an alert is by definition already in the past, and one older than the
+ * default landed on "no sessions found" for a track that was in the database
+ * the whole time. The link carries a window around the event instead.
+ */
+export function alertHistorySearch(icao: string, createdAt: string, now = new Date()): string {
+  const occurred = new Date(createdAt)
+  if (Number.isNaN(occurred.getTime())) return `/history?aircraft=${encodeURIComponent(icao)}`
+  const from = new Date(occurred.getTime() - ALERT_HISTORY_LEAD_MS)
+  const until = new Date(Math.min(occurred.getTime() + ALERT_HISTORY_TRAIL_MS, now.getTime()))
+  const params = new URLSearchParams({
+    aircraft: icao,
+    from: formatDateTimeInput(from),
+    to: formatDateTimeInput(until),
+  })
+  return `/history?${params.toString()}`
+}
 
 /**
  * Alerts read as a stream of events rather than a flat pile of cards, and a
@@ -112,7 +144,11 @@ function AlertCard({
         <Link className="secondary-button small" to={`/aircraft/${alert.icao}`}>Profile</Link>
         <Link
           className="secondary-button small"
-          to={live ? `/?aircraft=${alert.icao}` : `/history?aircraft=${alert.icao}`}
+          to={
+            live
+              ? `/?aircraft=${encodeURIComponent(alert.icao)}`
+              : alertHistorySearch(alert.icao, alert.createdAt)
+          }
         >
           {live ? 'View live aircraft' : 'Search history'} <ChevronRight size={14} />
         </Link>

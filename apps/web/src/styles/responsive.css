@@ -90,6 +90,13 @@
     /* The row of floating controls, plus the gap below it, that anything on
        the next row down has to clear. */
     --map-overlay-row: 54px;
+    /* One gutter for a scrolling page's blocks to sit on. A header inset by
+       one value over a filter bar inset by another reads as a wobble down the
+       left edge rather than as two separate decisions, so they share this —
+       set to the inset the app header already uses, and folding in the safe
+       area so a landscape notch does not land on the content. */
+    --page-gutter-left: max(12px, env(safe-area-inset-left));
+    --page-gutter-right: max(12px, env(safe-area-inset-right));
   }
 
   /* The live map runs edge to edge and under the status bar; every other page
@@ -1350,6 +1357,12 @@
     display: block;
   }
 
+  /* Header, filter bar, alert stream and rules are four stacked blocks on one
+     column here, so they all take the page gutter. */
+  .alerts-page .standard-page-header {
+    padding: 15px var(--page-gutter-right) 15px var(--page-gutter-left);
+  }
+
   .alerts-toolbar {
     position: sticky;
     z-index: 5;
@@ -1358,7 +1371,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
     min-height: 0;
-    padding: 8px 10px;
+    padding: 8px var(--page-gutter-right) 8px var(--page-gutter-left);
   }
 
   .segmented-control {
@@ -1399,7 +1412,9 @@
    */
   .alert-list {
     overflow: visible;
-    padding: 0 10px 14px;
+    /* Clear of the sticky filter bar's edge — with no top padding the first
+       day block sat on that border and read as part of the bar. */
+    padding: 12px var(--page-gutter-right) 14px var(--page-gutter-left);
   }
 
   .alert-day {
@@ -1412,7 +1427,9 @@
 
   .alert-day-label {
     margin: 0;
-    padding: 10px 14px 8px;
+    /* Clears the same distance as an entry's rail plus its text inset, so the
+       day caption starts on the column its alerts' titles start on. */
+    padding: 10px 15px 8px;
     color: var(--ink-27);
     font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
     font-size: 11px;
@@ -1466,7 +1483,7 @@
   }
 
   .alert-card-body {
-    padding: 11px 14px;
+    padding: 11px 12px;
   }
 
   .alert-card-heading {
@@ -1527,21 +1544,32 @@
     font-size: 12px;
   }
 
+  /* The two links go where the aircraft chip above them went and stay a pair;
+     spreading all three across the width left a hole between them and put the
+     pair on a different left edge in every entry. Dismiss is the odd one out
+     and takes the far edge on its own. */
   .alert-actions {
     grid-column: 2;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
-    padding: 0 14px 11px;
+    justify-content: flex-start;
+    padding: 0 12px 11px;
+  }
+
+  .alert-actions > .text-button,
+  .alert-actions > .dismissed-label {
+    margin-left: auto;
   }
 
   .alert-rules {
-    padding: 18px 14px 28px;
+    padding: 18px var(--page-gutter-right) 28px var(--page-gutter-left);
     border-top: 1px solid var(--line);
     border-left: 0;
   }
 
   .page-error {
-    margin: 8px 10px;
+    margin: 8px var(--page-gutter-right) 8px var(--page-gutter-left);
   }
 
   .system-header-actions {

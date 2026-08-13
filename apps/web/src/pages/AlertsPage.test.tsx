@@ -5,7 +5,8 @@ import type { WatchlistEntry } from '../types'
 import { api } from '../lib/api'
 import { Router } from '../lib/router'
 import type { AlertEvent } from '../types'
-import { AlertsPage, groupByDay } from './AlertsPage'
+import { formatDateTimeInput } from '../lib/format'
+import { AlertsPage, alertHistorySearch, groupByDay } from './AlertsPage'
 
 const dispatch = vi.fn()
 
@@ -152,5 +153,42 @@ describe('groupByDay', () => {
 
   it('returns nothing to caption when there are no alerts', () => {
     expect(groupByDay([])).toEqual([])
+  })
+})
+
+describe('alertHistorySearch', () => {
+  const alertAt = '2026-08-11T12:26:52.000Z'
+  const now = new Date('2026-08-13T13:00:00.000Z')
+
+  /* The bug this replaces: the link carried only the aircraft, so the history
+     page applied its own six-hour default and an alert older than that opened
+     on "no sessions found" for a track that was there all along. */
+  it('brackets the alert rather than leaving the page on its own default', () => {
+    const params = new URLSearchParams(alertHistorySearch('4070e6', alertAt, now).split('?')[1])
+    expect(params.get('aircraft')).toBe('4070e6')
+    expect(params.get('from')).toBe(formatDateTimeInput(new Date(Date.parse(alertAt) - 24 * 3_600_000)))
+    expect(params.get('to')).toBe(formatDateTimeInput(new Date(Date.parse(alertAt) + 3_600_000)))
+  })
+
+  /* Sessions are matched on when they started, so the lead is what has to
+     cover a session already running long before it raised the alert. The
+     window's ends are minute-precise, so this is a floor rather than an
+     equality: the alert's own seconds are not carried into the field. */
+  it('leads the alert by a day, so a long-running session is still found', () => {
+    const params = new URLSearchParams(alertHistorySearch('4070e6', alertAt, now).split('?')[1])
+    const lead = Date.parse(alertAt) - new Date(params.get('from') ?? '').getTime()
+    expect(lead).toBeGreaterThanOrEqual(24 * 3_600_000)
+    expect(lead).toBeLessThan(24 * 3_600_000 + 60_000)
+  })
+
+  /* A "to" past the present reads as a range the receiver cannot have filled. */
+  it('never runs the window past now', () => {
+    const justNow = new Date(now.getTime() - 60_000).toISOString()
+    const params = new URLSearchParams(alertHistorySearch('4070e6', justNow, now).split('?')[1])
+    expect(params.get('to')).toBe(formatDateTimeInput(now))
+  })
+
+  it('falls back to the aircraft alone when the alert has no usable time', () => {
+    expect(alertHistorySearch('4070e6', 'not-a-date', now)).toBe('/history?aircraft=4070e6')
   })
 })

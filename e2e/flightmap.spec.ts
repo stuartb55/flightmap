@@ -1292,6 +1292,21 @@ test('keeps mobile panels and controls inside the usable viewport', async ({ pag
    */
   const entry = page.locator('.alert-card').first()
   await expect(entry).toBeVisible({ timeout: 15_000 })
+
+  /*
+   * The page is four stacked blocks at this width and they sit on one gutter.
+   * Each had picked its own inset, which is not visible as a number but is
+   * very visible as a wobble down the edge past four of them in a row.
+   */
+  const edges = await page.evaluate(() =>
+    [
+      '.standard-page-header .page-heading',
+      '.alerts-toolbar > .segmented-control',
+      '.alert-list .alert-day',
+      '.alert-rules > .eyebrow',
+    ].map((selector) => document.querySelector(selector)?.getBoundingClientRect().left ?? null),
+  )
+  expect(edges.every((left) => left === edges[0] && left !== null)).toBe(true)
   const rail = await entry.locator('.alert-card-icon').evaluate((element) => {
     const box = element.getBoundingClientRect()
     const card = element.parentElement!.getBoundingClientRect()
