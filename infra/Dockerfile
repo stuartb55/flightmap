@@ -2,7 +2,7 @@
 
 ARG NODE_VERSION=24
 
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS dependencies
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS dependencies
 WORKDIR /app
 
 # Copy manifests first so dependency installation remains cacheable. package*.json
@@ -25,7 +25,7 @@ COPY apps/server apps/server
 # The root build intentionally orders the workspace builds shared -> web -> server.
 RUN npm run build
 
-FROM node:${NODE_VERSION}-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS production-dependencies
+FROM node:${NODE_VERSION}-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS production-dependencies
 WORKDIR /app
 ENV NODE_ENV=production
 
@@ -45,7 +45,7 @@ RUN --mount=type=cache,id=flightmap-npm-production,target=/root/.npm,sharing=loc
         --workspace @flightmap/shared; \
     fi
 
-FROM node:${NODE_VERSION}-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS runtime
+FROM node:${NODE_VERSION}-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
